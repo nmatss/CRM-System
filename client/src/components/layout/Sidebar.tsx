@@ -15,13 +15,13 @@ import {
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Clients (360°)", href: "/customers", icon: Users },
-  { name: "Cashback & Loyalty", href: "/cashback", icon: Ticket },
-  { name: "Campaigns", href: "/campaigns", icon: MessageSquare },
-  { name: "Automations (Otto)", href: "/automations", icon: Zap },
-  { name: "Orders", href: "/orders", icon: ShoppingBag },
-  { name: "Products", href: "/products", icon: Shirt },
-  { name: "Reports", href: "/reports", icon: PieChart },
+  { name: "Clientes (360°)", href: "/customers", icon: Users },
+  { name: "Cashback & Fidelidade", href: "/cashback", icon: Ticket },
+  { name: "Campanhas", href: "/campaigns", icon: MessageSquare },
+  { name: "Automações (Otto)", href: "/automations", icon: Zap },
+  { name: "Pedidos", href: "/orders", icon: ShoppingBag },
+  { name: "Produtos", href: "/products", icon: Shirt },
+  { name: "Relatórios", href: "/reports", icon: PieChart },
 ];
 
 export function Sidebar() {
@@ -41,7 +41,7 @@ export function Sidebar() {
       <div className="flex-1 overflow-y-auto py-4">
         <nav className="grid gap-1 px-2">
           <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
-            Growth & Retention
+            Crescimento & Retenção
           </div>
           {navigation.slice(0, 5).map((item) => {
             const isActive = location === item.href;
@@ -63,7 +63,7 @@ export function Sidebar() {
           })}
 
           <div className="mt-6 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
-            Operations
+            Operacional
           </div>
           {navigation.slice(5).map((item) => {
             const isActive = location === item.href;
@@ -87,14 +87,14 @@ export function Sidebar() {
         
         <nav className="mt-8 grid gap-1 px-2">
           <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
-            System
+            Sistema
           </div>
           <Link 
             href="/settings"
             className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
           >
             <Settings className="h-4 w-4" />
-            Settings
+            Configurações
           </Link>
         </nav>
       </div>
@@ -102,7 +102,7 @@ export function Sidebar() {
       <div className="border-t p-4">
         <button className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground">
           <LogOut className="h-4 w-4" />
-          Sign Out
+          Sair
         </button>
       </div>
     </div>

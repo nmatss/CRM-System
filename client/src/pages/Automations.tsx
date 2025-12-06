@@ -7,35 +7,35 @@ import { Zap, Clock, UserCheck, ShoppingCart, ArrowRight } from "lucide-react";
 const automations = [
   {
     id: 1,
-    title: "Abandoned Cart Recovery",
-    description: "Send WhatsApp message 1 hour after cart abandonment",
+    title: "Recuperação de Carrinho Abandonado",
+    description: "Enviar mensagem no WhatsApp 1 hora após abandono do carrinho",
     icon: ShoppingCart,
     active: true,
-    stats: "Recovered R$ 12.500 this week"
+    stats: "Recuperou R$ 12.500 esta semana"
   },
   {
     id: 2,
-    title: "Post-Purchase Review",
-    description: "Request review via SMS 7 days after delivery",
+    title: "Avaliação Pós-Compra",
+    description: "Solicitar avaliação via SMS 7 dias após a entrega",
     icon: UserCheck,
     active: true,
-    stats: "4.8/5 avg rating"
+    stats: "4.8/5 nota média"
   },
   {
     id: 3,
-    title: "Birthday Greeting",
-    description: "Send personalized card + 15% coupon on birthday morning",
+    title: "Parabéns Aniversário",
+    description: "Enviar cartão personalizado + 15% cupom na manhã do aniversário",
     icon: GiftIcon,
     active: false,
-    stats: "Setup required"
+    stats: "Configuração necessária"
   },
   {
     id: 4,
-    title: "Winback Inactive",
-    description: "Trigger sequence when customer hasn't purchased in 90 days",
+    title: "Resgate de Inativos (Winback)",
+    description: "Disparar sequência quando cliente não compra há 90 dias",
     icon: Clock,
     active: true,
-    stats: "8% reactivation rate"
+    stats: "8% taxa de reativação"
   }
 ];
 
@@ -67,12 +67,12 @@ export default function Automations() {
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Automations (Otto Style)</h1>
-            <p className="text-muted-foreground">Set up "If This Then That" rules for your store.</p>
+            <h1 className="text-2xl font-bold tracking-tight">Automações (Estilo Otto)</h1>
+            <p className="text-muted-foreground">Configure regras de "Se Isso, Então Aquilo" para sua loja.</p>
           </div>
           <Button className="gap-2 bg-amber-500 hover:bg-amber-600 text-black">
             <Zap className="h-4 w-4" />
-            New Automation
+            Nova Automação
           </Button>
         </div>
 
@@ -97,7 +97,7 @@ export default function Automations() {
                     {automation.stats}
                   </span>
                   <Button variant="ghost" size="sm" className="gap-1 h-8">
-                    Edit <ArrowRight className="h-3 w-3" />
+                    Editar <ArrowRight className="h-3 w-3" />
                   </Button>
                 </div>
               </CardContent>

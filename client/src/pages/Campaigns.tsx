@@ -18,39 +18,39 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 const campaigns = [
   {
     id: 1,
-    name: "Summer Sale Early Access",
+    name: "Acesso Antecipado Verão",
     channel: "WhatsApp",
-    audience: "VIP Clients",
+    audience: "Clientes VIP",
     sent: 1200,
     openRate: "92%",
     conversion: "15%",
     revenue: "R$ 45.000",
-    status: "Completed",
-    date: "2 days ago"
+    status: "Concluído",
+    date: "2 dias atrás"
   },
   {
     id: 2,
-    name: "Cashback Expiry Reminder",
+    name: "Lembrete Expiração Cashback",
     channel: "SMS",
-    audience: "Expiring < 7 days",
+    audience: "Expira < 7 dias",
     sent: 850,
     openRate: "98%",
     conversion: "8%",
     revenue: "R$ 12.400",
-    status: "Active",
-    date: "Running"
+    status: "Ativo",
+    date: "Rodando"
   },
   {
     id: 3,
-    name: "New Collection Drop",
+    name: "Lançamento Nova Coleção",
     channel: "Email",
-    audience: "All Active",
+    audience: "Todos Ativos",
     sent: 5000,
     openRate: "24%",
     conversion: "2%",
     revenue: "R$ 18.000",
-    status: "Scheduled",
-    date: "Tomorrow, 09:00"
+    status: "Agendado",
+    date: "Amanhã, 09:00"
   }
 ];
 
@@ -60,24 +60,24 @@ export default function Campaigns() {
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Campaigns & Communication</h1>
-            <p className="text-muted-foreground">Orchestrate omnichannel messages like Dito & Otto.</p>
+            <h1 className="text-2xl font-bold tracking-tight">Campanhas e Comunicação</h1>
+            <p className="text-muted-foreground">Orquestre mensagens omnichannel estilo Dito & Otto.</p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" className="gap-2">
               <Calendar className="h-4 w-4" />
-              Calendar
+              Calendário
             </Button>
             <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700">
               <Send className="h-4 w-4" />
-              Create Campaign
+              Criar Campanha
             </Button>
           </div>
         </div>
 
         <Tabs defaultValue="all" className="w-full">
           <TabsList>
-            <TabsTrigger value="all">All Campaigns</TabsTrigger>
+            <TabsTrigger value="all">Todas as Campanhas</TabsTrigger>
             <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
             <TabsTrigger value="sms">SMS</TabsTrigger>
             <TabsTrigger value="email">Email</TabsTrigger>
@@ -110,7 +110,7 @@ export default function Campaigns() {
                             </div>
                           </div>
                         </div>
-                        <Badge variant={campaign.status === "Active" ? "default" : campaign.status === "Completed" ? "secondary" : "outline"}>
+                        <Badge variant={campaign.status === "Ativo" ? "default" : campaign.status === "Concluído" ? "secondary" : "outline"}>
                           {campaign.status}
                         </Badge>
                       </div>
@@ -118,15 +118,15 @@ export default function Campaigns() {
                     
                     <div className="bg-muted/30 p-6 flex items-center gap-8 border-t md:border-t-0 md:border-l min-w-[350px]">
                       <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Sent</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Enviados</p>
                         <p className="text-xl font-bold">{campaign.sent}</p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Open Rate</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Taxa de Abertura</p>
                         <p className="text-xl font-bold">{campaign.openRate}</p>
                       </div>
                       <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Revenue</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Receita</p>
                         <p className="text-xl font-bold text-emerald-600">{campaign.revenue}</p>
                       </div>
                     </div>

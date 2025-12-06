@@ -16,78 +16,78 @@ import { Badge } from "@/components/ui/badge";
 
 const stats = [
   {
-    title: "Total Sales",
+    title: "Vendas Totais",
     value: "R$ 145.231,89",
-    change: "+20.1% vs last month",
+    change: "+20.1% vs mês anterior",
     trend: "up",
     icon: DollarSign,
   },
   {
-    title: "Avg. Order Value",
+    title: "Ticket Médio",
     value: "R$ 450,00",
-    change: "+12.5% vs last month",
+    change: "+12.5% vs mês anterior",
     trend: "up",
     icon: Tags,
   },
   {
-    title: "Total Orders",
+    title: "Total de Pedidos",
     value: "324",
-    change: "+19% vs last month",
+    change: "+19% vs mês anterior",
     trend: "up",
     icon: ShoppingBag,
   },
   {
-    title: "New VIP Clients",
+    title: "Novos Clientes VIP",
     value: "+12",
-    change: "+4 this week",
+    change: "+4 nesta semana",
     trend: "up",
     icon: Users,
   },
 ];
 
 const data = [
-  { name: "Mon", total: 4200 },
-  { name: "Tue", total: 3100 },
-  { name: "Wed", total: 5800 },
-  { name: "Thu", total: 4400 },
-  { name: "Fri", total: 8800 },
-  { name: "Sat", total: 12500 },
-  { name: "Sun", total: 9500 },
+  { name: "Seg", total: 4200 },
+  { name: "Ter", total: 3100 },
+  { name: "Qua", total: 5800 },
+  { name: "Qui", total: 4400 },
+  { name: "Sex", total: 8800 },
+  { name: "Sab", total: 12500 },
+  { name: "Dom", total: 9500 },
 ];
 
 const recentSales = [
   {
     name: "Ana Silva",
     email: "ana.silva@email.com",
-    item: "Summer Floral Dress",
+    item: "Vestido Floral Verão",
     amount: "R$ 299,00",
     avatar: "AS",
   },
   {
     name: "Juliana Costa",
     email: "ju.costa@email.com",
-    item: "Leather Crossbody Bag",
+    item: "Bolsa Transversal Couro",
     amount: "R$ 450,00",
     avatar: "JC",
   },
   {
     name: "Mariana Santos",
     email: "mari.santos@email.com",
-    item: "Denim Jacket Vintage",
+    item: "Jaqueta Jeans Vintage",
     amount: "R$ 380,00",
     avatar: "MS",
   },
   {
     name: "Carolina Oliveira",
     email: "carol.oli@email.com",
-    item: "Silk Scarf Pattern",
+    item: "Lenço de Seda Estampado",
     amount: "R$ 120,00",
     avatar: "CO",
   },
   {
     name: "Fernanda Lima",
     email: "fe.lima@email.com",
-    item: "Linen Trousers Beige",
+    item: "Calça de Linho Bege",
     amount: "R$ 259,00",
     avatar: "FL",
   },
@@ -99,12 +99,12 @@ export default function Dashboard() {
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Fashion Retail Overview</h1>
-            <p className="text-muted-foreground">Store performance for Spring Collection 2025</p>
+            <h1 className="text-2xl font-bold tracking-tight">Visão Geral da Loja</h1>
+            <p className="text-muted-foreground">Performance da Coleção Primavera 2025</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">Download Report</Button>
-            <Button size="sm">New Order</Button>
+            <Button variant="outline" size="sm">Baixar Relatório</Button>
+            <Button size="sm">Novo Pedido</Button>
           </div>
         </div>
 
@@ -137,7 +137,7 @@ export default function Dashboard() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
           <Card className="col-span-4">
             <CardHeader>
-              <CardTitle>Weekly Sales Revenue</CardTitle>
+              <CardTitle>Receita Semanal</CardTitle>
             </CardHeader>
             <CardContent className="pl-2">
               <div className="h-[350px] w-full">
@@ -178,9 +178,9 @@ export default function Dashboard() {
           
           <Card className="col-span-3">
             <CardHeader>
-              <CardTitle>Recent Purchases</CardTitle>
+              <CardTitle>Vendas Recentes</CardTitle>
               <CardDescription>
-                Live feed of in-store and online sales.
+                Feed ao vivo de vendas online e loja física.
               </CardDescription>
             </CardHeader>
             <CardContent>
