@@ -20,61 +20,29 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { MoreHorizontal, Plus, Filter, Tag } from "lucide-react";
-
-const customers = [
-  {
-    id: "C-001",
-    name: "Ana Silva",
-    email: "ana.silva@email.com",
-    segment: "VIP",
-    ltv: "R$ 15.450,00",
-    lastPurchase: "2 dias atrás",
-    favoriteCategory: "Vestidos",
-    image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&h=100&q=80"
-  },
-  {
-    id: "C-002",
-    name: "Juliana Costa",
-    email: "ju.costa@email.com",
-    segment: "Regular",
-    ltv: "R$ 4.200,00",
-    lastPurchase: "5 horas atrás",
-    favoriteCategory: "Acessórios",
-    image: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&h=100&q=80"
-  },
-  {
-    id: "C-003",
-    name: "Mariana Santos",
-    email: "mari.santos@email.com",
-    segment: "Novo",
-    ltv: "R$ 380,00",
-    lastPurchase: "1 semana atrás",
-    favoriteCategory: "Jeans",
-    image: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=100&h=100&q=80"
-  },
-  {
-    id: "C-004",
-    name: "Carolina Oliveira",
-    email: "carol.oli@email.com",
-    segment: "Em Risco",
-    ltv: "R$ 8.500,00",
-    lastPurchase: "3 meses atrás",
-    favoriteCategory: "Sapatos",
-    image: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=100&h=100&q=80"
-  },
-  {
-    id: "C-005",
-    name: "Fernanda Lima",
-    email: "fe.lima@email.com",
-    segment: "VIP",
-    ltv: "R$ 22.100,00",
-    lastPurchase: "Ontem",
-    favoriteCategory: "Casacos",
-    image: "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=100&h=100&q=80"
-  },
-];
+import { useState, useEffect } from "react";
+import type { Customer } from "@shared/schema";
 
 export default function Customers() {
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchCustomers() {
+      try {
+        const response = await fetch("/api/customers");
+        if (response.ok) {
+          const data = await response.json();
+          setCustomers(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch customers:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchCustomers();
+  }, []);
   return (
     <Layout>
       <div className="flex flex-col gap-6">
@@ -101,74 +69,85 @@ export default function Customers() {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Segmento</TableHead>
-                  <TableHead>Categoria Favorita</TableHead>
-                  <TableHead>Lifetime Value (LTV)</TableHead>
-                  <TableHead>Última Compra</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {customers.map((customer) => (
-                  <TableRow key={customer.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9">
-                          <AvatarImage src={customer.image} alt={customer.name} />
-                          <AvatarFallback>{customer.name.slice(0, 2)}</AvatarFallback>
-                        </Avatar>
-                        <div className="flex flex-col">
-                          <span className="font-medium">{customer.name}</span>
-                          <span className="text-xs text-muted-foreground">{customer.email}</span>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge 
-                        variant={
-                          customer.segment === "VIP" ? "default" : 
-                          customer.segment === "Em Risco" ? "destructive" : 
-                          customer.segment === "Novo" ? "secondary" : "outline"
-                        }
-                        className={customer.segment === "VIP" ? "bg-purple-600 hover:bg-purple-700" : ""}
-                      >
-                        {customer.segment}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Tag className="h-3 w-3" />
-                        {customer.favoriteCategory}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium">{customer.ltv}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{customer.lastPurchase}</TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0">
-                            <span className="sr-only">Abrir menu</span>
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                          <DropdownMenuItem>Ver Perfil</DropdownMenuItem>
-                          <DropdownMenuItem>Criar Pedido</DropdownMenuItem>
-                          <DropdownMenuItem>Registrar Interação</DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-destructive">Arquivar Cliente</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+            {loading ? (
+              <div className="flex items-center justify-center h-64">
+                <p className="text-muted-foreground">Carregando clientes...</p>
+              </div>
+            ) : customers.length === 0 ? (
+              <div className="flex items-center justify-center h-64">
+                <p className="text-muted-foreground">Nenhum cliente encontrado.</p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Segmento</TableHead>
+                    <TableHead>Categoria Favorita</TableHead>
+                    <TableHead>Lifetime Value (LTV)</TableHead>
+                    <TableHead>Última Compra</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {customers.map((customer) => (
+                    <TableRow key={customer.id} data-testid={`row-customer-${customer.id}`}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-9 w-9">
+                            <AvatarImage src={customer.image || undefined} alt={customer.name} />
+                            <AvatarFallback>{customer.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex flex-col">
+                            <span className="font-medium" data-testid={`text-customer-name-${customer.id}`}>{customer.name}</span>
+                            <span className="text-xs text-muted-foreground" data-testid={`text-customer-email-${customer.id}`}>{customer.email}</span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge 
+                          variant={
+                            customer.segment === "VIP" ? "default" : 
+                            customer.segment === "Em Risco" ? "destructive" : 
+                            customer.segment === "Novo" ? "secondary" : "outline"
+                          }
+                          className={customer.segment === "VIP" ? "bg-purple-600 hover:bg-purple-700" : ""}
+                          data-testid={`badge-segment-${customer.id}`}
+                        >
+                          {customer.segment}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Tag className="h-3 w-3" />
+                          {customer.favoriteCategory || "N/A"}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium" data-testid={`text-ltv-${customer.id}`}>{customer.ltv}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm" data-testid={`text-last-purchase-${customer.id}`}>{customer.lastPurchase}</TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0" data-testid={`button-actions-${customer.id}`}>
+                              <span className="sr-only">Abrir menu</span>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                            <DropdownMenuItem>Ver Perfil</DropdownMenuItem>
+                            <DropdownMenuItem>Criar Pedido</DropdownMenuItem>
+                            <DropdownMenuItem>Registrar Interação</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="text-destructive">Arquivar Cliente</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
       </div>
