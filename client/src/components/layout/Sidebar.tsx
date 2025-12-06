@@ -18,7 +18,7 @@ const navigation = [
   { name: "Clientes (360°)", href: "/customers", icon: Users },
   { name: "Cashback & Fidelidade", href: "/cashback", icon: Ticket },
   { name: "Campanhas", href: "/campaigns", icon: MessageSquare },
-  { name: "Automações (Otto)", href: "/automations", icon: Zap },
+  { name: "Automações", href: "/automations", icon: Zap },
   { name: "Pedidos", href: "/orders", icon: ShoppingBag },
   { name: "Produtos", href: "/products", icon: Shirt },
   { name: "Relatórios", href: "/reports", icon: PieChart },

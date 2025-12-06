@@ -67,7 +67,7 @@ export default function Automations() {
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Automações (Estilo Otto)</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Automações</h1>
             <p className="text-muted-foreground">Configure regras de "Se Isso, Então Aquilo" para sua loja.</p>
           </div>
           <Button className="gap-2 bg-amber-500 hover:bg-amber-600 text-black">
