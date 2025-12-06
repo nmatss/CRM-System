@@ -16,65 +16,29 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-const products = [
-  {
-    id: 1,
-    name: "Vestido Floral Verão",
-    category: "Vestidos",
-    price: "R$ 299,00",
-    stock: 45,
-    status: "Em Estoque",
-    image: "https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?auto=format&fit=crop&w=300&q=80"
-  },
-  {
-    id: 2,
-    name: "Jaqueta Jeans Vintage",
-    category: "Casacos",
-    price: "R$ 380,00",
-    stock: 12,
-    status: "Baixo Estoque",
-    image: "https://images.unsplash.com/photo-1543087903-1ac2ec7aa8c5?auto=format&fit=crop&w=300&q=80"
-  },
-  {
-    id: 3,
-    name: "Bolsa Transversal Couro",
-    category: "Acessórios",
-    price: "R$ 450,00",
-    stock: 28,
-    status: "Em Estoque",
-    image: "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=300&q=80"
-  },
-  {
-    id: 4,
-    name: "Calça de Linho Bege",
-    category: "Calças",
-    price: "R$ 259,00",
-    stock: 0,
-    status: "Esgotado",
-    image: "https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&w=300&q=80"
-  },
-  {
-    id: 5,
-    name: "Blusa de Seda Branca",
-    category: "Blusas",
-    price: "R$ 189,00",
-    stock: 65,
-    status: "Em Estoque",
-    image: "https://images.unsplash.com/photo-1564257631407-4deb1f99d992?auto=format&fit=crop&w=300&q=80"
-  },
-  {
-    id: 6,
-    name: "Sandália de Salto Alto",
-    category: "Sapatos",
-    price: "R$ 320,00",
-    stock: 8,
-    status: "Baixo Estoque",
-    image: "https://images.unsplash.com/photo-1562273138-f46be4ebdf33?auto=format&fit=crop&w=300&q=80"
-  }
-];
+import { useState, useEffect } from "react";
+import type { Product } from "@shared/schema";
 
 export default function Products() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const response = await fetch("/api/products");
+        if (response.ok) {
+          const data = await response.json();
+          setProducts(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch products:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProducts();
+  }, []);
   return (
     <Layout>
       <div className="flex flex-col gap-6">
@@ -83,7 +47,7 @@ export default function Products() {
             <h1 className="text-2xl font-bold tracking-tight">Produtos</h1>
             <p className="text-muted-foreground">Gerencie o catálogo da sua loja.</p>
           </div>
-          <Button className="gap-2">
+          <Button className="gap-2" data-testid="button-add-product">
             <Plus className="h-4 w-4" />
             Adicionar Produto
           </Button>
@@ -95,75 +59,86 @@ export default function Products() {
             <Input 
               placeholder="Buscar produtos..." 
               className="pl-9"
+              data-testid="input-search-products"
             />
           </div>
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" data-testid="button-filter">
             <Filter className="h-4 w-4" />
             Filtrar
           </Button>
-          <Button variant="outline" className="gap-2 ml-auto">
+          <Button variant="outline" className="gap-2 ml-auto" data-testid="button-sort">
             <ArrowUpDown className="h-4 w-4" />
             Ordenar
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {products.map((product) => (
-            <Card key={product.id} className="overflow-hidden group">
-              <div className="aspect-square w-full overflow-hidden bg-muted relative">
-                <img 
-                  src={product.image} 
-                  alt={product.name}
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                />
-                <div className="absolute top-2 right-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="secondary" size="icon" className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>Editar</DropdownMenuItem>
-                      <DropdownMenuItem>Duplicar</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">Excluir</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                {product.stock <= 10 && product.stock > 0 && (
-                  <Badge className="absolute top-2 left-2 bg-amber-500 hover:bg-amber-600">
-                    Últimas Unidades
-                  </Badge>
-                )}
-                {product.stock === 0 && (
-                  <Badge variant="destructive" className="absolute top-2 left-2">
-                    Esgotado
-                  </Badge>
-                )}
-              </div>
-              <CardContent className="p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <h3 className="font-semibold truncate pr-2" title={product.name}>{product.name}</h3>
-                    <p className="text-sm text-muted-foreground">{product.category}</p>
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <p className="text-muted-foreground">Carregando produtos...</p>
+          </div>
+        ) : products.length === 0 ? (
+          <div className="flex items-center justify-center h-64">
+            <p className="text-muted-foreground">Nenhum produto encontrado.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {products.map((product) => (
+              <Card key={product.id} className="overflow-hidden group" data-testid={`card-product-${product.id}`}>
+                <div className="aspect-square w-full overflow-hidden bg-muted relative">
+                  <img 
+                    src={product.image || undefined} 
+                    alt={product.name}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                  <div className="absolute top-2 right-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="secondary" size="icon" className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" data-testid={`button-menu-${product.id}`}>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem>Editar</DropdownMenuItem>
+                        <DropdownMenuItem>Duplicar</DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive">Excluir</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                  <p className="font-semibold">{product.price}</p>
+                  {product.stock <= 10 && product.stock > 0 && (
+                    <Badge className="absolute top-2 left-2 bg-amber-500 hover:bg-amber-600">
+                      Últimas Unidades
+                    </Badge>
+                  )}
+                  {product.stock === 0 && (
+                    <Badge variant="destructive" className="absolute top-2 left-2">
+                      Esgotado
+                    </Badge>
+                  )}
                 </div>
-                <div className="flex items-center justify-between mt-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className={
-                      product.stock > 10 ? "text-emerald-600" :
-                      product.stock > 0 ? "text-amber-600" : "text-rose-600"
-                    }>
-                      {product.stock} em estoque
-                    </span>
+                <CardContent className="p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h3 className="font-semibold truncate pr-2" title={product.name} data-testid={`text-product-name-${product.id}`}>{product.name}</h3>
+                      <p className="text-sm text-muted-foreground" data-testid={`text-category-${product.id}`}>{product.category}</p>
+                    </div>
+                    <p className="font-semibold" data-testid={`text-price-${product.id}`}>{product.price}</p>
                   </div>
-                  <Button variant="ghost" size="sm" className="h-8">Editar</Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                  <div className="flex items-center justify-between mt-4 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className={
+                        product.stock > 10 ? "text-emerald-600" :
+                        product.stock > 0 ? "text-amber-600" : "text-rose-600"
+                      } data-testid={`text-stock-${product.id}`}>
+                        {product.stock} em estoque
+                      </span>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-8" data-testid={`button-edit-${product.id}`}>Editar</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
     </Layout>
   );
