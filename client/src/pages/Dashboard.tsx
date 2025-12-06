@@ -6,85 +6,90 @@ import {
   ArrowDownRight, 
   DollarSign, 
   Users, 
-  CreditCard, 
-  Activity,
+  ShoppingBag, 
+  Tags,
   MoreHorizontal
 } from "lucide-react";
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar } from "recharts";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
 const stats = [
   {
-    title: "Total Revenue",
-    value: "$45,231.89",
-    change: "+20.1% from last month",
+    title: "Total Sales",
+    value: "R$ 145.231,89",
+    change: "+20.1% vs last month",
     trend: "up",
     icon: DollarSign,
   },
   {
-    title: "Active Customers",
-    value: "+2350",
-    change: "+180.1% from last month",
+    title: "Avg. Order Value",
+    value: "R$ 450,00",
+    change: "+12.5% vs last month",
+    trend: "up",
+    icon: Tags,
+  },
+  {
+    title: "Total Orders",
+    value: "324",
+    change: "+19% vs last month",
+    trend: "up",
+    icon: ShoppingBag,
+  },
+  {
+    title: "New VIP Clients",
+    value: "+12",
+    change: "+4 this week",
     trend: "up",
     icon: Users,
-  },
-  {
-    title: "Sales",
-    value: "+12,234",
-    change: "+19% from last month",
-    trend: "up",
-    icon: CreditCard,
-  },
-  {
-    title: "Active Now",
-    value: "+573",
-    change: "+201 since last hour",
-    trend: "up",
-    icon: Activity,
   },
 ];
 
 const data = [
-  { name: "Jan", total: 1200 },
-  { name: "Feb", total: 2100 },
-  { name: "Mar", total: 1800 },
-  { name: "Apr", total: 2400 },
-  { name: "May", total: 2800 },
-  { name: "Jun", total: 3200 },
-  { name: "Jul", total: 4500 },
+  { name: "Mon", total: 4200 },
+  { name: "Tue", total: 3100 },
+  { name: "Wed", total: 5800 },
+  { name: "Thu", total: 4400 },
+  { name: "Fri", total: 8800 },
+  { name: "Sat", total: 12500 },
+  { name: "Sun", total: 9500 },
 ];
 
 const recentSales = [
   {
-    name: "Olivia Martin",
-    email: "olivia.martin@email.com",
-    amount: "+$1,999.00",
-    avatar: "OM",
+    name: "Ana Silva",
+    email: "ana.silva@email.com",
+    item: "Summer Floral Dress",
+    amount: "R$ 299,00",
+    avatar: "AS",
   },
   {
-    name: "Jackson Lee",
-    email: "jackson.lee@email.com",
-    amount: "+$39.00",
-    avatar: "JL",
+    name: "Juliana Costa",
+    email: "ju.costa@email.com",
+    item: "Leather Crossbody Bag",
+    amount: "R$ 450,00",
+    avatar: "JC",
   },
   {
-    name: "Isabella Nguyen",
-    email: "isabella.nguyen@email.com",
-    amount: "+$299.00",
-    avatar: "IN",
+    name: "Mariana Santos",
+    email: "mari.santos@email.com",
+    item: "Denim Jacket Vintage",
+    amount: "R$ 380,00",
+    avatar: "MS",
   },
   {
-    name: "William Kim",
-    email: "will@email.com",
-    amount: "+$99.00",
-    avatar: "WK",
+    name: "Carolina Oliveira",
+    email: "carol.oli@email.com",
+    item: "Silk Scarf Pattern",
+    amount: "R$ 120,00",
+    avatar: "CO",
   },
   {
-    name: "Sofia Davis",
-    email: "sofia.davis@email.com",
-    amount: "+$39.00",
-    avatar: "SD",
+    name: "Fernanda Lima",
+    email: "fe.lima@email.com",
+    item: "Linen Trousers Beige",
+    amount: "R$ 259,00",
+    avatar: "FL",
   },
 ];
 
@@ -93,10 +98,13 @@ export default function Dashboard() {
     <Layout>
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Fashion Retail Overview</h1>
+            <p className="text-muted-foreground">Store performance for Spring Collection 2025</p>
+          </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm">Download Report</Button>
-            <Button size="sm">Add Widget</Button>
+            <Button size="sm">New Order</Button>
           </div>
         </div>
 
@@ -129,18 +137,12 @@ export default function Dashboard() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
           <Card className="col-span-4">
             <CardHeader>
-              <CardTitle>Overview</CardTitle>
+              <CardTitle>Weekly Sales Revenue</CardTitle>
             </CardHeader>
             <CardContent className="pl-2">
               <div className="h-[350px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={data}>
-                    <defs>
-                      <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
+                  <BarChart data={data}>
                     <XAxis 
                       dataKey="name" 
                       stroke="#888888" 
@@ -153,23 +155,22 @@ export default function Dashboard() {
                       fontSize={12}
                       tickLine={false}
                       axisLine={false}
-                      tickFormatter={(value) => `$${value}`}
+                      tickFormatter={(value) => `R$${value}`}
                     />
                     <Tooltip 
+                      cursor={{fill: 'transparent'}}
                       contentStyle={{ 
                         backgroundColor: "hsl(var(--popover))", 
                         borderColor: "hsl(var(--border))",
                         borderRadius: "var(--radius)",
                       }} 
                     />
-                    <Area 
-                      type="monotone" 
+                    <Bar
                       dataKey="total" 
-                      stroke="hsl(var(--primary))" 
-                      fillOpacity={1} 
-                      fill="url(#colorTotal)" 
+                      fill="hsl(var(--primary))" 
+                      radius={[4, 4, 0, 0]}
                     />
-                  </AreaChart>
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>
@@ -177,9 +178,9 @@ export default function Dashboard() {
           
           <Card className="col-span-3">
             <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
+              <CardTitle>Recent Purchases</CardTitle>
               <CardDescription>
-                You made 265 sales this month.
+                Live feed of in-store and online sales.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -191,8 +192,8 @@ export default function Dashboard() {
                     </Avatar>
                     <div className="ml-4 space-y-1">
                       <p className="text-sm font-medium leading-none">{sale.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {sale.email}
+                      <p className="text-sm text-muted-foreground truncate w-[140px]">
+                        {sale.item}
                       </p>
                     </div>
                     <div className="ml-auto font-medium">{sale.amount}</div>

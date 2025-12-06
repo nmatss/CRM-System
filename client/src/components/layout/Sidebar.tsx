@@ -3,17 +3,19 @@ import { cn } from "@/lib/utils";
 import { 
   LayoutDashboard, 
   Users, 
-  Briefcase, 
+  ShoppingBag, 
   CheckSquare, 
   Settings, 
   PieChart,
-  LogOut
+  LogOut,
+  Shirt
 } from "lucide-react";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Customers", href: "/customers", icon: Users },
-  { name: "Deals", href: "/deals", icon: Briefcase },
+  { name: "Clients", href: "/customers", icon: Users },
+  { name: "Orders", href: "/orders", icon: ShoppingBag },
+  { name: "Products", href: "/products", icon: Shirt },
   { name: "Tasks", href: "/tasks", icon: CheckSquare },
   { name: "Reports", href: "/reports", icon: PieChart },
 ];
@@ -26,16 +28,16 @@ export function Sidebar() {
       <div className="flex h-14 items-center border-b px-6">
         <div className="flex items-center gap-2 font-display font-bold text-xl text-primary">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            N
+            M
           </div>
-          Nexus CRM
+          Moda CRM
         </div>
       </div>
       
       <div className="flex-1 overflow-y-auto py-4">
         <nav className="grid gap-1 px-2">
           <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
-            Main Menu
+            Store Management
           </div>
           {navigation.map((item) => {
             const isActive = location === item.href;
