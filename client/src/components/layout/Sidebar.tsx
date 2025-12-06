@@ -4,19 +4,23 @@ import {
   LayoutDashboard, 
   Users, 
   ShoppingBag, 
-  CheckSquare, 
   Settings, 
   PieChart,
   LogOut,
-  Shirt
+  Shirt,
+  MessageSquare,
+  Zap,
+  Ticket
 } from "lucide-react";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Clients", href: "/customers", icon: Users },
+  { name: "Clients (360°)", href: "/customers", icon: Users },
+  { name: "Cashback & Loyalty", href: "/cashback", icon: Ticket },
+  { name: "Campaigns", href: "/campaigns", icon: MessageSquare },
+  { name: "Automations (Otto)", href: "/automations", icon: Zap },
   { name: "Orders", href: "/orders", icon: ShoppingBag },
   { name: "Products", href: "/products", icon: Shirt },
-  { name: "Tasks", href: "/tasks", icon: CheckSquare },
   { name: "Reports", href: "/reports", icon: PieChart },
 ];
 
@@ -37,9 +41,31 @@ export function Sidebar() {
       <div className="flex-1 overflow-y-auto py-4">
         <nav className="grid gap-1 px-2">
           <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
-            Store Management
+            Growth & Retention
           </div>
-          {navigation.map((item) => {
+          {navigation.slice(0, 5).map((item) => {
+            const isActive = location === item.href;
+            return (
+              <Link 
+                key={item.name} 
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                )}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.name}
+              </Link>
+            );
+          })}
+
+          <div className="mt-6 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Operations
+          </div>
+          {navigation.slice(5).map((item) => {
             const isActive = location === item.href;
             return (
               <Link 

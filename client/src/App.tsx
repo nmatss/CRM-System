@@ -5,6 +5,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/Dashboard";
 import Customers from "@/pages/Customers";
+import Cashback from "@/pages/Cashback";
+import Campaigns from "@/pages/Campaigns";
+import Automations from "@/pages/Automations";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -12,6 +15,9 @@ function Router() {
     <Switch>
       <Route path="/" component={Dashboard}/>
       <Route path="/customers" component={Customers}/>
+      <Route path="/cashback" component={Cashback}/>
+      <Route path="/campaigns" component={Campaigns}/>
+      <Route path="/automations" component={Automations}/>
       <Route component={NotFound} />
     </Switch>
   );
