@@ -32,6 +32,7 @@ import {
   Clock,
   HeartHandshake
 } from "lucide-react";
+import zippiLogo from "@assets/Zippi_Logo_1765636204090.png";
 
 const integrations = [
   {
@@ -185,11 +186,13 @@ export default function Landing() {
       <header className="fixed top-0 left-0 right-0 z-50 bg-[#050A1A]/80 backdrop-blur-xl border-b border-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-500/25">
-                <Store className="w-5 h-5 text-white" />
-              </div>
-              <span className="font-bold text-xl tracking-tight">Moda CRM</span>
+            <div className="flex items-center gap-2">
+              <img 
+                src={zippiLogo} 
+                alt="Zippi CRM" 
+                className="h-10 w-auto object-contain"
+                data-testid="header-logo"
+              />
             </div>
             <nav className="hidden md:flex items-center gap-8">
               <a href="#features" className="text-sm text-gray-400 hover:text-white transition-colors">Recursos</a>
@@ -231,7 +234,7 @@ export default function Landing() {
           >
             <Badge className="mb-6 bg-cyan-500/10 text-cyan-400 border-cyan-500/20 hover:bg-cyan-500/20" data-testid="badge-hero">
               <Sparkles className="w-3 h-3 mr-1" />
-              Plataforma #1 para Varejo de Moda
+              Plataforma #1 para Varejo
             </Badge>
             <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight mb-6">
               Transforme dados em{" "}
@@ -280,7 +283,7 @@ export default function Landing() {
                     <div className="w-3 h-3 rounded-full bg-green-500/80"></div>
                   </div>
                   <div className="flex-1 text-center">
-                    <span className="text-xs text-gray-500">app.modacrm.com.br</span>
+                    <span className="text-xs text-gray-500">app.zippicrm.com.br</span>
                   </div>
                 </div>
                 <div className="p-6">
@@ -621,7 +624,7 @@ export default function Landing() {
               <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">sua loja?</span>
             </h2>
             <p className="text-xl text-gray-300 mb-10">
-              Junte-se a mais de 500 lojas que já usam o Moda CRM para crescer de forma inteligente
+              Junte-se a mais de 500 lojas que já usam o Zippi CRM para crescer de forma inteligente
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button 
@@ -663,11 +666,13 @@ export default function Landing() {
       <footer className="py-12 px-4 sm:px-6 lg:px-8 border-t border-white/5 bg-[#050A1A]">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center">
-                <Store className="w-5 h-5 text-white" />
-              </div>
-              <span className="font-bold text-xl">Moda CRM</span>
+            <div className="flex items-center gap-2">
+              <img 
+                src={zippiLogo} 
+                alt="Zippi CRM" 
+                className="h-8 w-auto object-contain"
+                data-testid="footer-logo"
+              />
             </div>
             <div className="flex items-center gap-8 text-sm text-gray-500">
               <a href="#" className="hover:text-white transition-colors">Termos de Uso</a>
@@ -675,7 +680,7 @@ export default function Landing() {
               <a href="#" className="hover:text-white transition-colors">Suporte</a>
             </div>
             <p className="text-sm text-gray-600">
-              © 2024 Moda CRM. Todos os direitos reservados.
+              © 2024 Zippi CRM. Todos os direitos reservados.
             </p>
           </div>
         </div>
