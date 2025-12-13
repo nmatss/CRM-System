@@ -179,6 +179,7 @@ export const campaigns = pgTable("campaigns", {
   name: text("name").notNull(),
   channel: text("channel").notNull(),
   audience: text("audience").notNull(),
+  message: text("message"),
   sent: integer("sent").notNull().default(0),
   openRate: text("open_rate").notNull(),
   conversion: text("conversion").notNull(),

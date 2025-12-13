@@ -96,11 +96,15 @@ export interface IStorage {
   getCampaigns(tenantId: number): Promise<Campaign[]>;
   getCampaign(tenantId: number, id: number): Promise<Campaign | undefined>;
   createCampaign(campaign: InsertCampaign): Promise<Campaign>;
+  updateCampaign(tenantId: number, id: number, data: Partial<InsertCampaign>): Promise<Campaign | undefined>;
+  deleteCampaign(tenantId: number, id: number): Promise<boolean>;
 
   // Automations (tenant-scoped)
   getAutomations(tenantId: number): Promise<Automation[]>;
   getAutomation(tenantId: number, id: number): Promise<Automation | undefined>;
   createAutomation(automation: InsertAutomation): Promise<Automation>;
+  updateAutomation(tenantId: number, id: number, data: Partial<InsertAutomation>): Promise<Automation | undefined>;
+  deleteAutomation(tenantId: number, id: number): Promise<boolean>;
 
   // Contact Requests (global)
   getContactRequests(): Promise<ContactRequest[]>;
@@ -362,6 +366,21 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async updateCampaign(tenantId: number, id: number, data: Partial<InsertCampaign>): Promise<Campaign | undefined> {
+    const result = await db.update(campaigns)
+      .set(data)
+      .where(and(eq(campaigns.tenantId, tenantId), eq(campaigns.id, id)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteCampaign(tenantId: number, id: number): Promise<boolean> {
+    const result = await db.delete(campaigns)
+      .where(and(eq(campaigns.tenantId, tenantId), eq(campaigns.id, id)))
+      .returning();
+    return result.length > 0;
+  }
+
   // ==================== AUTOMATIONS ====================
   async getAutomations(tenantId: number): Promise<Automation[]> {
     return await db.select().from(automations).where(eq(automations.tenantId, tenantId));
@@ -376,6 +395,21 @@ export class DatabaseStorage implements IStorage {
   async createAutomation(automation: InsertAutomation): Promise<Automation> {
     const result = await db.insert(automations).values(automation).returning();
     return result[0];
+  }
+
+  async updateAutomation(tenantId: number, id: number, data: Partial<InsertAutomation>): Promise<Automation | undefined> {
+    const result = await db.update(automations)
+      .set(data)
+      .where(and(eq(automations.tenantId, tenantId), eq(automations.id, id)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteAutomation(tenantId: number, id: number): Promise<boolean> {
+    const result = await db.delete(automations)
+      .where(and(eq(automations.tenantId, tenantId), eq(automations.id, id)))
+      .returning();
+    return result.length > 0;
   }
 
   // ==================== CONTACT REQUESTS ====================

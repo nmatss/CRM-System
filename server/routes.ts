@@ -907,6 +907,103 @@ export async function registerRoutes(
     }
   });
 
+  app.put("/api/campaigns/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const id = parseInt(req.params.id);
+      const { name, channel, audience, status, date, sent, openRate, conversion, revenue } = req.body;
+      
+      const updateData: Record<string, any> = {};
+      if (name !== undefined) updateData.name = name;
+      if (channel !== undefined) updateData.channel = channel;
+      if (audience !== undefined) updateData.audience = audience;
+      if (status !== undefined) updateData.status = status;
+      if (date !== undefined) updateData.date = date;
+      if (sent !== undefined) updateData.sent = sent;
+      if (openRate !== undefined) updateData.openRate = openRate;
+      if (conversion !== undefined) updateData.conversion = conversion;
+      if (revenue !== undefined) updateData.revenue = revenue;
+      
+      const updated = await storage.updateCampaign(tenantId, id, updateData);
+      if (!updated) {
+        return res.status(404).json({ error: "Campanha não encontrada" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao atualizar campanha" });
+    }
+  });
+
+  app.delete("/api/campaigns/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteCampaign(tenantId, id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Campanha não encontrada" });
+      }
+      res.json({ message: "Campanha excluída com sucesso" });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao excluir campanha" });
+    }
+  });
+
+  app.post("/api/campaigns/:id/send", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const id = parseInt(req.params.id);
+      const campaign = await storage.getCampaign(tenantId, id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campanha não encontrada" });
+      }
+      
+      const customers = await storage.getCustomers(tenantId);
+      let targetCustomers = customers;
+      
+      switch (campaign.audience) {
+        case "Clientes VIP":
+          targetCustomers = customers.filter(c => c.segment === "VIP");
+          break;
+        case "Novos clientes":
+          targetCustomers = customers.filter(c => c.segment === "Novo");
+          break;
+        case "Clientes inativos":
+          targetCustomers = customers.filter(c => c.segment === "Inativo" || c.segment === "Em Risco");
+          break;
+        case "Aniversariantes do mês":
+          const currentMonth = new Date().getMonth() + 1;
+          targetCustomers = customers.filter(c => {
+            if (!c.birthDate) return false;
+            const parts = c.birthDate.split('/');
+            return parts.length >= 2 && parseInt(parts[1]) === currentMonth;
+          });
+          break;
+      }
+      
+      const updated = await storage.updateCampaign(tenantId, id, {
+        status: "Ativo",
+        sent: targetCustomers.length,
+      });
+      
+      res.json({ 
+        message: "Campanha enviada com sucesso",
+        sentTo: targetCustomers.length,
+        campaign: updated
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao enviar campanha" });
+    }
+  });
+
   app.get("/api/automations", requireAuth, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
