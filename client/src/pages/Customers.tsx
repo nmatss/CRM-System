@@ -2,6 +2,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { 
   Table, 
   TableBody, 
@@ -17,38 +18,188 @@ import {
   DropdownMenuLabel, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { MoreHorizontal, Plus, Filter, Tag } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { MoreHorizontal, Plus, Filter, Tag, Search, UserPlus, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import type { Customer } from "@shared/schema";
 
-export default function Customers() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
+interface CustomerFormData {
+  name: string;
+  email: string;
+  phone: string;
+  segment: string;
+  ltv: string;
+  lastPurchase: string;
+  favoriteCategory: string;
+}
 
-  useEffect(() => {
-    async function fetchCustomers() {
-      try {
-        const response = await fetch("/api/customers");
-        if (response.ok) {
-          const data = await response.json();
-          setCustomers(data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch customers:", error);
-      } finally {
-        setLoading(false);
-      }
+const initialFormData: CustomerFormData = {
+  name: "",
+  email: "",
+  phone: "",
+  segment: "Novo",
+  ltv: "R$ 0,00",
+  lastPurchase: new Date().toLocaleDateString("pt-BR"),
+  favoriteCategory: "",
+};
+
+export default function Customers() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+  const [formData, setFormData] = useState<CustomerFormData>(initialFormData);
+  const [searchTerm, setSearchTerm] = useState("");
+  
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: customers = [], isLoading } = useQuery<Customer[]>({
+    queryKey: ["customers"],
+    queryFn: async () => {
+      const response = await fetch("/api/customers");
+      if (!response.ok) throw new Error("Erro ao carregar clientes");
+      return response.json();
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: CustomerFormData) => {
+      const response = await apiRequest("POST", "/api/customers", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      toast({ title: "Sucesso!", description: "Cliente adicionado com sucesso." });
+      closeModal();
+    },
+    onError: () => {
+      toast({ title: "Erro", description: "Não foi possível adicionar o cliente.", variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: CustomerFormData }) => {
+      const response = await apiRequest("PUT", `/api/customers/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      toast({ title: "Sucesso!", description: "Cliente atualizado com sucesso." });
+      closeModal();
+    },
+    onError: () => {
+      toast({ title: "Erro", description: "Não foi possível atualizar o cliente.", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await apiRequest("DELETE", `/api/customers/${id}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      toast({ title: "Sucesso!", description: "Cliente excluído com sucesso." });
+      setIsDeleteDialogOpen(false);
+      setCustomerToDelete(null);
+    },
+    onError: () => {
+      toast({ title: "Erro", description: "Não foi possível excluir o cliente.", variant: "destructive" });
+    },
+  });
+
+  const openCreateModal = () => {
+    setEditingCustomer(null);
+    setFormData(initialFormData);
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (customer: Customer) => {
+    setEditingCustomer(customer);
+    setFormData({
+      name: customer.name,
+      email: customer.email,
+      phone: customer.phone || "",
+      segment: customer.segment,
+      ltv: customer.ltv,
+      lastPurchase: customer.lastPurchase,
+      favoriteCategory: customer.favoriteCategory || "",
+    });
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingCustomer(null);
+    setFormData(initialFormData);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingCustomer) {
+      updateMutation.mutate({ id: editingCustomer.id, data: formData });
+    } else {
+      createMutation.mutate(formData);
     }
-    fetchCustomers();
-  }, []);
+  };
+
+  const openDeleteDialog = (customer: Customer) => {
+    setCustomerToDelete(customer);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDelete = () => {
+    if (customerToDelete) {
+      deleteMutation.mutate(customerToDelete.id);
+    }
+  };
+
+  const filteredCustomers = customers.filter(
+    (customer) =>
+      customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (customer.favoriteCategory?.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  const isMutating = createMutation.isPending || updateMutation.isPending;
+
   return (
     <Layout>
       <div className="flex flex-col gap-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Clienteling</h1>
-          <Button className="gap-2 w-full sm:w-auto">
+          <Button className="gap-2 w-full sm:w-auto" onClick={openCreateModal} data-testid="button-add-customer">
             <Plus className="h-4 w-4" />
             Adicionar Cliente
           </Button>
@@ -58,28 +209,50 @@ export default function Customers() {
           <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4">
             <CardTitle className="text-base font-semibold">Lista de Clientes</CardTitle>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-              <Input 
-                placeholder="Buscar por nome, email ou estilo..." 
-                className="h-8 w-full sm:w-[250px]" 
-              />
-              <Button variant="outline" size="sm" className="h-8 gap-2 w-full sm:w-auto">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="Buscar por nome, email ou estilo..." 
+                  className="h-8 w-full sm:w-[250px] pl-9" 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  data-testid="input-search-customers"
+                />
+              </div>
+              <Button variant="outline" size="sm" className="h-8 gap-2 w-full sm:w-auto" data-testid="button-filter">
                 <Filter className="h-3.5 w-3.5" />
                 Filtrar
               </Button>
             </div>
           </CardHeader>
           <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center h-64">
-                <p className="text-muted-foreground">Carregando clientes...</p>
+            {isLoading ? (
+              <div className="space-y-4">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="flex items-center gap-4">
+                    <Skeleton className="h-10 w-10 rounded-full" />
+                    <div className="space-y-2 flex-1">
+                      <Skeleton className="h-4 w-[200px]" />
+                      <Skeleton className="h-3 w-[150px]" />
+                    </div>
+                    <Skeleton className="h-6 w-[80px]" />
+                  </div>
+                ))}
               </div>
-            ) : customers.length === 0 ? (
-              <div className="flex items-center justify-center h-64">
-                <p className="text-muted-foreground">Nenhum cliente encontrado.</p>
+            ) : filteredCustomers.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-center" data-testid="empty-state">
+                <UserPlus className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground mb-2">
+                  {searchTerm ? "Nenhum cliente encontrado para a busca." : "Nenhum cliente cadastrado ainda."}
+                </p>
+                {!searchTerm && (
+                  <Button variant="outline" onClick={openCreateModal} data-testid="button-add-first-customer">
+                    Adicionar primeiro cliente
+                  </Button>
+                )}
               </div>
             ) : (
               <>
-                {/* Desktop Table View */}
                 <div className="hidden md:block">
                   <Table>
                     <TableHeader>
@@ -93,7 +266,7 @@ export default function Customers() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {customers.map((customer) => (
+                      {filteredCustomers.map((customer) => (
                         <TableRow key={customer.id} data-testid={`row-customer-${customer.id}`}>
                           <TableCell>
                             <div className="flex items-center gap-3">
@@ -138,11 +311,19 @@ export default function Customers() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                                <DropdownMenuItem>Ver Perfil</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openEditModal(customer)} data-testid={`button-edit-${customer.id}`}>
+                                  Editar Cliente
+                                </DropdownMenuItem>
                                 <DropdownMenuItem>Criar Pedido</DropdownMenuItem>
                                 <DropdownMenuItem>Registrar Interação</DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-destructive">Arquivar Cliente</DropdownMenuItem>
+                                <DropdownMenuItem 
+                                  className="text-destructive" 
+                                  onClick={() => openDeleteDialog(customer)}
+                                  data-testid={`button-delete-${customer.id}`}
+                                >
+                                  Excluir Cliente
+                                </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>
@@ -152,9 +333,8 @@ export default function Customers() {
                   </Table>
                 </div>
                 
-                {/* Mobile Card View */}
                 <div className="md:hidden space-y-4 p-4">
-                  {customers.map((customer) => (
+                  {filteredCustomers.map((customer) => (
                     <div key={customer.id} className="border rounded-lg p-4 space-y-3" data-testid={`card-customer-${customer.id}`}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -175,9 +355,13 @@ export default function Customers() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                            <DropdownMenuItem>Ver Perfil</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => openEditModal(customer)}>Editar Cliente</DropdownMenuItem>
                             <DropdownMenuItem>Criar Pedido</DropdownMenuItem>
                             <DropdownMenuItem>Registrar Interação</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="text-destructive" onClick={() => openDeleteDialog(customer)}>
+                              Excluir Cliente
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
@@ -217,6 +401,139 @@ export default function Customers() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-[500px]" data-testid="customer-modal">
+          <DialogHeader>
+            <DialogTitle>{editingCustomer ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
+            <DialogDescription>
+              {editingCustomer 
+                ? "Atualize as informações do cliente abaixo." 
+                : "Preencha os dados do novo cliente."}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Nome *</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Nome completo"
+                  required
+                  data-testid="input-customer-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email *</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="email@exemplo.com"
+                  required
+                  data-testid="input-customer-email"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="phone">Telefone</Label>
+                <Input
+                  id="phone"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="(00) 00000-0000"
+                  data-testid="input-customer-phone"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="segment">Segmento *</Label>
+                <Select
+                  value={formData.segment}
+                  onValueChange={(value) => setFormData({ ...formData, segment: value })}
+                >
+                  <SelectTrigger data-testid="select-segment">
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Novo">Novo</SelectItem>
+                    <SelectItem value="Frequente">Frequente</SelectItem>
+                    <SelectItem value="VIP">VIP</SelectItem>
+                    <SelectItem value="Em Risco">Em Risco</SelectItem>
+                    <SelectItem value="Inativo">Inativo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ltv">LTV</Label>
+                <Input
+                  id="ltv"
+                  value={formData.ltv}
+                  onChange={(e) => setFormData({ ...formData, ltv: e.target.value })}
+                  placeholder="R$ 0,00"
+                  data-testid="input-customer-ltv"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastPurchase">Última Compra</Label>
+                <Input
+                  id="lastPurchase"
+                  value={formData.lastPurchase}
+                  onChange={(e) => setFormData({ ...formData, lastPurchase: e.target.value })}
+                  placeholder="01/01/2024"
+                  data-testid="input-customer-last-purchase"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="favoriteCategory">Categoria Favorita</Label>
+              <Input
+                id="favoriteCategory"
+                value={formData.favoriteCategory}
+                onChange={(e) => setFormData({ ...formData, favoriteCategory: e.target.value })}
+                placeholder="Ex: Vestidos, Calçados, Acessórios..."
+                data-testid="input-customer-category"
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeModal} data-testid="button-cancel">
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isMutating} data-testid="button-save-customer">
+                {isMutating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {editingCustomer ? "Salvar" : "Adicionar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent data-testid="delete-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir cliente?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não pode ser desfeita. O cliente "{customerToDelete?.name}" será removido permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDelete} 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 }

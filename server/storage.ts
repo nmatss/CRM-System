@@ -65,16 +65,22 @@ export interface IStorage {
   getCustomers(tenantId: number): Promise<Customer[]>;
   getCustomer(tenantId: number, id: number): Promise<Customer | undefined>;
   createCustomer(customer: InsertCustomer): Promise<Customer>;
+  updateCustomer(tenantId: number, id: number, data: Partial<InsertCustomer>): Promise<Customer | undefined>;
+  deleteCustomer(tenantId: number, id: number): Promise<boolean>;
 
   // Products (tenant-scoped)
   getProducts(tenantId: number): Promise<Product[]>;
   getProduct(tenantId: number, id: number): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
+  updateProduct(tenantId: number, id: number, data: Partial<InsertProduct>): Promise<Product | undefined>;
+  deleteProduct(tenantId: number, id: number): Promise<boolean>;
 
   // Orders (tenant-scoped)
   getOrders(tenantId: number): Promise<Order[]>;
   getOrder(tenantId: number, id: number): Promise<Order | undefined>;
   createOrder(order: InsertOrder): Promise<Order>;
+  updateOrder(tenantId: number, id: number, data: Partial<InsertOrder>): Promise<Order | undefined>;
+  deleteOrder(tenantId: number, id: number): Promise<boolean>;
 
   // Cashback Rules (tenant-scoped)
   getCashbackRules(tenantId: number): Promise<CashbackRule[]>;
@@ -217,6 +223,21 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async updateCustomer(tenantId: number, id: number, data: Partial<InsertCustomer>): Promise<Customer | undefined> {
+    const result = await db.update(customers)
+      .set(data)
+      .where(and(eq(customers.tenantId, tenantId), eq(customers.id, id)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteCustomer(tenantId: number, id: number): Promise<boolean> {
+    const result = await db.delete(customers)
+      .where(and(eq(customers.tenantId, tenantId), eq(customers.id, id)))
+      .returning();
+    return result.length > 0;
+  }
+
   // ==================== PRODUCTS ====================
   async getProducts(tenantId: number): Promise<Product[]> {
     return await db.select().from(products).where(eq(products.tenantId, tenantId));
@@ -233,6 +254,21 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async updateProduct(tenantId: number, id: number, data: Partial<InsertProduct>): Promise<Product | undefined> {
+    const result = await db.update(products)
+      .set(data)
+      .where(and(eq(products.tenantId, tenantId), eq(products.id, id)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteProduct(tenantId: number, id: number): Promise<boolean> {
+    const result = await db.delete(products)
+      .where(and(eq(products.tenantId, tenantId), eq(products.id, id)))
+      .returning();
+    return result.length > 0;
+  }
+
   // ==================== ORDERS ====================
   async getOrders(tenantId: number): Promise<Order[]> {
     return await db.select().from(orders).where(eq(orders.tenantId, tenantId));
@@ -247,6 +283,21 @@ export class DatabaseStorage implements IStorage {
   async createOrder(order: InsertOrder): Promise<Order> {
     const result = await db.insert(orders).values(order).returning();
     return result[0];
+  }
+
+  async updateOrder(tenantId: number, id: number, data: Partial<InsertOrder>): Promise<Order | undefined> {
+    const result = await db.update(orders)
+      .set(data)
+      .where(and(eq(orders.tenantId, tenantId), eq(orders.id, id)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteOrder(tenantId: number, id: number): Promise<boolean> {
+    const result = await db.delete(orders)
+      .where(and(eq(orders.tenantId, tenantId), eq(orders.id, id)))
+      .returning();
+    return result.length > 0;
   }
 
   // ==================== CASHBACK RULES ====================

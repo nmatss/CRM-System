@@ -441,6 +441,40 @@ export async function registerRoutes(
     }
   });
 
+  app.put("/api/customers/:id", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const customerId = parseInt(req.params.id);
+      const updated = await storage.updateCustomer(tenantId, customerId, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Cliente não encontrado" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao atualizar cliente" });
+    }
+  });
+
+  app.delete("/api/customers/:id", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const customerId = parseInt(req.params.id);
+      const deleted = await storage.deleteCustomer(tenantId, customerId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Cliente não encontrado" });
+      }
+      res.json({ message: "Cliente excluído com sucesso" });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao excluir cliente" });
+    }
+  });
+
   app.get("/api/products", requireAuth, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
@@ -468,6 +502,40 @@ export async function registerRoutes(
     }
   });
 
+  app.put("/api/products/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const productId = parseInt(req.params.id);
+      const updated = await storage.updateProduct(tenantId, productId, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Produto não encontrado" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao atualizar produto" });
+    }
+  });
+
+  app.delete("/api/products/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const productId = parseInt(req.params.id);
+      const deleted = await storage.deleteProduct(tenantId, productId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Produto não encontrado" });
+      }
+      res.json({ message: "Produto excluído com sucesso" });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao excluir produto" });
+    }
+  });
+
   app.get("/api/orders", requireAuth, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
@@ -492,6 +560,40 @@ export async function registerRoutes(
       res.status(201).json(order);
     } catch (error) {
       res.status(400).json({ error: "Invalid order data" });
+    }
+  });
+
+  app.put("/api/orders/:id", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const orderId = parseInt(req.params.id);
+      const updated = await storage.updateOrder(tenantId, orderId, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Pedido não encontrado" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao atualizar pedido" });
+    }
+  });
+
+  app.delete("/api/orders/:id", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const orderId = parseInt(req.params.id);
+      const deleted = await storage.deleteOrder(tenantId, orderId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Pedido não encontrado" });
+      }
+      res.json({ message: "Pedido excluído com sucesso" });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao excluir pedido" });
     }
   });
 
