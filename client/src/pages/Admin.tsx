@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,34 @@ export default function Admin() {
   const { user, isSuperAdmin } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [location, setLocation] = useLocation();
+  
+  const getTabFromUrl = () => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("tab") || "dashboard";
+  };
+  
+  const [activeTab, setActiveTab] = useState(getTabFromUrl);
+  
+  useEffect(() => {
+    const handlePopState = () => setActiveTab(getTabFromUrl());
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+  
+  useEffect(() => {
+    setActiveTab(getTabFromUrl());
+  }, [location]);
+  
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    if (value === "dashboard") {
+      setLocation("/zippi-sistema-x7k9");
+    } else {
+      setLocation(`/zippi-sistema-x7k9?tab=${value}`);
+    }
+  };
+  
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [newTenant, setNewTenant] = useState({ name: "", slug: "", plan: "free" });
@@ -465,7 +494,7 @@ export default function Admin() {
           </Card>
         </div>
 
-        <Tabs defaultValue="dashboard" className="w-full">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="dashboard" data-testid="tab-dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="empresas" data-testid="tab-empresas">Empresas</TabsTrigger>
