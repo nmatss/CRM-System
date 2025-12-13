@@ -11,8 +11,11 @@ import {
   MessageSquare,
   Zap,
   Ticket,
-  Calendar
+  Calendar,
+  Crown
 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -27,7 +30,19 @@ const navigation = [
 ];
 
 export function Sidebar() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+  const { logout, isLoggingOut, isSuperAdmin } = useAuth();
+  const { toast } = useToast();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      toast({ title: "Até logo!", description: "Logout realizado com sucesso." });
+      setLocation("/login");
+    } catch (error) {
+      toast({ title: "Erro", description: "Falha ao fazer logout", variant: "destructive" });
+    }
+  };
 
   return (
     <div className="flex h-screen w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
@@ -57,6 +72,7 @@ export function Sidebar() {
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
                 )}
+                data-testid={`nav-link-${item.href.replace("/", "") || "dashboard"}`}
               >
                 <item.icon className="h-4 w-4" />
                 {item.name}
@@ -79,6 +95,7 @@ export function Sidebar() {
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
                 )}
+                data-testid={`nav-link-${item.href.replace("/", "")}`}
               >
                 <item.icon className="h-4 w-4" />
                 {item.name}
@@ -91,9 +108,30 @@ export function Sidebar() {
           <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
             Sistema
           </div>
+          {isSuperAdmin && (
+            <Link 
+              href="/admin"
+              className={cn(
+                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                location === "/admin"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+              )}
+              data-testid="nav-link-admin"
+            >
+              <Crown className="h-4 w-4" />
+              Painel Admin
+            </Link>
+          )}
           <Link 
             href="/settings"
-            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+            className={cn(
+              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              location === "/settings"
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+            )}
+            data-testid="nav-link-settings"
           >
             <Settings className="h-4 w-4" />
             Configurações
@@ -102,9 +140,14 @@ export function Sidebar() {
       </div>
 
       <div className="border-t p-4">
-        <button className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground">
+        <button 
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground disabled:opacity-50"
+          data-testid="button-sidebar-logout"
+        >
           <LogOut className="h-4 w-4" />
-          Sair
+          {isLoggingOut ? "Saindo..." : "Sair"}
         </button>
       </div>
     </div>
