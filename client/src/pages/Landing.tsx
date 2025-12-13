@@ -38,7 +38,11 @@ import {
   Clock,
   HeartHandshake,
   Loader2,
-  Send
+  Send,
+  DollarSign,
+  ShoppingBag,
+  Tags,
+  ArrowUpRight
 } from "lucide-react";
 import zippiLogo from "@assets/generated_images/zippi_crm_modern_logo.png";
 
@@ -348,41 +352,91 @@ export default function Landing() {
                   </div>
                 </div>
                 <div className="p-6">
-                  <div className="grid grid-cols-4 gap-4 mb-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">Visão Geral da Loja</h3>
+                      <p className="text-xs text-gray-500">Performance da Coleção Primavera 2025</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="px-3 py-1.5 rounded-md bg-[#1F2937]/80 border border-white/10 text-xs text-gray-400">Baixar Relatório</div>
+                      <div className="px-3 py-1.5 rounded-md bg-cyan-600 text-xs text-white">Novo Pedido</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3 mb-6">
                     {[
-                      { label: "Vendas Hoje", value: "R$ 12.450", trend: "+18%", color: "cyan" },
-                      { label: "Clientes Ativos", value: "2.847", trend: "+5%", color: "emerald" },
-                      { label: "Ticket Médio", value: "R$ 389", trend: "+12%", color: "amber" },
-                      { label: "Conversão", value: "34%", trend: "+8%", color: "pink" }
+                      { label: "Vendas Totais", value: "R$ 145.231", trend: "+20.1% vs mês anterior", icon: DollarSign },
+                      { label: "Ticket Médio", value: "R$ 450,00", trend: "+12.5% vs mês anterior", icon: Tags },
+                      { label: "Total de Pedidos", value: "324", trend: "+19% vs mês anterior", icon: ShoppingBag },
+                      { label: "Novos Clientes VIP", value: "+12", trend: "+4 nesta semana", icon: Users }
                     ].map((stat, i) => (
                       <div key={i} className="bg-[#1F2937]/50 rounded-xl p-4 border border-white/5">
-                        <p className="text-xs text-gray-500">{stat.label}</p>
-                        <p className="text-xl font-bold mt-1 text-white">{stat.value}</p>
-                        <p className={`text-xs mt-1 text-${stat.color}-400`}>↑ {stat.trend}</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs text-gray-500 font-medium">{stat.label}</p>
+                          <stat.icon className="w-4 h-4 text-gray-500" />
+                        </div>
+                        <p className="text-xl font-bold text-white">{stat.value}</p>
+                        <p className="text-xs mt-1 text-emerald-400 flex items-center gap-1">
+                          <ArrowUpRight className="w-3 h-3" />
+                          {stat.trend}
+                        </p>
                       </div>
                     ))}
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="col-span-2 bg-[#1F2937]/50 rounded-xl p-4 border border-white/5 h-48">
-                      <p className="text-sm font-medium mb-2 text-gray-300">Performance Semanal</p>
-                      <div className="flex items-end justify-between h-32 px-2">
-                        {[40, 65, 45, 80, 55, 90, 70].map((h, i) => (
-                          <div 
-                            key={i} 
-                            className="w-8 bg-gradient-to-t from-cyan-600 to-cyan-400 rounded-t-md opacity-80 hover:opacity-100 transition-opacity"
-                            style={{ height: `${h}%` }}
-                          ></div>
-                        ))}
+                  <div className="grid grid-cols-7 gap-4">
+                    <div className="col-span-4 bg-[#1F2937]/50 rounded-xl p-4 border border-white/5">
+                      <p className="text-sm font-medium mb-4 text-white">Receita Semanal</p>
+                      <div className="flex items-end justify-between h-36 px-2 relative">
+                        <div className="absolute left-0 top-0 bottom-8 flex flex-col justify-between text-[10px] text-gray-500 pr-2">
+                          <span>R$12k</span>
+                          <span>R$8k</span>
+                          <span>R$4k</span>
+                          <span>R$0</span>
+                        </div>
+                        <div className="flex items-end justify-between flex-1 ml-8 h-full pb-6">
+                          {[
+                            { day: "Seg", h: 34 },
+                            { day: "Ter", h: 25 },
+                            { day: "Qua", h: 46 },
+                            { day: "Qui", h: 35 },
+                            { day: "Sex", h: 70 },
+                            { day: "Sab", h: 100 },
+                            { day: "Dom", h: 76 }
+                          ].map((bar, i) => (
+                            <div key={i} className="flex flex-col items-center gap-1">
+                              <div 
+                                className="w-6 bg-cyan-500 rounded-t-sm"
+                                style={{ height: `${bar.h}%` }}
+                              ></div>
+                              <span className="text-[10px] text-gray-500">{bar.day}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                    <div className="bg-[#1F2937]/50 rounded-xl p-4 border border-white/5">
-                      <p className="text-sm font-medium mb-3 text-gray-300">Top Clientes</p>
-                      {["Ana M.", "João S.", "Maria L."].map((name, i) => (
-                        <div key={i} className="flex items-center gap-2 mb-2">
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600"></div>
-                          <span className="text-xs text-gray-400">{name}</span>
-                        </div>
-                      ))}
+                    <div className="col-span-3 bg-[#1F2937]/50 rounded-xl p-4 border border-white/5">
+                      <div className="mb-1">
+                        <p className="text-sm font-medium text-white">Vendas Recentes</p>
+                        <p className="text-[10px] text-gray-500">Feed ao vivo de vendas</p>
+                      </div>
+                      <div className="space-y-3 mt-3">
+                        {[
+                          { name: "Mariana Costa", email: "mariana@email.com", value: "R$ 1.250,00", initials: "MC" },
+                          { name: "João Pedro Silva", email: "joao.silva@gmail.com", value: "R$ 890,00", initials: "JP" },
+                          { name: "Ana Beatriz", email: "ana.b@outlook.com", value: "R$ 2.100,00", initials: "AB" },
+                          { name: "Carlos Eduardo", email: "carlos.e@email.com", value: "R$ 650,00", initials: "CE" }
+                        ].map((sale, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-[10px] font-medium text-white">
+                              {sale.initials}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-white truncate">{sale.name}</p>
+                              <p className="text-[10px] text-gray-500 truncate">{sale.email}</p>
+                            </div>
+                            <span className="text-xs font-medium text-white">{sale.value}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
