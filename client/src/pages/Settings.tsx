@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,11 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, Users, Pencil, Trash2, KeyRound, CreditCard, Hash, Mail, Phone } from "lucide-react";
-import type { User, TenantUser } from "@shared/schema";
+import { Plus, Users, Trash2, KeyRound, CreditCard, Hash, Mail, Phone, Store, Palette, Image, Loader2, Save, MessageSquare } from "lucide-react";
+import type { User, TenantUser, Tenant } from "@shared/schema";
 
 type UserWithoutPassword = Omit<User, "password">;
 
@@ -32,6 +33,62 @@ export default function Settings() {
   
   const [isAddMemberDialogOpen, setIsAddMemberDialogOpen] = useState(false);
   const [newMember, setNewMember] = useState({ name: "", cpf: "", sellerCode: "", phone: "", email: "", role: "seller" });
+  
+  const [storeSettings, setStoreSettings] = useState({
+    name: "",
+    logo: "",
+    primaryColor: "#9333ea",
+    secondaryColor: "#db2777",
+    loginMessage: "",
+  });
+
+  const { data: tenantData, isLoading: tenantLoading } = useQuery<Tenant>({
+    queryKey: ["tenant-settings"],
+    queryFn: async () => {
+      const response = await fetch("/api/tenant/settings");
+      if (!response.ok) throw new Error("Failed to fetch tenant settings");
+      return response.json();
+    },
+    enabled: isManager,
+  });
+
+  useEffect(() => {
+    if (tenantData) {
+      setStoreSettings({
+        name: tenantData.name || "",
+        logo: tenantData.logo || "",
+        primaryColor: tenantData.primaryColor || "#9333ea",
+        secondaryColor: tenantData.secondaryColor || "#db2777",
+        loginMessage: tenantData.loginMessage || "",
+      });
+    }
+  }, [tenantData]);
+
+  const updateTenantMutation = useMutation({
+    mutationFn: async (data: Partial<Tenant>) => {
+      const response = await fetch("/api/tenant/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update settings");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tenant-settings"] });
+      toast({ title: "Configurações salvas!", description: "As configurações da loja foram atualizadas." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleSaveStoreSettings = () => {
+    updateTenantMutation.mutate(storeSettings);
+  };
 
   const { data: team = [], isLoading: teamLoading } = useQuery<TeamMember[]>({
     queryKey: ["team"],
@@ -143,12 +200,14 @@ export default function Settings() {
             >
               Geral
             </TabsTrigger>
-            <TabsTrigger 
-              value="store"
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 sm:px-4 py-2 text-[10px] sm:text-sm"
-            >
-              Loja
-            </TabsTrigger>
+            {isManager && (
+              <TabsTrigger 
+                value="store"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 sm:px-4 py-2 text-[10px] sm:text-sm"
+              >
+                Loja
+              </TabsTrigger>
+            )}
             <TabsTrigger 
               value="notifications"
               className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 sm:px-4 py-2 text-[10px] sm:text-sm"
@@ -209,6 +268,171 @@ export default function Settings() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {isManager && (
+            <TabsContent value="store" className="mt-6 space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Store className="h-5 w-5" />
+                    Informações da Loja
+                  </CardTitle>
+                  <CardDescription>Configure o nome e identidade visual da sua loja.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {tenantLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="store-name">Nome da Loja</Label>
+                          <Input
+                            id="store-name"
+                            value={storeSettings.name}
+                            onChange={(e) => setStoreSettings({ ...storeSettings, name: e.target.value })}
+                            placeholder="Minha Loja"
+                            data-testid="input-store-name"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="store-logo">URL do Logo</Label>
+                          <Input
+                            id="store-logo"
+                            value={storeSettings.logo}
+                            onChange={(e) => setStoreSettings({ ...storeSettings, logo: e.target.value })}
+                            placeholder="https://exemplo.com/logo.png"
+                            data-testid="input-store-logo"
+                          />
+                        </div>
+                      </div>
+
+                      {storeSettings.logo && (
+                        <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/30">
+                          <Image className="h-5 w-5 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">Preview do logo:</span>
+                          <img 
+                            src={storeSettings.logo} 
+                            alt="Logo da loja" 
+                            className="h-12 w-auto object-contain"
+                            onError={(e) => (e.currentTarget.style.display = 'none')}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Palette className="h-5 w-5" />
+                    Cores do Tema
+                  </CardTitle>
+                  <CardDescription>Personalize as cores da sua loja.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="space-y-3">
+                      <Label htmlFor="primary-color">Cor Primária</Label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="color"
+                          id="primary-color"
+                          value={storeSettings.primaryColor}
+                          onChange={(e) => setStoreSettings({ ...storeSettings, primaryColor: e.target.value })}
+                          className="w-12 h-10 rounded border cursor-pointer"
+                          data-testid="input-primary-color"
+                        />
+                        <Input
+                          value={storeSettings.primaryColor}
+                          onChange={(e) => setStoreSettings({ ...storeSettings, primaryColor: e.target.value })}
+                          className="flex-1"
+                          placeholder="#9333ea"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <Label htmlFor="secondary-color">Cor Secundária</Label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="color"
+                          id="secondary-color"
+                          value={storeSettings.secondaryColor}
+                          onChange={(e) => setStoreSettings({ ...storeSettings, secondaryColor: e.target.value })}
+                          className="w-12 h-10 rounded border cursor-pointer"
+                          data-testid="input-secondary-color"
+                        />
+                        <Input
+                          value={storeSettings.secondaryColor}
+                          onChange={(e) => setStoreSettings({ ...storeSettings, secondaryColor: e.target.value })}
+                          className="flex-1"
+                          placeholder="#db2777"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 p-4 border rounded-lg bg-muted/30">
+                    <div 
+                      className="w-16 h-16 rounded-lg flex items-center justify-center text-white font-bold"
+                      style={{ backgroundColor: storeSettings.primaryColor }}
+                    >
+                      P
+                    </div>
+                    <div 
+                      className="w-16 h-16 rounded-lg flex items-center justify-center text-white font-bold"
+                      style={{ backgroundColor: storeSettings.secondaryColor }}
+                    >
+                      S
+                    </div>
+                    <div 
+                      className="flex-1 h-16 rounded-lg"
+                      style={{ background: `linear-gradient(to right, ${storeSettings.primaryColor}, ${storeSettings.secondaryColor})` }}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5" />
+                    Mensagem de Login
+                  </CardTitle>
+                  <CardDescription>Mensagem exibida na tela de login da loja.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Textarea
+                    value={storeSettings.loginMessage}
+                    onChange={(e) => setStoreSettings({ ...storeSettings, loginMessage: e.target.value })}
+                    placeholder="Ex: Bem-vindo à nossa loja! Digite seu CPF ou código de vendedor para acessar."
+                    className="min-h-[100px]"
+                    data-testid="textarea-login-message"
+                  />
+                </CardContent>
+              </Card>
+
+              <div className="flex justify-end">
+                <Button 
+                  onClick={handleSaveStoreSettings}
+                  disabled={updateTenantMutation.isPending}
+                  className="gap-2"
+                  data-testid="button-save-store-settings"
+                >
+                  {updateTenantMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  Salvar Configurações
+                </Button>
+              </div>
+            </TabsContent>
+          )}
 
           <TabsContent value="notifications" className="mt-6">
             <Card>
