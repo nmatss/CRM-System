@@ -11,6 +11,7 @@ import {
   insertTenantSchema,
   insertContactRequestSchema,
   insertDemoRequestSchema,
+  insertSellerTaskSchema,
   loginSchema,
   registerSchema,
 } from "@shared/schema";
@@ -776,6 +777,103 @@ export async function registerRoutes(
       res.json(stats);
     } catch (error) {
       res.status(500).json({ error: "Erro ao buscar estatísticas" });
+    }
+  });
+
+  // ==================== SELLER TASKS ====================
+  app.get("/api/seller-tasks", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const filters = {
+        sellerId: req.query.sellerId as string | undefined,
+        status: req.query.status as string | undefined,
+        dateFrom: req.query.dateFrom as string | undefined,
+        dateTo: req.query.dateTo as string | undefined,
+        type: req.query.type as string | undefined,
+      };
+      
+      const tasks = await storage.getSellerTasks(tenantId, filters);
+      res.json(tasks);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar tarefas" });
+    }
+  });
+
+  app.get("/api/seller-tasks/stats", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const sellerId = req.query.sellerId as string | undefined;
+      const stats = await storage.getSellerStats(tenantId, sellerId);
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar estatísticas" });
+    }
+  });
+
+  app.post("/api/seller-tasks", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const validatedData = insertSellerTaskSchema.parse({ ...req.body, tenantId });
+      const task = await storage.createSellerTask(validatedData);
+      res.status(201).json(task);
+    } catch (error) {
+      res.status(400).json({ error: "Dados da tarefa inválidos" });
+    }
+  });
+
+  app.put("/api/seller-tasks/:id", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const taskId = parseInt(req.params.id);
+      const { status, notes } = req.body;
+      
+      const updateData: Record<string, any> = {};
+      if (status !== undefined) {
+        updateData.status = status;
+        if (status === 'completed') {
+          updateData.completedAt = new Date();
+        }
+      }
+      if (notes !== undefined) updateData.notes = notes;
+      
+      const updated = await storage.updateSellerTask(tenantId, taskId, updateData);
+      if (!updated) {
+        return res.status(404).json({ error: "Tarefa não encontrada" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao atualizar tarefa" });
+    }
+  });
+
+  app.delete("/api/seller-tasks/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const taskId = parseInt(req.params.id);
+      const deleted = await storage.deleteSellerTask(tenantId, taskId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Tarefa não encontrada" });
+      }
+      res.json({ message: "Tarefa excluída com sucesso" });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao excluir tarefa" });
     }
   });
 

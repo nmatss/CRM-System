@@ -221,6 +221,30 @@ export const insertDemoRequestSchema = createInsertSchema(demoRequests).omit({
 export type InsertDemoRequest = z.infer<typeof insertDemoRequestSchema>;
 export type DemoRequest = typeof demoRequests.$inferSelect;
 
+// ==================== SELLER TASKS ====================
+export const sellerTasks = pgTable("seller_tasks", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  customerId: integer("customer_id").references(() => customers.id, { onDelete: "cascade" }),
+  sellerId: varchar("seller_id").references(() => users.id, { onDelete: "set null" }),
+  type: text("type").notNull(),
+  status: text("status").notNull().default("pending"),
+  dueDate: text("due_date").notNull(),
+  script: text("script"),
+  notes: text("notes"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSellerTaskSchema = createInsertSchema(sellerTasks).omit({
+  id: true,
+  completedAt: true,
+  createdAt: true,
+});
+
+export type InsertSellerTask = z.infer<typeof insertSellerTaskSchema>;
+export type SellerTask = typeof sellerTasks.$inferSelect;
+
 // ==================== AUTH SCHEMAS ====================
 export const loginSchema = z.object({
   email: z.string().email(),

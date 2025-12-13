@@ -21,6 +21,8 @@ import {
   type InsertContactRequest,
   type DemoRequest,
   type InsertDemoRequest,
+  type SellerTask,
+  type InsertSellerTask,
   users,
   tenants,
   tenantUsers,
@@ -31,10 +33,11 @@ import {
   campaigns,
   automations,
   contactRequests,
-  demoRequests
+  demoRequests,
+  sellerTasks
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -109,6 +112,14 @@ export interface IStorage {
 
   // Tenant Stats (for admin reports)
   getTenantStats(): Promise<{ tenantId: number; tenantName: string; usersCount: number; customersCount: number; ordersCount: number; productsCount: number }[]>;
+
+  // Seller Tasks (tenant-scoped)
+  getSellerTasks(tenantId: number, filters?: { sellerId?: string; status?: string; dateFrom?: string; dateTo?: string; type?: string }): Promise<(SellerTask & { customer?: Customer })[]>;
+  getSellerTask(tenantId: number, id: number): Promise<SellerTask | undefined>;
+  createSellerTask(task: InsertSellerTask): Promise<SellerTask>;
+  updateSellerTask(tenantId: number, id: number, data: Partial<InsertSellerTask & { completedAt?: Date }>): Promise<SellerTask | undefined>;
+  deleteSellerTask(tenantId: number, id: number): Promise<boolean>;
+  getSellerStats(tenantId: number, sellerId?: string): Promise<{ pending: number; completed: number; today: number; overdue: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -401,6 +412,87 @@ export class DatabaseStorage implements IStorage {
     }));
     
     return stats;
+  }
+
+  // ==================== SELLER TASKS ====================
+  async getSellerTasks(tenantId: number, filters?: { sellerId?: string; status?: string; dateFrom?: string; dateTo?: string; type?: string }): Promise<(SellerTask & { customer?: Customer })[]> {
+    let conditions = [eq(sellerTasks.tenantId, tenantId)];
+    
+    if (filters?.sellerId) {
+      conditions.push(eq(sellerTasks.sellerId, filters.sellerId));
+    }
+    if (filters?.status) {
+      conditions.push(eq(sellerTasks.status, filters.status));
+    }
+    if (filters?.type) {
+      conditions.push(eq(sellerTasks.type, filters.type));
+    }
+    if (filters?.dateFrom) {
+      conditions.push(gte(sellerTasks.dueDate, filters.dateFrom));
+    }
+    if (filters?.dateTo) {
+      conditions.push(lte(sellerTasks.dueDate, filters.dateTo));
+    }
+    
+    const tasks = await db.select().from(sellerTasks)
+      .where(and(...conditions))
+      .orderBy(desc(sellerTasks.createdAt));
+    
+    const tasksWithCustomers = await Promise.all(tasks.map(async (task) => {
+      let customer: Customer | undefined;
+      if (task.customerId) {
+        const customerResult = await db.select().from(customers)
+          .where(and(eq(customers.tenantId, tenantId), eq(customers.id, task.customerId)));
+        customer = customerResult[0];
+      }
+      return { ...task, customer };
+    }));
+    
+    return tasksWithCustomers;
+  }
+
+  async getSellerTask(tenantId: number, id: number): Promise<SellerTask | undefined> {
+    const result = await db.select().from(sellerTasks)
+      .where(and(eq(sellerTasks.tenantId, tenantId), eq(sellerTasks.id, id)));
+    return result[0];
+  }
+
+  async createSellerTask(task: InsertSellerTask): Promise<SellerTask> {
+    const result = await db.insert(sellerTasks).values(task).returning();
+    return result[0];
+  }
+
+  async updateSellerTask(tenantId: number, id: number, data: Partial<InsertSellerTask & { completedAt?: Date }>): Promise<SellerTask | undefined> {
+    const result = await db.update(sellerTasks)
+      .set(data)
+      .where(and(eq(sellerTasks.tenantId, tenantId), eq(sellerTasks.id, id)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteSellerTask(tenantId: number, id: number): Promise<boolean> {
+    const result = await db.delete(sellerTasks)
+      .where(and(eq(sellerTasks.tenantId, tenantId), eq(sellerTasks.id, id)))
+      .returning();
+    return result.length > 0;
+  }
+
+  async getSellerStats(tenantId: number, sellerId?: string): Promise<{ pending: number; completed: number; today: number; overdue: number }> {
+    let conditions = [eq(sellerTasks.tenantId, tenantId)];
+    if (sellerId) {
+      conditions.push(eq(sellerTasks.sellerId, sellerId));
+    }
+    
+    const allTasks = await db.select().from(sellerTasks).where(and(...conditions));
+    
+    const today = new Date().toISOString().split('T')[0];
+    
+    const pending = allTasks.filter(t => t.status === 'pending').length;
+    const completed = allTasks.filter(t => t.status === 'completed').length;
+    const todayTasks = allTasks.filter(t => t.dueDate === today && t.status === 'pending').length;
+    const overdue = allTasks.filter(t => t.dueDate < today && t.status === 'pending').length;
+    
+    return { pending, completed, today: todayTasks, overdue };
   }
 }
 
