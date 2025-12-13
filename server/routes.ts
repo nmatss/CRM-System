@@ -1384,5 +1384,151 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== REPORTS ROUTES ====================
+  app.get("/api/reports", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const { startDate, endDate } = req.query;
+      
+      const [customers, orders, products, campaigns] = await Promise.all([
+        storage.getCustomers(tenantId),
+        storage.getOrders(tenantId),
+        storage.getProducts(tenantId),
+        storage.getCampaigns(tenantId),
+      ]);
+      
+      const parseOrderDate = (dateStr: string): Date | null => {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+        }
+        return null;
+      };
+      
+      const parseOrderValue = (total: string): number => {
+        return parseFloat(total.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
+      };
+      
+      let filteredOrders = orders;
+      if (startDate && endDate) {
+        const start = new Date(startDate as string);
+        const end = new Date(endDate as string);
+        end.setHours(23, 59, 59, 999);
+        
+        filteredOrders = orders.filter(order => {
+          const orderDate = parseOrderDate(order.date);
+          return orderDate && orderDate >= start && orderDate <= end;
+        });
+      }
+      
+      const totalRevenue = filteredOrders.reduce((sum, order) => sum + parseOrderValue(order.total), 0);
+      const totalOrders = filteredOrders.length;
+      const averageTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+      
+      const monthlyData: Record<string, { sales: number; orders: number }> = {};
+      const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+      
+      filteredOrders.forEach(order => {
+        const orderDate = parseOrderDate(order.date);
+        if (orderDate) {
+          const monthKey = months[orderDate.getMonth()];
+          if (!monthlyData[monthKey]) {
+            monthlyData[monthKey] = { sales: 0, orders: 0 };
+          }
+          monthlyData[monthKey].sales += parseOrderValue(order.total);
+          monthlyData[monthKey].orders += 1;
+        }
+      });
+      
+      const salesByMonth = months.map(name => ({
+        name,
+        sales: Math.round(monthlyData[name]?.sales || 0),
+        orders: monthlyData[name]?.orders || 0,
+      })).filter(m => m.sales > 0 || m.orders > 0);
+      
+      const categoryTotals: Record<string, number> = {};
+      products.forEach(product => {
+        const category = product.category || "Outros";
+        if (!categoryTotals[category]) {
+          categoryTotals[category] = 0;
+        }
+        const productOrders = filteredOrders.filter(o => o.product === product.name);
+        productOrders.forEach(o => {
+          categoryTotals[category] += parseOrderValue(o.total);
+        });
+      });
+      
+      const salesByCategory = Object.entries(categoryTotals)
+        .map(([name, value]) => ({ name, value: Math.round(value) }))
+        .filter(c => c.value > 0)
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 6);
+      
+      const segmentCounts: Record<string, number> = {};
+      customers.forEach(customer => {
+        const segment = customer.segment || "Sem Segmento";
+        segmentCounts[segment] = (segmentCounts[segment] || 0) + 1;
+      });
+      
+      const customersBySegment = Object.entries(segmentCounts)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count);
+      
+      const topCustomers = customers
+        .map(customer => ({
+          id: customer.id,
+          name: customer.name,
+          email: customer.email,
+          segment: customer.segment,
+          ltv: customer.ltv,
+          orderCount: filteredOrders.filter(o => o.customer === customer.name).length,
+        }))
+        .sort((a, b) => parseFloat(b.ltv?.replace(/[^\d,.-]/g, '').replace(',', '.') || '0') - 
+                        parseFloat(a.ltv?.replace(/[^\d,.-]/g, '').replace(',', '.') || '0'))
+        .slice(0, 10);
+      
+      const campaignStats = campaigns.map(campaign => ({
+        id: campaign.id,
+        name: campaign.name,
+        channel: campaign.channel,
+        status: campaign.status,
+        sent: campaign.sent,
+        openRate: campaign.openRate,
+        conversion: campaign.conversion,
+        revenue: campaign.revenue,
+      }));
+      
+      res.json({
+        summary: {
+          totalRevenue: totalRevenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          totalOrders,
+          averageTicket: averageTicket.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          totalCustomers: customers.length,
+          totalProducts: products.length,
+        },
+        salesByMonth: salesByMonth.length > 0 ? salesByMonth : months.slice(0, 7).map(name => ({ name, sales: 0, orders: 0 })),
+        salesByCategory: salesByCategory.length > 0 ? salesByCategory : [{ name: "Sem dados", value: 0 }],
+        customersBySegment,
+        topCustomers,
+        campaignStats,
+        orders: filteredOrders.map(o => ({
+          id: o.id,
+          customer: o.customer,
+          product: o.product,
+          date: o.date,
+          total: o.total,
+          status: o.status,
+        })),
+      });
+    } catch (error) {
+      console.error("Reports error:", error);
+      res.status(500).json({ error: "Erro ao gerar relatórios" });
+    }
+  });
+
   return httpServer;
 }
