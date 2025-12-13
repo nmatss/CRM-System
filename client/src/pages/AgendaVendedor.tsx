@@ -373,6 +373,7 @@ function NewTaskDialog({
   onCreateTask: (data: any) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     customerId: '',
     type: 'manual',
@@ -383,6 +384,17 @@ function NewTaskDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+    
+    if (!formData.dueDate) {
+      setError('Data de vencimento é obrigatória');
+      return;
+    }
+    if (!formData.type) {
+      setError('Tipo de tarefa é obrigatório');
+      return;
+    }
+    
     onCreateTask({
       ...formData,
       customerId: formData.customerId ? parseInt(formData.customerId) : null,
@@ -410,6 +422,11 @@ function NewTaskDialog({
           <DialogTitle>Criar Nova Tarefa</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded">
+              {error}
+            </div>
+          )}
           <div>
             <Label htmlFor="customer">Cliente (opcional)</Label>
             <Select 
@@ -500,8 +517,9 @@ export default function AgendaVendedor() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [updatingTaskId, setUpdatingTaskId] = useState<number | null>(null);
 
-  const dateRange = activeTab === 'completed' ? {} : getDateRange(activeTab);
-  const statusFilter = activeTab === 'completed' ? 'completed' : 'pending';
+  const isCompletedTab = activeTab === 'completed';
+  const dateRange = isCompletedTab ? { dateFrom: '', dateTo: '' } : getDateRange(activeTab);
+  const statusFilter = isCompletedTab ? 'completed' : 'pending';
 
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<TaskWithCustomer[]>({
     queryKey: ['/api/seller-tasks', activeTab, typeFilter],
@@ -551,7 +569,7 @@ export default function AgendaVendedor() {
       setUpdatingTaskId(taskId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/seller-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/seller-tasks'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['/api/seller-tasks/stats'] });
     },
     onSettled: () => {
@@ -571,7 +589,7 @@ export default function AgendaVendedor() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/seller-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/seller-tasks'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['/api/seller-tasks/stats'] });
     }
   });
@@ -736,6 +754,7 @@ export default function AgendaVendedor() {
                   task={task} 
                   onComplete={(id) => completeMutation.mutate(id)}
                   isUpdating={updatingTaskId === task.id}
+                  showActions={!isCompletedTab}
                 />
               ))
             )}

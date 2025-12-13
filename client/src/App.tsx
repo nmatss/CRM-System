@@ -56,6 +56,9 @@ function Router() {
       <Route path="/">
         {isAuthenticated ? <Redirect to="/dashboard" /> : <Landing />}
       </Route>
+      <Route path="/landing">
+        <Landing />
+      </Route>
       <Route path="/login">
         {isAuthenticated ? <Redirect to="/dashboard" /> : <Login />}
       </Route>
