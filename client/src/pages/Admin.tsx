@@ -8,11 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Textarea } from "@/components/ui/textarea";
-import { Building2, Plus, Users, Store, Crown, Pencil, Copy, ExternalLink } from "lucide-react";
-import type { Tenant } from "@shared/schema";
+import { Building2, Plus, Users, Store, Crown, Pencil, Copy, ExternalLink, MessageSquare, Calendar, Mail, Phone, Clock, CheckCircle2, XCircle } from "lucide-react";
+import type { Tenant, ContactRequest, DemoRequest } from "@shared/schema";
 
 export default function Admin() {
   const { user, isSuperAdmin } = useAuth();
@@ -31,6 +32,58 @@ export default function Admin() {
       return response.json();
     },
     enabled: isSuperAdmin,
+  });
+
+  const { data: contacts = [] } = useQuery<ContactRequest[]>({
+    queryKey: ["admin", "contacts"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/contacts");
+      if (!response.ok) throw new Error("Failed to fetch contacts");
+      return response.json();
+    },
+    enabled: isSuperAdmin,
+  });
+
+  const { data: demos = [] } = useQuery<DemoRequest[]>({
+    queryKey: ["admin", "demos"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/demos");
+      if (!response.ok) throw new Error("Failed to fetch demos");
+      return response.json();
+    },
+    enabled: isSuperAdmin,
+  });
+
+  const updateContactStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      const response = await fetch(`/api/admin/contacts/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) throw new Error("Failed to update");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "contacts"] });
+      toast({ title: "Status atualizado!" });
+    },
+  });
+
+  const updateDemoStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      const response = await fetch(`/api/admin/demos/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) throw new Error("Failed to update");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "demos"] });
+      toast({ title: "Status atualizado!" });
+    },
   });
 
   const createTenantMutation = useMutation({
@@ -193,7 +246,7 @@ export default function Admin() {
           </Dialog>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Total de Lojas</CardTitle>
@@ -212,6 +265,26 @@ export default function Admin() {
               <div className="text-2xl font-bold" data-testid="stat-active-tenants">
                 {tenants.filter((t) => t.status === "active").length}
               </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Contatos</CardTitle>
+              <MessageSquare className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold" data-testid="stat-contacts">{contacts.length}</div>
+              <p className="text-xs text-muted-foreground">{contacts.filter(c => c.status === "pending").length} pendentes</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">Demos</CardTitle>
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold" data-testid="stat-demos">{demos.length}</div>
+              <p className="text-xs text-muted-foreground">{demos.filter(d => d.status === "pending").length} pendentes</p>
             </CardContent>
           </Card>
           <Card>
@@ -285,6 +358,84 @@ export default function Admin() {
             )}
           </CardContent>
         </Card>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5" />
+                Contatos Recentes
+              </CardTitle>
+              <CardDescription>Mensagens recebidas pelo formulário de contato</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {contacts.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">Nenhum contato ainda.</div>
+              ) : (
+                <div className="space-y-4 max-h-80 overflow-y-auto">
+                  {contacts.slice(0, 10).map((contact) => (
+                    <div key={contact.id} className="p-4 border rounded-lg space-y-2" data-testid={`contact-row-${contact.id}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium">{contact.name}</div>
+                        <Badge variant={contact.status === "pending" ? "secondary" : contact.status === "replied" ? "default" : "outline"}>
+                          {contact.status === "pending" ? "Pendente" : contact.status === "replied" ? "Respondido" : contact.status}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {contact.email}</span>
+                        {contact.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {contact.phone}</span>}
+                      </div>
+                      <p className="text-sm">{contact.message}</p>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => updateContactStatusMutation.mutate({ id: contact.id, status: "replied" })}>
+                          <CheckCircle2 className="w-3 h-3 mr-1" /> Respondido
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="w-5 h-5" />
+                Demos Agendadas
+              </CardTitle>
+              <CardDescription>Solicitações de demonstração</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {demos.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">Nenhuma demo agendada.</div>
+              ) : (
+                <div className="space-y-4 max-h-80 overflow-y-auto">
+                  {demos.slice(0, 10).map((demo) => (
+                    <div key={demo.id} className="p-4 border rounded-lg space-y-2" data-testid={`demo-row-${demo.id}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="font-medium">{demo.name} - {demo.company}</div>
+                        <Badge variant={demo.status === "pending" ? "secondary" : demo.status === "scheduled" ? "default" : "outline"}>
+                          {demo.status === "pending" ? "Pendente" : demo.status === "scheduled" ? "Agendada" : demo.status}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {demo.email}</span>
+                        {demo.storeCount && <span>{demo.storeCount} lojas</span>}
+                      </div>
+                      {demo.preferredDate && <p className="text-sm text-muted-foreground">Preferência: {demo.preferredDate}</p>}
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => updateDemoStatusMutation.mutate({ id: demo.id, status: "scheduled" })}>
+                          <CheckCircle2 className="w-3 h-3 mr-1" /> Agendar
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent className="max-w-lg">
