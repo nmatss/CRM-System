@@ -284,9 +284,22 @@ export async function registerRoutes(
   app.get("/api/admin/users", requireSuperAdmin, async (req: Request, res: Response) => {
     try {
       const users = await storage.getUsers();
-      const usersWithoutPassword = users.map(({ password, ...user }) => user);
-      res.json(usersWithoutPassword);
+      const tenants = await storage.getTenants();
+      
+      const usersWithTenants = await Promise.all(users.map(async ({ password, ...user }) => {
+        const userTenants = await storage.getUserTenants(user.id);
+        return {
+          ...user,
+          tenantUsers: userTenants.map(tu => ({
+            ...tu,
+            tenant: tenants.find(t => t.id === tu.tenantId)
+          }))
+        };
+      }));
+      
+      res.json(usersWithTenants);
     } catch (error) {
+      console.error("Error fetching users:", error);
       res.status(500).json({ error: "Erro ao buscar usuários" });
     }
   });
