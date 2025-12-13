@@ -50,11 +50,11 @@ const integrations = [
     features: ["Sincronização de vendas", "Gestão de estoque", "Cadastro de clientes", "Pedidos automáticos"]
   },
   {
-    name: "Cigam",
-    logo: "C",
+    name: "Zippi CRM",
+    logo: "Z",
     color: "from-green-600 to-green-800",
-    description: "Conecte seu sistema Cigam e tenha controle total sobre operações fiscais e financeiras.",
-    features: ["Notas fiscais", "Controle financeiro", "Relatórios gerenciais", "Fluxo de caixa"]
+    description: "Integração completa com Zippi CRM para gestão de relacionamento e vendas.",
+    features: ["Gestão de leads", "Pipeline de vendas", "Automação de marketing", "Relatórios avançados"]
   },
   {
     name: "LinxPOS",
