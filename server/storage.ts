@@ -40,7 +40,10 @@ export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
+  deleteUser(id: string): Promise<boolean>;
   
   // Tenants
   getTenants(): Promise<Tenant[]>;
@@ -55,6 +58,8 @@ export interface IStorage {
   getTenantUser(tenantId: number, userId: string): Promise<TenantUser | undefined>;
   createTenantUser(tenantUser: InsertTenantUser): Promise<TenantUser>;
   updateTenantUserRole(tenantId: number, userId: string, role: string): Promise<TenantUser | undefined>;
+  deleteTenantUser(tenantId: number, userId: string): Promise<boolean>;
+  deleteTenant(id: number): Promise<boolean>;
   
   // Customers (tenant-scoped)
   getCustomers(tenantId: number): Promise<Customer[]>;
@@ -114,6 +119,20 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async getUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
+  async updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined> {
+    const result = await db.update(users).set(data).where(eq(users.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const result = await db.delete(users).where(eq(users.id, id)).returning();
+    return result.length > 0;
+  }
+
   // ==================== TENANTS ====================
   async getTenants(): Promise<Tenant[]> {
     return await db.select().from(tenants);
@@ -165,6 +184,18 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.userId, userId)))
       .returning();
     return result[0];
+  }
+
+  async deleteTenantUser(tenantId: number, userId: string): Promise<boolean> {
+    const result = await db.delete(tenantUsers)
+      .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.userId, userId)))
+      .returning();
+    return result.length > 0;
+  }
+
+  async deleteTenant(id: number): Promise<boolean> {
+    const result = await db.delete(tenants).where(eq(tenants.id, id)).returning();
+    return result.length > 0;
   }
 
   // ==================== CUSTOMERS ====================
