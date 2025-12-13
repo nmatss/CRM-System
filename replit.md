@@ -82,3 +82,11 @@ The system manages these core entities:
 - **Vite**: Frontend bundler with React plugin
 - **esbuild**: Server bundling for production
 - **tsx**: TypeScript execution for development
+
+## Documentation
+
+- **Database Schema**: See `docs/DATABASE.md` for complete database documentation including:
+  - Table definitions and relationships
+  - ERD diagram
+  - Data import API specifications (future)
+  - Multi-tenant architecture details
