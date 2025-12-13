@@ -43,9 +43,11 @@ export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByCpf(cpf: string): Promise<User | undefined>;
   getUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
+  updateUserPassword(id: string, hashedPassword: string): Promise<User | undefined>;
   deleteUser(id: string): Promise<boolean>;
   
   // Tenants
@@ -134,6 +136,11 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async getUserByCpf(cpf: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.cpf, cpf));
+    return result[0];
+  }
+
   async createUser(user: InsertUser): Promise<User> {
     const result = await db.insert(users).values(user).returning();
     return result[0];
@@ -145,6 +152,18 @@ export class DatabaseStorage implements IStorage {
 
   async updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined> {
     const result = await db.update(users).set(data).where(eq(users.id, id)).returning();
+    return result[0];
+  }
+
+  async updateUserPassword(id: string, hashedPassword: string): Promise<User | undefined> {
+    const result = await db.update(users)
+      .set({ 
+        password: hashedPassword, 
+        mustChangePassword: false,
+        lastPasswordChange: new Date()
+      })
+      .where(eq(users.id, id))
+      .returning();
     return result[0];
   }
 

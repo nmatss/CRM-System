@@ -344,7 +344,7 @@ export default function Admin() {
       updateUserMutation.mutate({
         userId: editingUser.id,
         name: editingUser.name || undefined,
-        email: editingUser.email,
+        email: editingUser.email || undefined,
         password: editUserPassword || undefined,
         isSuperAdmin: editingUser.isSuperAdmin,
       });
@@ -1274,7 +1274,7 @@ export default function Admin() {
                   <Label>Email</Label>
                   <Input
                     type="email"
-                    value={editingUser.email}
+                    value={editingUser.email || ""}
                     onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
                     data-testid="input-edit-user-email"
                   />

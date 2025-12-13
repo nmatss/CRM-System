@@ -41,16 +41,26 @@ export async function registerRoutes(
   // ==================== AUTH ROUTES ====================
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
-      const { email, password } = loginSchema.parse(req.body);
+      const { username, password } = loginSchema.parse(req.body);
       
-      const user = await storage.getUserByEmail(email);
+      // Try to find user by CPF first (cleaned), then by email
+      const cleanedCpf = username.replace(/\D/g, '');
+      let user = await storage.getUserByCpf(cleanedCpf);
       if (!user) {
-        return res.status(401).json({ error: "Email ou senha inválidos" });
+        user = await storage.getUserByEmail(username);
+      }
+      
+      if (!user) {
+        return res.status(401).json({ error: "Usuário ou senha inválidos" });
+      }
+      
+      if (user.status !== "active") {
+        return res.status(401).json({ error: "Usuário inativo. Entre em contato com o administrador." });
       }
       
       const isValid = await comparePassword(password, user.password);
       if (!isValid) {
-        return res.status(401).json({ error: "Email ou senha inválidos" });
+        return res.status(401).json({ error: "Usuário ou senha inválidos" });
       }
       
       let tenantId: number | undefined;
@@ -58,17 +68,23 @@ export async function registerRoutes(
       
       if (!user.isSuperAdmin) {
         const userTenants = await storage.getUserTenants(user.id);
-        if (userTenants.length > 0) {
-          tenantId = userTenants[0].tenantId;
-          role = userTenants[0].role;
+        const activeTenant = userTenants.find(tu => tu.isActive);
+        if (activeTenant) {
+          tenantId = activeTenant.tenantId;
+          role = activeTenant.role;
         }
       }
+      
+      // Update last login
+      await storage.updateUser(user.id, { lastLogin: new Date() } as any);
       
       req.session.user = {
         id: user.id,
         email: user.email,
+        cpf: user.cpf,
         name: user.name,
         isSuperAdmin: user.isSuperAdmin,
+        mustChangePassword: user.mustChangePassword,
         tenantId,
         role: role as any,
       };
@@ -138,8 +154,10 @@ export async function registerRoutes(
       req.session.user = {
         id: user.id,
         email: user.email,
+        cpf: user.cpf,
         name: user.name,
         isSuperAdmin: false,
+        mustChangePassword: false,
         tenantId,
         role: role as any,
       };
@@ -150,6 +168,44 @@ export async function registerRoutes(
       });
     } catch (error) {
       res.status(400).json({ error: "Dados de registro inválidos" });
+    }
+  });
+
+  // Change password route
+  app.post("/api/auth/change-password", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { currentPassword, newPassword, confirmPassword } = req.body;
+      
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        return res.status(400).json({ error: "Todos os campos são obrigatórios" });
+      }
+      
+      if (newPassword !== confirmPassword) {
+        return res.status(400).json({ error: "As senhas não conferem" });
+      }
+      
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres" });
+      }
+      
+      const user = await storage.getUser(req.session.user!.id);
+      if (!user) {
+        return res.status(404).json({ error: "Usuário não encontrado" });
+      }
+      
+      const isValid = await comparePassword(currentPassword, user.password);
+      if (!isValid) {
+        return res.status(401).json({ error: "Senha atual incorreta" });
+      }
+      
+      const hashedPassword = await hashPassword(newPassword);
+      await storage.updateUserPassword(user.id, hashedPassword);
+      
+      req.session.user!.mustChangePassword = false;
+      
+      res.json({ message: "Senha alterada com sucesso" });
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao alterar senha" });
     }
   });
 
