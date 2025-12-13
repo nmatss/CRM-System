@@ -18,20 +18,22 @@ import zippiLogo from "@assets/generated_images/zippi_crm_modern_logo.png";
 import { Header } from "./Header";
 
 const adminNavigation = [
-  { name: "Dashboard", href: "/zippi-sistema-x7k9", icon: LayoutDashboard },
-  { name: "Empresas", href: "/zippi-sistema-x7k9?tab=empresas", icon: Building2 },
-  { name: "Usuários", href: "/zippi-sistema-x7k9?tab=usuarios", icon: Users },
-  { name: "Relatórios Gerais", href: "/zippi-sistema-x7k9?tab=relatorios", icon: BarChart3 },
-  { name: "Contatos", href: "/zippi-sistema-x7k9?tab=contatos", icon: FileText },
-  { name: "Demos", href: "/zippi-sistema-x7k9?tab=demos", icon: PieChart },
+  { name: "Dashboard", tab: "dashboard", icon: LayoutDashboard },
+  { name: "Empresas", tab: "empresas", icon: Building2 },
+  { name: "Usuários", tab: "usuarios", icon: Users },
+  { name: "Relatórios Gerais", tab: "relatorios", icon: BarChart3 },
+  { name: "Contatos", tab: "contatos", icon: FileText },
+  { name: "Demos", tab: "demos", icon: PieChart },
 ];
 
 interface AdminSidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
+  activeTab?: string;
+  onTabChange?: (tab: string) => void;
 }
 
-function AdminSidebar({ isOpen = true, onClose }: AdminSidebarProps) {
+function AdminSidebar({ isOpen = true, onClose, activeTab = "dashboard", onTabChange }: AdminSidebarProps) {
   const [location, setLocation] = useLocation();
   const { logout, isLoggingOut } = useAuth();
   const { toast } = useToast();
@@ -46,7 +48,10 @@ function AdminSidebar({ isOpen = true, onClose }: AdminSidebarProps) {
     }
   };
 
-  const handleLinkClick = () => {
+  const handleNavClick = (tab: string) => {
+    if (onTabChange) {
+      onTabChange(tab);
+    }
     if (onClose) {
       onClose();
     }
@@ -92,15 +97,13 @@ function AdminSidebar({ isOpen = true, onClose }: AdminSidebarProps) {
               Painel Super Admin
             </div>
             {adminNavigation.map((item) => {
-              const isActive = location === item.href || 
-                (item.href === "/zippi-sistema-x7k9" && location === "/zippi-sistema-x7k9" && !location.includes("?"));
+              const isActive = activeTab === item.tab;
               return (
-                <Link 
+                <button 
                   key={item.name} 
-                  href={item.href}
-                  onClick={handleLinkClick}
+                  onClick={() => handleNavClick(item.tab)}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
+                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all w-full text-left",
                     isActive
                       ? "bg-gradient-to-r from-yellow-500/20 to-orange-600/20 text-yellow-400 border-l-2 border-yellow-400"
                       : "text-gray-400 hover:bg-white/5 hover:text-white"
@@ -109,7 +112,7 @@ function AdminSidebar({ isOpen = true, onClose }: AdminSidebarProps) {
                 >
                   <item.icon className={cn("h-4 w-4", isActive && "text-yellow-400")} />
                   {item.name}
-                </Link>
+                </button>
               );
             })}
           </nav>
@@ -143,16 +146,20 @@ function AdminSidebar({ isOpen = true, onClose }: AdminSidebarProps) {
 
 interface AdminLayoutProps {
   children: React.ReactNode;
+  activeTab?: string;
+  onTabChange?: (tab: string) => void;
 }
 
-export function AdminLayout({ children }: AdminLayoutProps) {
+export function AdminLayout({ children, activeTab = "dashboard", onTabChange }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <AdminSidebar 
         isOpen={sidebarOpen} 
-        onClose={() => setSidebarOpen(false)} 
+        onClose={() => setSidebarOpen(false)}
+        activeTab={activeTab}
+        onTabChange={onTabChange}
       />
       <div className="flex flex-1 flex-col overflow-hidden lg:ml-0">
         <Header onMenuClick={() => setSidebarOpen(true)} />
