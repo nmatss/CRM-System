@@ -1,0 +1,33 @@
+Atue como um Especialista Sênior em Frontend e UX/UI.
+
+Estou construindo o "Moda CRM" (um CRM de varejo). Preciso que você crie a página de "Clienteling" (pode renomear para "Agenda do Vendedor"). O objetivo desta tela é ser um "Centro de Comando" onde o vendedor sabe exatamente quem contatar hoje via WhatsApp para vender mais.
+
+Aqui estão os requisitos detalhados para o código:
+
+1. ESTILO E LAYOUT:
+- Mantenha a consistência visual com o restante do Dashboard (use Tailwind CSS).
+- O layout deve ser focado em "Cards de Tarefas", estilo Kanban ou Feed, muito fácil de ler em Mobile e Desktop.
+
+2. FUNCIONALIDADES PRINCIPAIS (Agenda Inteligente):
+- No topo, mostre um resumo do dia: "Sua Meta Hoje: 3/10 contatos realizados" (com uma barra de progresso visual).
+- Crie uma lista de cards. Cada card é um cliente que precisa ser contatado.
+
+3. ESTRUTURA DO CARD DO CLIENTE:
+- Avatar e Nome do Cliente.
+- Badges/Etiquetas coloridas indicando o MOTIVO do contato (Ex: "Aniversariante", "Carrinho Abandonado", "Recompra Sugerida", "Cliente VIP Sumido").
+- Dados Rápidos: Mostre "Última Compra" (ex: Vestido Floral, há 30 dias) e "LTV" (Total gasto na vida).
+- AÇÃO PRINCIPAL 1: Um botão "Ver Script". Ao clicar, expande uma caixa com uma sugestão de texto pronta e personalizada para aquele motivo. Ex: "Oi [Nome], vi que faz 30 dias que levou o vestido..."
+- AÇÃO PRINCIPAL 2: Um botão "Chamar no WhatsApp". Este botão deve usar o protocolo `window.open` com a URL `https://wa.me/` enviando o telefone e o texto do script já preenchido. (Isso reduz custo pois não usa API paga).
+- AÇÃO DE CONCLUSÃO: Um botão "Marcar como Feito" que remove o card da lista com uma animação de sucesso (feedback visual).
+
+4. DADOS MOCK (SIMULADOS):
+Crie um array `const tarefasDoDia` com dados falsos para popular a tela, contendo pelo menos 3 cenários diferentes:
+- Cenário A: Recuperação de Carrinho (Texto focado em urgência/desconto).
+- Cenário B: Aniversário (Texto focado em presente/mimo).
+- Cenário C: Pós-Venda (Texto focado em satisfação do produto).
+
+5. BIBLIOTECAS:
+- Use 'lucide-react' para ícones (MessageCircle, Phone, Check, Copy).
+- Use componentes funcionais React.
+
+Por favor, gere o código completo desta página para substituir a tela atual de Clienteling.

@@ -10,11 +10,13 @@ import {
   Shirt,
   MessageSquare,
   Zap,
-  Ticket
+  Ticket,
+  Calendar
 } from "lucide-react";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "Agenda do Vendedor", href: "/agenda", icon: Calendar },
   { name: "Clientes (360°)", href: "/customers", icon: Users },
   { name: "Cashback & Fidelidade", href: "/cashback", icon: Ticket },
   { name: "Campanhas", href: "/campaigns", icon: MessageSquare },
@@ -43,7 +45,7 @@ export function Sidebar() {
           <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
             Crescimento & Retenção
           </div>
-          {navigation.slice(0, 5).map((item) => {
+          {navigation.slice(0, 6).map((item) => {
             const isActive = location === item.href;
             return (
               <Link 
@@ -65,7 +67,7 @@ export function Sidebar() {
           <div className="mt-6 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
             Operacional
           </div>
-          {navigation.slice(5).map((item) => {
+          {navigation.slice(6).map((item) => {
             const isActive = location === item.href;
             return (
               <Link 
