@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import Login from "@/pages/Login";
 import Admin from "@/pages/Admin";
+import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import Customers from "@/pages/Customers";
 import AgendaVendedor from "@/pages/AgendaVendedor";
@@ -30,7 +31,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   }
 
   if (!isAuthenticated) {
-    return <Redirect to="/login" />;
+    return <Redirect to="/" />;
   }
 
   return <Component />;
@@ -49,10 +50,13 @@ function Router() {
 
   return (
     <Switch>
-      <Route path="/login">
-        {isAuthenticated ? <Redirect to="/" /> : <Login />}
-      </Route>
       <Route path="/">
+        {isAuthenticated ? <Redirect to="/dashboard" /> : <Landing />}
+      </Route>
+      <Route path="/login">
+        {isAuthenticated ? <Redirect to="/dashboard" /> : <Login />}
+      </Route>
+      <Route path="/dashboard">
         <ProtectedRoute component={Dashboard} />
       </Route>
       <Route path="/admin">

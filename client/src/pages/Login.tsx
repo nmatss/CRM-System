@@ -27,7 +27,7 @@ export default function Login() {
     try {
       await login(loginForm);
       toast({ title: "Bem-vindo de volta!", description: "Login realizado com sucesso." });
-      setLocation("/");
+      setLocation("/dashboard");
     } catch (error: any) {
       toast({ title: "Erro no login", description: error.message, variant: "destructive" });
     }
@@ -41,7 +41,7 @@ export default function Login() {
         tenantName: registerForm.tenantName || undefined,
       });
       toast({ title: "Conta criada!", description: "Bem-vindo ao Moda CRM." });
-      setLocation("/");
+      setLocation("/dashboard");
     } catch (error: any) {
       toast({ title: "Erro no cadastro", description: error.message, variant: "destructive" });
     }
