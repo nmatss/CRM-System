@@ -180,6 +180,47 @@ export const insertAutomationSchema = createInsertSchema(automations).omit({
 export type InsertAutomation = z.infer<typeof insertAutomationSchema>;
 export type Automation = typeof automations.$inferSelect;
 
+// ==================== CONTACT REQUESTS ====================
+export const contactRequests = pgTable("contact_requests", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone"),
+  message: text("message").notNull(),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertContactRequestSchema = createInsertSchema(contactRequests).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertContactRequest = z.infer<typeof insertContactRequestSchema>;
+export type ContactRequest = typeof contactRequests.$inferSelect;
+
+// ==================== DEMO REQUESTS ====================
+export const demoRequests = pgTable("demo_requests", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone"),
+  company: text("company").notNull(),
+  storeCount: text("store_count"),
+  preferredDate: text("preferred_date"),
+  message: text("message"),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertDemoRequestSchema = createInsertSchema(demoRequests).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDemoRequest = z.infer<typeof insertDemoRequestSchema>;
+export type DemoRequest = typeof demoRequests.$inferSelect;
+
 // ==================== AUTH SCHEMAS ====================
 export const loginSchema = z.object({
   email: z.string().email(),

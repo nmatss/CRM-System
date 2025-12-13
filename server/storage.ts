@@ -17,6 +17,10 @@ import {
   type InsertCampaign,
   type Automation,
   type InsertAutomation,
+  type ContactRequest,
+  type InsertContactRequest,
+  type DemoRequest,
+  type InsertDemoRequest,
   users,
   tenants,
   tenantUsers,
@@ -25,10 +29,12 @@ import {
   orders,
   cashbackRules,
   campaigns,
-  automations
+  automations,
+  contactRequests,
+  demoRequests
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -79,6 +85,16 @@ export interface IStorage {
   getAutomations(tenantId: number): Promise<Automation[]>;
   getAutomation(tenantId: number, id: number): Promise<Automation | undefined>;
   createAutomation(automation: InsertAutomation): Promise<Automation>;
+
+  // Contact Requests (global)
+  getContactRequests(): Promise<ContactRequest[]>;
+  createContactRequest(request: InsertContactRequest): Promise<ContactRequest>;
+  updateContactRequestStatus(id: number, status: string): Promise<ContactRequest | undefined>;
+
+  // Demo Requests (global)
+  getDemoRequests(): Promise<DemoRequest[]>;
+  createDemoRequest(request: InsertDemoRequest): Promise<DemoRequest>;
+  updateDemoRequestStatus(id: number, status: string): Promise<DemoRequest | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -244,6 +260,36 @@ export class DatabaseStorage implements IStorage {
 
   async createAutomation(automation: InsertAutomation): Promise<Automation> {
     const result = await db.insert(automations).values(automation).returning();
+    return result[0];
+  }
+
+  // ==================== CONTACT REQUESTS ====================
+  async getContactRequests(): Promise<ContactRequest[]> {
+    return await db.select().from(contactRequests).orderBy(desc(contactRequests.createdAt));
+  }
+
+  async createContactRequest(request: InsertContactRequest): Promise<ContactRequest> {
+    const result = await db.insert(contactRequests).values(request).returning();
+    return result[0];
+  }
+
+  async updateContactRequestStatus(id: number, status: string): Promise<ContactRequest | undefined> {
+    const result = await db.update(contactRequests).set({ status }).where(eq(contactRequests.id, id)).returning();
+    return result[0];
+  }
+
+  // ==================== DEMO REQUESTS ====================
+  async getDemoRequests(): Promise<DemoRequest[]> {
+    return await db.select().from(demoRequests).orderBy(desc(demoRequests.createdAt));
+  }
+
+  async createDemoRequest(request: InsertDemoRequest): Promise<DemoRequest> {
+    const result = await db.insert(demoRequests).values(request).returning();
+    return result[0];
+  }
+
+  async updateDemoRequestStatus(id: number, status: string): Promise<DemoRequest | undefined> {
+    const result = await db.update(demoRequests).set({ status }).where(eq(demoRequests.id, id)).returning();
     return result[0];
   }
 }
