@@ -939,6 +939,48 @@ export async function registerRoutes(
     }
   });
 
+  app.put("/api/cashback-rules/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const id = parseInt(req.params.id);
+      
+      const updateSchema = insertCashbackRuleSchema.partial().omit({ tenantId: true });
+      const validatedData = updateSchema.parse(req.body);
+      
+      if (Object.keys(validatedData).length === 0) {
+        return res.status(400).json({ error: "Nenhum campo para atualizar" });
+      }
+      
+      const updated = await storage.updateCashbackRule(tenantId, id, validatedData);
+      if (!updated) {
+        return res.status(404).json({ error: "Regra não encontrada" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao atualizar regra de cashback" });
+    }
+  });
+
+  app.delete("/api/cashback-rules/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteCashbackRule(tenantId, id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Regra não encontrada" });
+      }
+      res.json({ message: "Regra excluída com sucesso" });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao excluir regra de cashback" });
+    }
+  });
+
   app.get("/api/campaigns", requireAuth, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);

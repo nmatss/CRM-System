@@ -91,6 +91,8 @@ export interface IStorage {
   getCashbackRules(tenantId: number): Promise<CashbackRule[]>;
   getCashbackRule(tenantId: number, id: number): Promise<CashbackRule | undefined>;
   createCashbackRule(rule: InsertCashbackRule): Promise<CashbackRule>;
+  updateCashbackRule(tenantId: number, id: number, data: Partial<InsertCashbackRule>): Promise<CashbackRule | undefined>;
+  deleteCashbackRule(tenantId: number, id: number): Promise<boolean>;
 
   // Campaigns (tenant-scoped)
   getCampaigns(tenantId: number): Promise<Campaign[]>;
@@ -348,6 +350,21 @@ export class DatabaseStorage implements IStorage {
   async createCashbackRule(rule: InsertCashbackRule): Promise<CashbackRule> {
     const result = await db.insert(cashbackRules).values(rule).returning();
     return result[0];
+  }
+
+  async updateCashbackRule(tenantId: number, id: number, data: Partial<InsertCashbackRule>): Promise<CashbackRule | undefined> {
+    const result = await db.update(cashbackRules)
+      .set(data)
+      .where(and(eq(cashbackRules.tenantId, tenantId), eq(cashbackRules.id, id)))
+      .returning();
+    return result[0];
+  }
+
+  async deleteCashbackRule(tenantId: number, id: number): Promise<boolean> {
+    const result = await db.delete(cashbackRules)
+      .where(and(eq(cashbackRules.tenantId, tenantId), eq(cashbackRules.id, id)))
+      .returning();
+    return result.length > 0;
   }
 
   // ==================== CAMPAIGNS ====================
