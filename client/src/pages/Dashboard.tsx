@@ -7,12 +7,12 @@ import {
   DollarSign, 
   Users, 
   ShoppingBag, 
-  Tags,
-  MoreHorizontal
+  Tags
 } from "lucide-react";
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar } from "recharts";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useState, useEffect } from "react";
+import type { Order } from "@shared/schema";
 
 const stats = [
   {
@@ -45,7 +45,7 @@ const stats = [
   },
 ];
 
-const data = [
+const chartData = [
   { name: "Seg", total: 4200 },
   { name: "Ter", total: 3100 },
   { name: "Qua", total: 5800 },
@@ -55,45 +55,27 @@ const data = [
   { name: "Dom", total: 9500 },
 ];
 
-const recentSales = [
-  {
-    name: "Ana Silva",
-    email: "ana.silva@email.com",
-    item: "Vestido Floral Verão",
-    amount: "R$ 299,00",
-    avatar: "AS",
-  },
-  {
-    name: "Juliana Costa",
-    email: "ju.costa@email.com",
-    item: "Bolsa Transversal Couro",
-    amount: "R$ 450,00",
-    avatar: "JC",
-  },
-  {
-    name: "Mariana Santos",
-    email: "mari.santos@email.com",
-    item: "Jaqueta Jeans Vintage",
-    amount: "R$ 380,00",
-    avatar: "MS",
-  },
-  {
-    name: "Carolina Oliveira",
-    email: "carol.oli@email.com",
-    item: "Lenço de Seda Estampado",
-    amount: "R$ 120,00",
-    avatar: "CO",
-  },
-  {
-    name: "Fernanda Lima",
-    email: "fe.lima@email.com",
-    item: "Calça de Linho Bege",
-    amount: "R$ 259,00",
-    avatar: "FL",
-  },
-];
-
 export default function Dashboard() {
+  const [recentOrders, setRecentOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchRecentOrders() {
+      try {
+        const response = await fetch("/api/orders");
+        if (response.ok) {
+          const data = await response.json();
+          setRecentOrders(data.slice(0, 5));
+        }
+      } catch (error) {
+        console.error("Failed to fetch orders:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchRecentOrders();
+  }, []);
+
   return (
     <Layout>
       <div className="flex flex-col gap-6">
@@ -103,14 +85,14 @@ export default function Dashboard() {
             <p className="text-muted-foreground">Performance da Coleção Primavera 2025</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">Baixar Relatório</Button>
-            <Button size="sm">Novo Pedido</Button>
+            <Button variant="outline" size="sm" data-testid="button-download-report">Baixar Relatório</Button>
+            <Button size="sm" data-testid="button-dashboard-new-order">Novo Pedido</Button>
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {stats.map((stat, index) => (
-            <Card key={index}>
+            <Card key={index} data-testid={`card-stat-${index}`}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
                   {stat.title}
@@ -118,7 +100,7 @@ export default function Dashboard() {
                 <stat.icon className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
+                <div className="text-2xl font-bold" data-testid={`text-stat-value-${index}`}>{stat.value}</div>
                 <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                   {stat.trend === "up" ? (
                     <ArrowUpRight className="h-3 w-3 text-emerald-500" />
@@ -142,7 +124,7 @@ export default function Dashboard() {
             <CardContent className="pl-2">
               <div className="h-[350px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data}>
+                  <BarChart data={chartData}>
                     <XAxis 
                       dataKey="name" 
                       stroke="#888888" 
@@ -184,22 +166,32 @@ export default function Dashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-8">
-                {recentSales.map((sale, index) => (
-                  <div key={index} className="flex items-center">
-                    <Avatar className="h-9 w-9">
-                      <AvatarFallback>{sale.avatar}</AvatarFallback>
-                    </Avatar>
-                    <div className="ml-4 space-y-1">
-                      <p className="text-sm font-medium leading-none">{sale.name}</p>
-                      <p className="text-sm text-muted-foreground truncate w-[140px]">
-                        {sale.item}
-                      </p>
+              {loading ? (
+                <div className="flex items-center justify-center h-32">
+                  <p className="text-muted-foreground">Carregando...</p>
+                </div>
+              ) : recentOrders.length === 0 ? (
+                <div className="flex items-center justify-center h-32">
+                  <p className="text-muted-foreground">Nenhuma venda recente.</p>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {recentOrders.map((order, index) => (
+                    <div key={order.id} className="flex items-center" data-testid={`row-recent-sale-${index}`}>
+                      <Avatar className="h-9 w-9">
+                        <AvatarFallback>{order.customer.split(' ').map(n => n[0]).join('').slice(0, 2)}</AvatarFallback>
+                      </Avatar>
+                      <div className="ml-4 space-y-1">
+                        <p className="text-sm font-medium leading-none" data-testid={`text-customer-name-${index}`}>{order.customer}</p>
+                        <p className="text-sm text-muted-foreground truncate w-[140px]" data-testid={`text-order-date-${index}`}>
+                          {order.date}
+                        </p>
+                      </div>
+                      <div className="ml-auto font-medium" data-testid={`text-order-total-${index}`}>{order.total}</div>
                     </div>
-                    <div className="ml-auto font-medium">{sale.amount}</div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
