@@ -9,6 +9,8 @@ import {
   insertCampaignSchema,
   insertAutomationSchema,
   insertTenantSchema,
+  insertContactRequestSchema,
+  insertDemoRequestSchema,
   loginSchema,
   registerSchema,
 } from "@shared/schema";
@@ -448,6 +450,74 @@ export async function registerRoutes(
       }
     } catch (error) {
       res.status(500).json({ error: "Erro ao buscar tenants do usuário" });
+    }
+  });
+
+  // ==================== PUBLIC CONTACT/DEMO ROUTES ====================
+  app.post("/api/contact", async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertContactRequestSchema.parse(req.body);
+      const contactRequest = await storage.createContactRequest(validatedData);
+      res.status(201).json({ message: "Mensagem enviada com sucesso!", id: contactRequest.id });
+    } catch (error) {
+      res.status(400).json({ error: "Dados de contato inválidos" });
+    }
+  });
+
+  app.post("/api/demo", async (req: Request, res: Response) => {
+    try {
+      const validatedData = insertDemoRequestSchema.parse(req.body);
+      const demoRequest = await storage.createDemoRequest(validatedData);
+      res.status(201).json({ message: "Solicitação de demo enviada com sucesso!", id: demoRequest.id });
+    } catch (error) {
+      res.status(400).json({ error: "Dados da solicitação inválidos" });
+    }
+  });
+
+  // ==================== ADMIN CONTACT/DEMO ROUTES ====================
+  app.get("/api/admin/contacts", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const contacts = await storage.getContactRequests();
+      res.json(contacts);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar contatos" });
+    }
+  });
+
+  app.put("/api/admin/contacts/:id/status", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { status } = req.body;
+      const updated = await storage.updateContactRequestStatus(id, status);
+      if (!updated) {
+        return res.status(404).json({ error: "Contato não encontrado" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao atualizar status" });
+    }
+  });
+
+  app.get("/api/admin/demos", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const demos = await storage.getDemoRequests();
+      res.json(demos);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar demos" });
+    }
+  });
+
+  app.put("/api/admin/demos/:id/status", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { status } = req.body;
+      const updated = await storage.updateDemoRequestStatus(id, status);
+      if (!updated) {
+        return res.status(404).json({ error: "Demo não encontrada" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao atualizar status" });
     }
   });
 
