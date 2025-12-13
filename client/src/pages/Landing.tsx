@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import {
   Store,
@@ -30,7 +36,9 @@ import {
   Award,
   Globe,
   Clock,
-  HeartHandshake
+  HeartHandshake,
+  Loader2,
+  Send
 } from "lucide-react";
 import zippiLogo from "@assets/generated_images/zippi_crm_modern_logo.png";
 
@@ -174,6 +182,61 @@ const testimonials = [
 
 export default function Landing() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const [isContactOpen, setIsContactOpen] = useState(false);
+  const [isDemoOpen, setIsDemoOpen] = useState(false);
+  const [contactForm, setContactForm] = useState({ name: "", email: "", phone: "", message: "" });
+  const [demoForm, setDemoForm] = useState({ name: "", email: "", phone: "", company: "", storeCount: "", preferredDate: "", message: "" });
+
+  const contactMutation = useMutation({
+    mutationFn: async (data: typeof contactForm) => {
+      const response = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Erro ao enviar mensagem");
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Mensagem enviada!", description: "Entraremos em contato em breve." });
+      setIsContactOpen(false);
+      setContactForm({ name: "", email: "", phone: "", message: "" });
+    },
+    onError: () => {
+      toast({ title: "Erro", description: "Não foi possível enviar sua mensagem.", variant: "destructive" });
+    },
+  });
+
+  const demoMutation = useMutation({
+    mutationFn: async (data: typeof demoForm) => {
+      const response = await fetch("/api/demo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Erro ao agendar demo");
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Demo agendada!", description: "Nossa equipe entrará em contato para confirmar." });
+      setIsDemoOpen(false);
+      setDemoForm({ name: "", email: "", phone: "", company: "", storeCount: "", preferredDate: "", message: "" });
+    },
+    onError: () => {
+      toast({ title: "Erro", description: "Não foi possível agendar sua demo.", variant: "destructive" });
+    },
+  });
+
+  const handleContactSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    contactMutation.mutate(contactForm);
+  };
+
+  const handleDemoSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    demoMutation.mutate(demoForm);
+  };
 
   return (
     <div className="min-h-screen bg-[#050A1A] text-white">
@@ -199,6 +262,7 @@ export default function Landing() {
                 variant="ghost"
                 className="text-gray-300 hover:text-white hover:bg-white/10"
                 data-testid="button-header-contact"
+                onClick={() => setIsContactOpen(true)}
               >
                 <Phone className="w-4 h-4 mr-2" />
                 Contato
@@ -206,6 +270,7 @@ export default function Landing() {
               <Button 
                 className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 shadow-lg shadow-cyan-500/25"
                 data-testid="button-header-demo"
+                onClick={() => setIsDemoOpen(true)}
               >
                 Agendar Demo
               </Button>
@@ -245,6 +310,7 @@ export default function Landing() {
                 size="lg" 
                 className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-lg px-8 shadow-xl shadow-cyan-500/25"
                 data-testid="button-hero-demo"
+                onClick={() => setIsDemoOpen(true)}
               >
                 <Rocket className="w-5 h-5 mr-2" />
                 Começar Agora
@@ -254,6 +320,7 @@ export default function Landing() {
                 variant="outline" 
                 className="text-lg px-8 border-gray-700 text-gray-300 hover:bg-white/5 hover:border-gray-600"
                 data-testid="button-hero-contact"
+                onClick={() => setIsContactOpen(true)}
               >
                 <Phone className="w-5 h-5 mr-2" />
                 Falar com Especialista
@@ -605,6 +672,7 @@ export default function Landing() {
                 size="lg" 
                 className="bg-white text-gray-900 hover:bg-gray-100 text-lg px-8 shadow-xl"
                 data-testid="button-cta-demo"
+                onClick={() => setIsDemoOpen(true)}
               >
                 <Rocket className="w-5 h-5 mr-2" />
                 Agendar Demonstração Gratuita
@@ -614,6 +682,7 @@ export default function Landing() {
                 variant="outline"
                 className="border-white/30 text-white hover:bg-white/10 text-lg px-8"
                 data-testid="button-cta-contact"
+                onClick={() => setIsContactOpen(true)}
               >
                 <HeartHandshake className="w-5 h-5 mr-2" />
                 Falar com Consultor
@@ -659,6 +728,191 @@ export default function Landing() {
           </div>
         </div>
       </footer>
+
+      <Dialog open={isContactOpen} onOpenChange={setIsContactOpen}>
+        <DialogContent className="bg-[#0F172A] border-white/10 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Entre em Contato</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Preencha o formulário e nossa equipe entrará em contato.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleContactSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="contact-name">Nome *</Label>
+              <Input
+                id="contact-name"
+                value={contactForm.name}
+                onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
+                placeholder="Seu nome"
+                required
+                className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                data-testid="input-contact-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contact-email">Email *</Label>
+              <Input
+                id="contact-email"
+                type="email"
+                value={contactForm.email}
+                onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
+                placeholder="seu@email.com"
+                required
+                className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                data-testid="input-contact-email"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contact-phone">Telefone</Label>
+              <Input
+                id="contact-phone"
+                value={contactForm.phone}
+                onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
+                placeholder="(11) 99999-9999"
+                className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                data-testid="input-contact-phone"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contact-message">Mensagem *</Label>
+              <Textarea
+                id="contact-message"
+                value={contactForm.message}
+                onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
+                placeholder="Como podemos ajudar?"
+                required
+                rows={4}
+                className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                data-testid="input-contact-message"
+              />
+            </div>
+            <Button
+              type="submit"
+              className="w-full bg-gradient-to-r from-cyan-500 to-blue-600"
+              disabled={contactMutation.isPending}
+              data-testid="button-submit-contact"
+            >
+              {contactMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Enviando...</>
+              ) : (
+                <><Send className="w-4 h-4 mr-2" /> Enviar Mensagem</>
+              )}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDemoOpen} onOpenChange={setIsDemoOpen}>
+        <DialogContent className="bg-[#0F172A] border-white/10 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Agendar Demonstração</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Veja o Zippi CRM em ação. Agende uma demo personalizada.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleDemoSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="demo-name">Nome *</Label>
+                <Input
+                  id="demo-name"
+                  value={demoForm.name}
+                  onChange={(e) => setDemoForm({ ...demoForm, name: e.target.value })}
+                  placeholder="Seu nome"
+                  required
+                  className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                  data-testid="input-demo-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="demo-phone">Telefone</Label>
+                <Input
+                  id="demo-phone"
+                  value={demoForm.phone}
+                  onChange={(e) => setDemoForm({ ...demoForm, phone: e.target.value })}
+                  placeholder="(11) 99999-9999"
+                  className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                  data-testid="input-demo-phone"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="demo-email">Email *</Label>
+              <Input
+                id="demo-email"
+                type="email"
+                value={demoForm.email}
+                onChange={(e) => setDemoForm({ ...demoForm, email: e.target.value })}
+                placeholder="seu@email.com"
+                required
+                className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                data-testid="input-demo-email"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="demo-company">Empresa *</Label>
+                <Input
+                  id="demo-company"
+                  value={demoForm.company}
+                  onChange={(e) => setDemoForm({ ...demoForm, company: e.target.value })}
+                  placeholder="Nome da loja"
+                  required
+                  className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                  data-testid="input-demo-company"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="demo-stores">Nº de Lojas</Label>
+                <Input
+                  id="demo-stores"
+                  value={demoForm.storeCount}
+                  onChange={(e) => setDemoForm({ ...demoForm, storeCount: e.target.value })}
+                  placeholder="Ex: 3"
+                  className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                  data-testid="input-demo-stores"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="demo-date">Data Preferencial</Label>
+              <Input
+                id="demo-date"
+                value={demoForm.preferredDate}
+                onChange={(e) => setDemoForm({ ...demoForm, preferredDate: e.target.value })}
+                placeholder="Ex: Próxima semana, manhã"
+                className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                data-testid="input-demo-date"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="demo-message">Observações</Label>
+              <Textarea
+                id="demo-message"
+                value={demoForm.message}
+                onChange={(e) => setDemoForm({ ...demoForm, message: e.target.value })}
+                placeholder="Algo específico que gostaria de ver?"
+                rows={2}
+                className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                data-testid="input-demo-message"
+              />
+            </div>
+            <Button
+              type="submit"
+              className="w-full bg-gradient-to-r from-cyan-500 to-blue-600"
+              disabled={demoMutation.isPending}
+              data-testid="button-submit-demo"
+            >
+              {demoMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Agendando...</>
+              ) : (
+                <><Calendar className="w-4 h-4 mr-2" /> Agendar Demo</>
+              )}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
