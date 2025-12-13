@@ -667,5 +667,15 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== ADMIN REPORTS/STATS ====================
+  app.get("/api/admin/tenant-stats", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const stats = await storage.getTenantStats();
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar estatísticas" });
+    }
+  });
+
   return httpServer;
 }

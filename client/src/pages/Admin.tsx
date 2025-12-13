@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Layout } from "@/components/layout/Layout";
+import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Building2, Plus, Users, Store, Crown, Pencil, Copy, ExternalLink, MessageSquare, Calendar, Mail, Phone, CheckCircle2, Trash2, UserPlus, Link } from "lucide-react";
+import { Building2, Plus, Users, Store, Crown, Pencil, Copy, ExternalLink, MessageSquare, Calendar, Mail, Phone, CheckCircle2, Trash2, UserPlus, Link, BarChart3, ShoppingCart, Package } from "lucide-react";
 import type { Tenant, ContactRequest, DemoRequest, User, TenantUser } from "@shared/schema";
 
 type UserWithoutPassword = Omit<User, "password">;
@@ -75,6 +75,25 @@ export default function Admin() {
     queryFn: async () => {
       const response = await fetch("/api/admin/demos");
       if (!response.ok) throw new Error("Failed to fetch demos");
+      return response.json();
+    },
+    enabled: isSuperAdmin,
+  });
+
+  interface TenantStats {
+    tenantId: number;
+    tenantName: string;
+    usersCount: number;
+    customersCount: number;
+    ordersCount: number;
+    productsCount: number;
+  }
+
+  const { data: tenantStats = [] } = useQuery<TenantStats[]>({
+    queryKey: ["admin", "tenant-stats"],
+    queryFn: async () => {
+      const response = await fetch("/api/admin/tenant-stats");
+      if (!response.ok) throw new Error("Failed to fetch tenant stats");
       return response.json();
     },
     enabled: isSuperAdmin,
@@ -368,7 +387,7 @@ export default function Admin() {
 
   if (!isSuperAdmin) {
     return (
-      <Layout>
+      <AdminLayout>
         <div className="flex items-center justify-center h-[60vh]">
           <Card className="max-w-md">
             <CardHeader className="text-center">
@@ -380,12 +399,12 @@ export default function Admin() {
             </CardHeader>
           </Card>
         </div>
-      </Layout>
+      </AdminLayout>
     );
   }
 
   return (
-    <Layout>
+    <AdminLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -447,10 +466,11 @@ export default function Admin() {
         </div>
 
         <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="dashboard" data-testid="tab-dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="empresas" data-testid="tab-empresas">Empresas</TabsTrigger>
             <TabsTrigger value="usuarios" data-testid="tab-usuarios">Usuários</TabsTrigger>
+            <TabsTrigger value="relatorios" data-testid="tab-relatorios">Relatórios</TabsTrigger>
             <TabsTrigger value="contatos" data-testid="tab-contatos">Contatos</TabsTrigger>
             <TabsTrigger value="demos" data-testid="tab-demos">Demos</TabsTrigger>
           </TabsList>
@@ -920,6 +940,123 @@ export default function Admin() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="relatorios" className="space-y-4">
+            <h2 className="text-xl font-semibold">Relatórios por Empresa</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <Card className="bg-gradient-to-br from-indigo-600/10 to-purple-600/10 border-indigo-200">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Total Clientes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">{tenantStats.reduce((acc, t) => acc + t.customersCount, 0)}</div>
+                  <p className="text-xs text-muted-foreground mt-1">em todas as lojas</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-gradient-to-br from-green-600/10 to-teal-600/10 border-green-200">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Total Pedidos</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">{tenantStats.reduce((acc, t) => acc + t.ordersCount, 0)}</div>
+                  <p className="text-xs text-muted-foreground mt-1">em todas as lojas</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-gradient-to-br from-orange-600/10 to-red-600/10 border-orange-200">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Total Produtos</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">{tenantStats.reduce((acc, t) => acc + t.productsCount, 0)}</div>
+                  <p className="text-xs text-muted-foreground mt-1">em todas as lojas</p>
+                </CardContent>
+              </Card>
+              <Card className="bg-gradient-to-br from-blue-600/10 to-cyan-600/10 border-blue-200">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Usuários por Loja</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold">{tenantStats.reduce((acc, t) => acc + t.usersCount, 0)}</div>
+                  <p className="text-xs text-muted-foreground mt-1">vendedores/gerentes</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5" />
+                  Uso por Empresa
+                </CardTitle>
+                <CardDescription>Estatísticas detalhadas de cada empresa cliente</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {tenantStats.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">Nenhuma empresa cadastrada ainda.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-3 px-2 font-medium">Empresa</th>
+                          <th className="text-center py-3 px-2 font-medium">Usuários</th>
+                          <th className="text-center py-3 px-2 font-medium">Clientes</th>
+                          <th className="text-center py-3 px-2 font-medium">Pedidos</th>
+                          <th className="text-center py-3 px-2 font-medium">Produtos</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tenantStats.map((stat) => (
+                          <tr key={stat.tenantId} className="border-b hover:bg-muted/50" data-testid={`stat-row-${stat.tenantId}`}>
+                            <td className="py-3 px-2">
+                              <div className="flex items-center gap-2">
+                                <Store className="w-4 h-4 text-purple-600" />
+                                <span className="font-medium">{stat.tenantName}</span>
+                              </div>
+                            </td>
+                            <td className="text-center py-3 px-2">
+                              <div className="flex items-center justify-center gap-1">
+                                <Users className="w-4 h-4 text-blue-500" />
+                                <span>{stat.usersCount}</span>
+                              </div>
+                            </td>
+                            <td className="text-center py-3 px-2">
+                              <div className="flex items-center justify-center gap-1">
+                                <Users className="w-4 h-4 text-green-500" />
+                                <span>{stat.customersCount}</span>
+                              </div>
+                            </td>
+                            <td className="text-center py-3 px-2">
+                              <div className="flex items-center justify-center gap-1">
+                                <ShoppingCart className="w-4 h-4 text-orange-500" />
+                                <span>{stat.ordersCount}</span>
+                              </div>
+                            </td>
+                            <td className="text-center py-3 px-2">
+                              <div className="flex items-center justify-center gap-1">
+                                <Package className="w-4 h-4 text-purple-500" />
+                                <span>{stat.productsCount}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-muted/30 font-semibold">
+                          <td className="py-3 px-2">Total Geral</td>
+                          <td className="text-center py-3 px-2">{tenantStats.reduce((acc, t) => acc + t.usersCount, 0)}</td>
+                          <td className="text-center py-3 px-2">{tenantStats.reduce((acc, t) => acc + t.customersCount, 0)}</td>
+                          <td className="text-center py-3 px-2">{tenantStats.reduce((acc, t) => acc + t.ordersCount, 0)}</td>
+                          <td className="text-center py-3 px-2">{tenantStats.reduce((acc, t) => acc + t.productsCount, 0)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="contatos" className="space-y-4">
             <h2 className="text-xl font-semibold">Contatos Recebidos</h2>
             <Card>
@@ -1229,6 +1366,6 @@ export default function Admin() {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>
+    </AdminLayout>
   );
 }

@@ -100,6 +100,9 @@ export interface IStorage {
   getDemoRequests(): Promise<DemoRequest[]>;
   createDemoRequest(request: InsertDemoRequest): Promise<DemoRequest>;
   updateDemoRequestStatus(id: number, status: string): Promise<DemoRequest | undefined>;
+
+  // Tenant Stats (for admin reports)
+  getTenantStats(): Promise<{ tenantId: number; tenantName: string; usersCount: number; customersCount: number; ordersCount: number; productsCount: number }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -322,6 +325,31 @@ export class DatabaseStorage implements IStorage {
   async updateDemoRequestStatus(id: number, status: string): Promise<DemoRequest | undefined> {
     const result = await db.update(demoRequests).set({ status }).where(eq(demoRequests.id, id)).returning();
     return result[0];
+  }
+
+  // ==================== TENANT STATS ====================
+  async getTenantStats(): Promise<{ tenantId: number; tenantName: string; usersCount: number; customersCount: number; ordersCount: number; productsCount: number }[]> {
+    const allTenants = await db.select().from(tenants);
+    
+    const stats = await Promise.all(allTenants.map(async (tenant) => {
+      const [usersResult, customersResult, ordersResult, productsResult] = await Promise.all([
+        db.select().from(tenantUsers).where(eq(tenantUsers.tenantId, tenant.id)),
+        db.select().from(customers).where(eq(customers.tenantId, tenant.id)),
+        db.select().from(orders).where(eq(orders.tenantId, tenant.id)),
+        db.select().from(products).where(eq(products.tenantId, tenant.id)),
+      ]);
+      
+      return {
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        usersCount: usersResult.length,
+        customersCount: customersResult.length,
+        ordersCount: ordersResult.length,
+        productsCount: productsResult.length,
+      };
+    }));
+    
+    return stats;
   }
 }
 
