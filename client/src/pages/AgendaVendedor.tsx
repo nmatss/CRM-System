@@ -569,8 +569,12 @@ export default function AgendaVendedor() {
       setUpdatingTaskId(taskId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/seller-tasks'], exact: false });
-      queryClient.invalidateQueries({ queryKey: ['/api/seller-tasks/stats'] });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => {
+          const key = query.queryKey[0];
+          return key === '/api/seller-tasks' || key === '/api/seller-tasks/stats';
+        }
+      });
     },
     onSettled: () => {
       setUpdatingTaskId(null);
@@ -589,8 +593,12 @@ export default function AgendaVendedor() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/seller-tasks'], exact: false });
-      queryClient.invalidateQueries({ queryKey: ['/api/seller-tasks/stats'] });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => {
+          const key = query.queryKey[0];
+          return key === '/api/seller-tasks' || key === '/api/seller-tasks/stats';
+        }
+      });
     }
   });
 
