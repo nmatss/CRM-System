@@ -7,74 +7,89 @@ import {
   DollarSign, 
   Users, 
   ShoppingBag, 
-  Tags
+  Tags,
+  Loader2
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { Order } from "@shared/schema";
 
-const stats = [
-  {
-    title: "Vendas Totais",
-    value: "R$ 145.231,89",
-    change: "+20.1% vs mês anterior",
-    trend: "up",
-    icon: DollarSign,
-  },
-  {
-    title: "Ticket Médio",
-    value: "R$ 450,00",
-    change: "+12.5% vs mês anterior",
-    trend: "up",
-    icon: Tags,
-  },
-  {
-    title: "Total de Pedidos",
-    value: "324",
-    change: "+19% vs mês anterior",
-    trend: "up",
-    icon: ShoppingBag,
-  },
-  {
-    title: "Novos Clientes VIP",
-    value: "+12",
-    change: "+4 nesta semana",
-    trend: "up",
-    icon: Users,
-  },
-];
-
-const chartData = [
-  { name: "Seg", total: 4200 },
-  { name: "Ter", total: 3100 },
-  { name: "Qua", total: 5800 },
-  { name: "Qui", total: 4400 },
-  { name: "Sex", total: 8800 },
-  { name: "Sab", total: 12500 },
-  { name: "Dom", total: 9500 },
-];
+interface DashboardStats {
+  totalRevenue: string;
+  averageTicket: string;
+  totalOrders: number;
+  vipCustomers: number;
+  newCustomers: number;
+  totalCustomers: number;
+  totalProducts: number;
+  weeklyData: Array<{ name: string; total: number }>;
+  recentOrders: Order[];
+}
 
 export default function Dashboard() {
-  const [recentOrders, setRecentOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: stats, isLoading } = useQuery<DashboardStats>({
+    queryKey: ["dashboard-stats"],
+    queryFn: async () => {
+      const response = await fetch("/api/dashboard/stats");
+      if (!response.ok) throw new Error("Erro ao carregar estatísticas");
+      return response.json();
+    },
+    refetchInterval: 30000,
+  });
 
-  useEffect(() => {
-    async function fetchRecentOrders() {
-      try {
-        const response = await fetch("/api/orders");
-        if (response.ok) {
-          const data = await response.json();
-          setRecentOrders(data.slice(0, 5));
-        }
-      } catch (error) {
-        console.error("Failed to fetch orders:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchRecentOrders();
-  }, []);
+  const statsCards = [
+    {
+      title: "Vendas Totais",
+      value: stats?.totalRevenue || "R$ 0,00",
+      change: `${stats?.totalOrders || 0} pedidos`,
+      trend: "up",
+      icon: DollarSign,
+    },
+    {
+      title: "Ticket Médio",
+      value: stats?.averageTicket || "R$ 0,00",
+      change: "Valor médio por pedido",
+      trend: "up",
+      icon: Tags,
+    },
+    {
+      title: "Total de Pedidos",
+      value: stats?.totalOrders?.toString() || "0",
+      change: `${stats?.totalCustomers || 0} clientes`,
+      trend: "up",
+      icon: ShoppingBag,
+    },
+    {
+      title: "Clientes VIP",
+      value: `+${stats?.vipCustomers || 0}`,
+      change: `${stats?.newCustomers || 0} novos clientes`,
+      trend: "up",
+      icon: Users,
+    },
+  ];
+
+  const chartData = stats?.weeklyData || [
+    { name: "Dom", total: 0 },
+    { name: "Seg", total: 0 },
+    { name: "Ter", total: 0 },
+    { name: "Qua", total: 0 },
+    { name: "Qui", total: 0 },
+    { name: "Sex", total: 0 },
+    { name: "Sáb", total: 0 },
+  ];
+
+  const recentOrders = stats?.recentOrders || [];
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -82,7 +97,7 @@ export default function Dashboard() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Visão Geral da Loja</h1>
-            <p className="text-sm text-muted-foreground">Performance da Coleção Primavera 2025</p>
+            <p className="text-sm text-muted-foreground">Performance da sua loja em tempo real</p>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button variant="outline" size="sm" className="text-xs sm:text-sm flex-1 sm:flex-none" data-testid="button-download-report">
@@ -97,7 +112,7 @@ export default function Dashboard() {
         </div>
 
         <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat, index) => (
+          {statsCards.map((stat, index) => (
             <Card key={index} data-testid={`card-stat-${index}`}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
@@ -152,6 +167,7 @@ export default function Dashboard() {
                         borderColor: "hsl(var(--border))",
                         borderRadius: "var(--radius)",
                       }} 
+                      formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR')}`, 'Total']}
                     />
                     <Bar
                       dataKey="total" 
@@ -172,11 +188,7 @@ export default function Dashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {loading ? (
-                <div className="flex items-center justify-center h-32">
-                  <p className="text-muted-foreground">Carregando...</p>
-                </div>
-              ) : recentOrders.length === 0 ? (
+              {recentOrders.length === 0 ? (
                 <div className="flex items-center justify-center h-32">
                   <p className="text-muted-foreground">Nenhuma venda recente.</p>
                 </div>

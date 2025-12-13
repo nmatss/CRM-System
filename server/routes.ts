@@ -669,6 +669,65 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== DASHBOARD STATS ====================
+  app.get("/api/dashboard/stats", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const [customers, orders, products] = await Promise.all([
+        storage.getCustomers(tenantId),
+        storage.getOrders(tenantId),
+        storage.getProducts(tenantId),
+      ]);
+      
+      const totalRevenue = orders.reduce((sum, order) => {
+        const value = parseFloat(order.total.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
+        return sum + value;
+      }, 0);
+      
+      const totalOrders = orders.length;
+      const averageTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+      const vipCustomers = customers.filter(c => c.segment === "VIP").length;
+      const newCustomers = customers.filter(c => c.segment === "Novo").length;
+      
+      const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+      const today = new Date();
+      const weeklyData = weekDays.map((name, dayIndex) => {
+        const dayOrders = orders.filter(order => {
+          const parts = order.date.split('/');
+          if (parts.length === 3) {
+            const orderDate = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+            return orderDate.getDay() === dayIndex;
+          }
+          return false;
+        });
+        const total = dayOrders.reduce((sum, order) => {
+          const value = parseFloat(order.total.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
+          return sum + value;
+        }, 0);
+        return { name, total: Math.round(total) };
+      });
+      
+      res.json({
+        totalRevenue: totalRevenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+        averageTicket: averageTicket.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+        totalOrders,
+        vipCustomers,
+        newCustomers,
+        totalCustomers: customers.length,
+        totalProducts: products.length,
+        weeklyData,
+        recentOrders: orders.slice(0, 5),
+      });
+    } catch (error) {
+      console.error("Dashboard stats error:", error);
+      res.status(500).json({ error: "Erro ao buscar estatísticas" });
+    }
+  });
+
   // ==================== TENANT-SCOPED DATA ROUTES ====================
   app.get("/api/customers", requireAuth, async (req: Request, res: Response) => {
     try {
@@ -1028,6 +1087,60 @@ export async function registerRoutes(
       res.status(201).json(automation);
     } catch (error) {
       res.status(400).json({ error: "Invalid automation data" });
+    }
+  });
+
+  app.put("/api/automations/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const id = parseInt(req.params.id);
+      const updated = await storage.updateAutomation(tenantId, id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Automação não encontrada" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao atualizar automação" });
+    }
+  });
+
+  app.delete("/api/automations/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteAutomation(tenantId, id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Automação não encontrada" });
+      }
+      res.json({ message: "Automação excluída com sucesso" });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao excluir automação" });
+    }
+  });
+
+  app.patch("/api/automations/:id/toggle", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const id = parseInt(req.params.id);
+      const automation = await storage.getAutomation(tenantId, id);
+      if (!automation) {
+        return res.status(404).json({ error: "Automação não encontrada" });
+      }
+      const updated = await storage.updateAutomation(tenantId, id, {
+        active: automation.active === 1 ? 0 : 1
+      });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao alternar automação" });
     }
   });
 
