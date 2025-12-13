@@ -28,16 +28,26 @@ export type Tenant = typeof tenants.$inferSelect;
 // ==================== USERS ====================
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: text("email").notNull().unique(),
+  email: text("email"),
+  cpf: text("cpf").unique(),
+  sellerCode: text("seller_code"),
   password: text("password").notNull(),
   name: text("name").notNull(),
+  phone: text("phone"),
   isSuperAdmin: boolean("is_super_admin").notNull().default(false),
+  mustChangePassword: boolean("must_change_password").notNull().default(true),
+  emailVerified: boolean("email_verified").notNull().default(false),
+  status: text("status").notNull().default("active"),
+  lastPasswordChange: timestamp("last_password_change"),
+  lastLogin: timestamp("last_login"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
+  lastPasswordChange: true,
+  lastLogin: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -49,6 +59,7 @@ export const tenantUsers = pgTable("tenant_users", {
   tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   role: text("role").notNull().default("seller"),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -59,6 +70,26 @@ export const insertTenantUserSchema = createInsertSchema(tenantUsers).omit({
 
 export type InsertTenantUser = z.infer<typeof insertTenantUserSchema>;
 export type TenantUser = typeof tenantUsers.$inferSelect;
+
+// ==================== PASSWORD RESETS ====================
+export const passwordResets = pgTable("password_resets", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdByAdmin: boolean("created_by_admin").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPasswordResetSchema = createInsertSchema(passwordResets).omit({
+  id: true,
+  createdAt: true,
+  usedAt: true,
+});
+
+export type InsertPasswordReset = z.infer<typeof insertPasswordResetSchema>;
+export type PasswordReset = typeof passwordResets.$inferSelect;
 
 // ==================== CUSTOMERS ====================
 export const customers = pgTable("customers", {
@@ -247,8 +278,22 @@ export type SellerTask = typeof sellerTasks.$inferSelect;
 
 // ==================== AUTH SCHEMAS ====================
 export const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
+  username: z.string().min(1),
+  password: z.string().min(1),
+});
+
+export const cpfLoginSchema = z.object({
+  cpf: z.string().min(11).max(14),
+  password: z.string().min(1),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(6),
+  confirmPassword: z.string().min(6),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "As senhas não conferem",
+  path: ["confirmPassword"],
 });
 
 export const registerSchema = z.object({
@@ -258,17 +303,36 @@ export const registerSchema = z.object({
   tenantName: z.string().min(2).optional(),
 });
 
+export const createUserSchema = z.object({
+  name: z.string().min(2),
+  cpf: z.string().min(11).max(14),
+  sellerCode: z.string().min(1),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
+  role: z.enum(["manager", "seller"]),
+  tenantId: z.number().optional(),
+});
+
+export const requestPasswordResetSchema = z.object({
+  cpf: z.string().min(11).max(14),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
+export type CpfLoginInput = z.infer<typeof cpfLoginSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
+export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 // ==================== ROLE TYPES ====================
 export type UserRole = "super_admin" | "manager" | "seller";
 
 export interface SessionUser {
   id: string;
-  email: string;
+  email?: string | null;
+  cpf?: string | null;
   name: string;
   isSuperAdmin: boolean;
+  mustChangePassword: boolean;
   tenantId?: number;
   role?: UserRole;
 }
