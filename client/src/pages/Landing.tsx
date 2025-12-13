@@ -188,15 +188,12 @@ export default function Landing() {
               <a href="#testimonials" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Depoimentos</a>
             </nav>
             <div className="flex items-center gap-3">
-              <Button variant="ghost" onClick={() => setLocation("/login")} data-testid="button-header-login">
-                Entrar
-              </Button>
               <Button 
                 className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-                onClick={() => setLocation("/login")}
-                data-testid="button-header-demo"
+                data-testid="button-header-contact"
               >
-                Começar Grátis
+                <Phone className="w-4 h-4 mr-2" />
+                Fale Conosco
               </Button>
             </div>
           </div>
@@ -230,19 +227,18 @@ export default function Landing() {
               <Button 
                 size="lg" 
                 className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-lg px-8"
-                onClick={() => setLocation("/login")}
-                data-testid="button-hero-start"
+                data-testid="button-hero-demo"
               >
-                Começar Gratuitamente
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Button>
-              <Button size="lg" variant="outline" className="text-lg px-8" data-testid="button-hero-demo">
                 <Phone className="w-5 h-5 mr-2" />
-                Agendar Demo
+                Agendar uma Demonstração
+              </Button>
+              <Button size="lg" variant="outline" className="text-lg px-8" data-testid="button-hero-contact">
+                <Mail className="w-5 h-5 mr-2" />
+                Falar com Especialista
               </Button>
             </div>
             <p className="text-sm text-muted-foreground mt-4">
-              ✓ Sem cartão de crédito &nbsp; ✓ 14 dias grátis &nbsp; ✓ Suporte em português
+              ✓ Demonstração personalizada &nbsp; ✓ Suporte em português &nbsp; ✓ Implantação assistida
             </p>
           </motion.div>
 
@@ -497,9 +493,8 @@ export default function Landing() {
                     <Button 
                       className={`w-full ${plan.highlighted ? 'bg-gradient-to-r from-purple-600 to-pink-600' : ''}`}
                       variant={plan.highlighted ? "default" : "outline"}
-                      onClick={() => setLocation("/login")}
                     >
-                      {plan.price === "Sob consulta" ? "Falar com Vendas" : "Começar Agora"}
+                      {plan.price === "Sob consulta" ? "Falar com Vendas" : "Solicitar Proposta"}
                       <ChevronRight className="w-4 h-4 ml-1" />
                     </Button>
                   </CardContent>
@@ -579,11 +574,10 @@ export default function Landing() {
                 size="lg" 
                 variant="secondary" 
                 className="text-lg px-8"
-                onClick={() => setLocation("/login")}
-                data-testid="button-cta-start"
+                data-testid="button-cta-demo"
               >
-                Começar Gratuitamente
-                <ArrowRight className="w-5 h-5 ml-2" />
+                <Phone className="w-5 h-5 mr-2" />
+                Agendar Demo
               </Button>
               <Button 
                 size="lg" 
