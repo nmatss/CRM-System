@@ -1,6 +1,10 @@
 import { 
   type User, 
   type InsertUser,
+  type Tenant,
+  type InsertTenant,
+  type TenantUser,
+  type InsertTenantUser,
   type Customer,
   type InsertCustomer,
   type Product,
@@ -14,6 +18,8 @@ import {
   type Automation,
   type InsertAutomation,
   users,
+  tenants,
+  tenantUsers,
   customers,
   products,
   orders,
@@ -22,46 +28,68 @@ import {
   automations
 } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export interface IStorage {
+  // Users
   getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-
-  getCustomers(): Promise<Customer[]>;
-  getCustomer(id: number): Promise<Customer | undefined>;
+  
+  // Tenants
+  getTenants(): Promise<Tenant[]>;
+  getTenant(id: number): Promise<Tenant | undefined>;
+  getTenantBySlug(slug: string): Promise<Tenant | undefined>;
+  createTenant(tenant: InsertTenant): Promise<Tenant>;
+  updateTenant(id: number, data: Partial<InsertTenant>): Promise<Tenant | undefined>;
+  
+  // Tenant Users
+  getTenantUsers(tenantId: number): Promise<TenantUser[]>;
+  getUserTenants(userId: string): Promise<TenantUser[]>;
+  getTenantUser(tenantId: number, userId: string): Promise<TenantUser | undefined>;
+  createTenantUser(tenantUser: InsertTenantUser): Promise<TenantUser>;
+  updateTenantUserRole(tenantId: number, userId: string, role: string): Promise<TenantUser | undefined>;
+  
+  // Customers (tenant-scoped)
+  getCustomers(tenantId: number): Promise<Customer[]>;
+  getCustomer(tenantId: number, id: number): Promise<Customer | undefined>;
   createCustomer(customer: InsertCustomer): Promise<Customer>;
 
-  getProducts(): Promise<Product[]>;
-  getProduct(id: number): Promise<Product | undefined>;
+  // Products (tenant-scoped)
+  getProducts(tenantId: number): Promise<Product[]>;
+  getProduct(tenantId: number, id: number): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
 
-  getOrders(): Promise<Order[]>;
-  getOrder(id: number): Promise<Order | undefined>;
+  // Orders (tenant-scoped)
+  getOrders(tenantId: number): Promise<Order[]>;
+  getOrder(tenantId: number, id: number): Promise<Order | undefined>;
   createOrder(order: InsertOrder): Promise<Order>;
 
-  getCashbackRules(): Promise<CashbackRule[]>;
-  getCashbackRule(id: number): Promise<CashbackRule | undefined>;
+  // Cashback Rules (tenant-scoped)
+  getCashbackRules(tenantId: number): Promise<CashbackRule[]>;
+  getCashbackRule(tenantId: number, id: number): Promise<CashbackRule | undefined>;
   createCashbackRule(rule: InsertCashbackRule): Promise<CashbackRule>;
 
-  getCampaigns(): Promise<Campaign[]>;
-  getCampaign(id: number): Promise<Campaign | undefined>;
+  // Campaigns (tenant-scoped)
+  getCampaigns(tenantId: number): Promise<Campaign[]>;
+  getCampaign(tenantId: number, id: number): Promise<Campaign | undefined>;
   createCampaign(campaign: InsertCampaign): Promise<Campaign>;
 
-  getAutomations(): Promise<Automation[]>;
-  getAutomation(id: number): Promise<Automation | undefined>;
+  // Automations (tenant-scoped)
+  getAutomations(tenantId: number): Promise<Automation[]>;
+  getAutomation(tenantId: number, id: number): Promise<Automation | undefined>;
   createAutomation(automation: InsertAutomation): Promise<Automation>;
 }
 
 export class DatabaseStorage implements IStorage {
+  // ==================== USERS ====================
   async getUser(id: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.id, id));
     return result[0];
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const result = await db.select().from(users).where(eq(users.username, username));
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.email, email));
     return result[0];
   }
 
@@ -70,12 +98,67 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getCustomers(): Promise<Customer[]> {
-    return await db.select().from(customers);
+  // ==================== TENANTS ====================
+  async getTenants(): Promise<Tenant[]> {
+    return await db.select().from(tenants);
   }
 
-  async getCustomer(id: number): Promise<Customer | undefined> {
-    const result = await db.select().from(customers).where(eq(customers.id, id));
+  async getTenant(id: number): Promise<Tenant | undefined> {
+    const result = await db.select().from(tenants).where(eq(tenants.id, id));
+    return result[0];
+  }
+
+  async getTenantBySlug(slug: string): Promise<Tenant | undefined> {
+    const result = await db.select().from(tenants).where(eq(tenants.slug, slug));
+    return result[0];
+  }
+
+  async createTenant(tenant: InsertTenant): Promise<Tenant> {
+    const result = await db.insert(tenants).values(tenant).returning();
+    return result[0];
+  }
+
+  async updateTenant(id: number, data: Partial<InsertTenant>): Promise<Tenant | undefined> {
+    const result = await db.update(tenants).set(data).where(eq(tenants.id, id)).returning();
+    return result[0];
+  }
+
+  // ==================== TENANT USERS ====================
+  async getTenantUsers(tenantId: number): Promise<TenantUser[]> {
+    return await db.select().from(tenantUsers).where(eq(tenantUsers.tenantId, tenantId));
+  }
+
+  async getUserTenants(userId: string): Promise<TenantUser[]> {
+    return await db.select().from(tenantUsers).where(eq(tenantUsers.userId, userId));
+  }
+
+  async getTenantUser(tenantId: number, userId: string): Promise<TenantUser | undefined> {
+    const result = await db.select().from(tenantUsers)
+      .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.userId, userId)));
+    return result[0];
+  }
+
+  async createTenantUser(tenantUser: InsertTenantUser): Promise<TenantUser> {
+    const result = await db.insert(tenantUsers).values(tenantUser).returning();
+    return result[0];
+  }
+
+  async updateTenantUserRole(tenantId: number, userId: string, role: string): Promise<TenantUser | undefined> {
+    const result = await db.update(tenantUsers)
+      .set({ role })
+      .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.userId, userId)))
+      .returning();
+    return result[0];
+  }
+
+  // ==================== CUSTOMERS ====================
+  async getCustomers(tenantId: number): Promise<Customer[]> {
+    return await db.select().from(customers).where(eq(customers.tenantId, tenantId));
+  }
+
+  async getCustomer(tenantId: number, id: number): Promise<Customer | undefined> {
+    const result = await db.select().from(customers)
+      .where(and(eq(customers.tenantId, tenantId), eq(customers.id, id)));
     return result[0];
   }
 
@@ -84,12 +167,14 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getProducts(): Promise<Product[]> {
-    return await db.select().from(products);
+  // ==================== PRODUCTS ====================
+  async getProducts(tenantId: number): Promise<Product[]> {
+    return await db.select().from(products).where(eq(products.tenantId, tenantId));
   }
 
-  async getProduct(id: number): Promise<Product | undefined> {
-    const result = await db.select().from(products).where(eq(products.id, id));
+  async getProduct(tenantId: number, id: number): Promise<Product | undefined> {
+    const result = await db.select().from(products)
+      .where(and(eq(products.tenantId, tenantId), eq(products.id, id)));
     return result[0];
   }
 
@@ -98,12 +183,14 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getOrders(): Promise<Order[]> {
-    return await db.select().from(orders);
+  // ==================== ORDERS ====================
+  async getOrders(tenantId: number): Promise<Order[]> {
+    return await db.select().from(orders).where(eq(orders.tenantId, tenantId));
   }
 
-  async getOrder(id: number): Promise<Order | undefined> {
-    const result = await db.select().from(orders).where(eq(orders.id, id));
+  async getOrder(tenantId: number, id: number): Promise<Order | undefined> {
+    const result = await db.select().from(orders)
+      .where(and(eq(orders.tenantId, tenantId), eq(orders.id, id)));
     return result[0];
   }
 
@@ -112,12 +199,14 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getCashbackRules(): Promise<CashbackRule[]> {
-    return await db.select().from(cashbackRules);
+  // ==================== CASHBACK RULES ====================
+  async getCashbackRules(tenantId: number): Promise<CashbackRule[]> {
+    return await db.select().from(cashbackRules).where(eq(cashbackRules.tenantId, tenantId));
   }
 
-  async getCashbackRule(id: number): Promise<CashbackRule | undefined> {
-    const result = await db.select().from(cashbackRules).where(eq(cashbackRules.id, id));
+  async getCashbackRule(tenantId: number, id: number): Promise<CashbackRule | undefined> {
+    const result = await db.select().from(cashbackRules)
+      .where(and(eq(cashbackRules.tenantId, tenantId), eq(cashbackRules.id, id)));
     return result[0];
   }
 
@@ -126,12 +215,14 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getCampaigns(): Promise<Campaign[]> {
-    return await db.select().from(campaigns);
+  // ==================== CAMPAIGNS ====================
+  async getCampaigns(tenantId: number): Promise<Campaign[]> {
+    return await db.select().from(campaigns).where(eq(campaigns.tenantId, tenantId));
   }
 
-  async getCampaign(id: number): Promise<Campaign | undefined> {
-    const result = await db.select().from(campaigns).where(eq(campaigns.id, id));
+  async getCampaign(tenantId: number, id: number): Promise<Campaign | undefined> {
+    const result = await db.select().from(campaigns)
+      .where(and(eq(campaigns.tenantId, tenantId), eq(campaigns.id, id)));
     return result[0];
   }
 
@@ -140,12 +231,14 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getAutomations(): Promise<Automation[]> {
-    return await db.select().from(automations);
+  // ==================== AUTOMATIONS ====================
+  async getAutomations(tenantId: number): Promise<Automation[]> {
+    return await db.select().from(automations).where(eq(automations.tenantId, tenantId));
   }
 
-  async getAutomation(id: number): Promise<Automation | undefined> {
-    const result = await db.select().from(automations).where(eq(automations.id, id));
+  async getAutomation(tenantId: number, id: number): Promise<Automation | undefined> {
+    const result = await db.select().from(automations)
+      .where(and(eq(automations.tenantId, tenantId), eq(automations.id, id)));
     return result[0];
   }
 

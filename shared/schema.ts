@@ -1,26 +1,68 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, serial, integer, timestamp, decimal } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, serial, integer, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+// ==================== TENANTS ====================
+export const tenants = pgTable("tenants", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  plan: text("plan").notNull().default("free"),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export const insertTenantSchema = createInsertSchema(tenants).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTenant = z.infer<typeof insertTenantSchema>;
+export type Tenant = typeof tenants.$inferSelect;
+
+// ==================== USERS ====================
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  password: text("password").notNull(),
+  name: text("name").notNull(),
+  isSuperAdmin: boolean("is_super_admin").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
+// ==================== TENANT USERS ====================
+export const tenantUsers = pgTable("tenant_users", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("seller"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertTenantUserSchema = createInsertSchema(tenantUsers).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTenantUser = z.infer<typeof insertTenantUserSchema>;
+export type TenantUser = typeof tenantUsers.$inferSelect;
+
+// ==================== CUSTOMERS ====================
 export const customers = pgTable("customers", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  email: text("email").notNull().unique(),
+  email: text("email").notNull(),
+  phone: text("phone"),
   segment: text("segment").notNull(),
   ltv: text("ltv").notNull(),
   lastPurchase: text("last_purchase").notNull(),
@@ -35,8 +77,10 @@ export const insertCustomerSchema = createInsertSchema(customers).omit({
 export type InsertCustomer = z.infer<typeof insertCustomerSchema>;
 export type Customer = typeof customers.$inferSelect;
 
+// ==================== PRODUCTS ====================
 export const products = pgTable("products", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   category: text("category").notNull(),
   price: text("price").notNull(),
@@ -52,9 +96,11 @@ export const insertProductSchema = createInsertSchema(products).omit({
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof products.$inferSelect;
 
+// ==================== ORDERS ====================
 export const orders = pgTable("orders", {
   id: serial("id").primaryKey(),
-  orderId: text("order_id").notNull().unique(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  orderId: text("order_id").notNull(),
   customerId: integer("customer_id").references(() => customers.id),
   customer: text("customer").notNull(),
   date: text("date").notNull(),
@@ -71,8 +117,10 @@ export const insertOrderSchema = createInsertSchema(orders).omit({
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof orders.$inferSelect;
 
+// ==================== CASHBACK RULES ====================
 export const cashbackRules = pgTable("cashback_rules", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   trigger: text("trigger").notNull(),
   value: text("value").notNull(),
@@ -88,8 +136,10 @@ export const insertCashbackRuleSchema = createInsertSchema(cashbackRules).omit({
 export type InsertCashbackRule = z.infer<typeof insertCashbackRuleSchema>;
 export type CashbackRule = typeof cashbackRules.$inferSelect;
 
+// ==================== CAMPAIGNS ====================
 export const campaigns = pgTable("campaigns", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   channel: text("channel").notNull(),
   audience: text("audience").notNull(),
@@ -108,8 +158,10 @@ export const insertCampaignSchema = createInsertSchema(campaigns).omit({
 export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
 export type Campaign = typeof campaigns.$inferSelect;
 
+// ==================== AUTOMATIONS ====================
 export const automations = pgTable("automations", {
   id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description").notNull(),
   icon: text("icon").notNull(),
@@ -123,3 +175,31 @@ export const insertAutomationSchema = createInsertSchema(automations).omit({
 
 export type InsertAutomation = z.infer<typeof insertAutomationSchema>;
 export type Automation = typeof automations.$inferSelect;
+
+// ==================== AUTH SCHEMAS ====================
+export const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+});
+
+export const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  name: z.string().min(2),
+  tenantName: z.string().min(2).optional(),
+});
+
+export type LoginInput = z.infer<typeof loginSchema>;
+export type RegisterInput = z.infer<typeof registerSchema>;
+
+// ==================== ROLE TYPES ====================
+export type UserRole = "super_admin" | "manager" | "seller";
+
+export interface SessionUser {
+  id: string;
+  email: string;
+  name: string;
+  isSuperAdmin: boolean;
+  tenantId?: number;
+  role?: UserRole;
+}
