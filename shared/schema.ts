@@ -103,6 +103,7 @@ export const customers = pgTable("customers", {
   lastPurchase: text("last_purchase").notNull(),
   favoriteCategory: text("favorite_category"),
   image: text("image"),
+  birthDate: text("birth_date"),
 });
 
 export const insertCustomerSchema = createInsertSchema(customers).omit({
