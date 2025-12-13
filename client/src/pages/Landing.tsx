@@ -32,7 +32,7 @@ import {
   Clock,
   HeartHandshake
 } from "lucide-react";
-import zippiLogo from "@assets/Zippi_Logo_1765636204090.png";
+import zippiLogo from "@assets/image_1765636497703.png";
 
 const integrations = [
   {
