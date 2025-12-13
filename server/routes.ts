@@ -267,6 +267,139 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/admin/tenants/:tenantId", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const tenantId = parseInt(req.params.tenantId);
+      const deleted = await storage.deleteTenant(tenantId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Tenant não encontrado" });
+      }
+      res.json({ message: "Tenant excluído com sucesso" });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao excluir tenant" });
+    }
+  });
+
+  // ==================== ADMIN USER MANAGEMENT ====================
+  app.get("/api/admin/users", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const users = await storage.getUsers();
+      const usersWithoutPassword = users.map(({ password, ...user }) => user);
+      res.json(usersWithoutPassword);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar usuários" });
+    }
+  });
+
+  app.post("/api/admin/users", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const { email, password, name, isSuperAdmin, tenantId, role } = req.body;
+      
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ error: "Email já está em uso" });
+      }
+      
+      const hashedPassword = await hashPassword(password);
+      const user = await storage.createUser({
+        email,
+        password: hashedPassword,
+        name,
+        isSuperAdmin: isSuperAdmin || false,
+      });
+      
+      if (tenantId && !isSuperAdmin) {
+        await storage.createTenantUser({
+          tenantId: parseInt(tenantId),
+          userId: user.id,
+          role: role || "seller",
+        });
+      }
+      
+      const { password: _, ...userWithoutPassword } = user;
+      res.status(201).json(userWithoutPassword);
+    } catch (error) {
+      console.error("Error creating user:", error);
+      res.status(400).json({ error: "Erro ao criar usuário" });
+    }
+  });
+
+  app.put("/api/admin/users/:userId", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const { name, email, password, isSuperAdmin } = req.body;
+      
+      const updateData: Record<string, any> = {};
+      if (name !== undefined) updateData.name = name;
+      if (email !== undefined) updateData.email = email;
+      if (password) updateData.password = await hashPassword(password);
+      if (isSuperAdmin !== undefined) updateData.isSuperAdmin = isSuperAdmin;
+      
+      const updated = await storage.updateUser(userId, updateData);
+      if (!updated) {
+        return res.status(404).json({ error: "Usuário não encontrado" });
+      }
+      
+      const { password: _, ...userWithoutPassword } = updated;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao atualizar usuário" });
+    }
+  });
+
+  app.delete("/api/admin/users/:userId", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      
+      if (req.session.user?.id === userId) {
+        return res.status(400).json({ error: "Você não pode excluir seu próprio usuário" });
+      }
+      
+      const deleted = await storage.deleteUser(userId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Usuário não encontrado" });
+      }
+      res.json({ message: "Usuário excluído com sucesso" });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao excluir usuário" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/tenants", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const { tenantId, role } = req.body;
+      
+      const existing = await storage.getTenantUser(parseInt(tenantId), userId);
+      if (existing) {
+        const updated = await storage.updateTenantUserRole(parseInt(tenantId), userId, role || "seller");
+        return res.json(updated);
+      }
+      
+      const tenantUser = await storage.createTenantUser({
+        tenantId: parseInt(tenantId),
+        userId,
+        role: role || "seller",
+      });
+      res.status(201).json(tenantUser);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao vincular usuário ao tenant" });
+    }
+  });
+
+  app.delete("/api/admin/users/:userId/tenants/:tenantId", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId, tenantId } = req.params;
+      const deleted = await storage.deleteTenantUser(parseInt(tenantId), userId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Vínculo não encontrado" });
+      }
+      res.json({ message: "Vínculo removido com sucesso" });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao remover vínculo" });
+    }
+  });
+
   // ==================== TENANT-SCOPED DATA ROUTES ====================
   app.get("/api/customers", requireAuth, async (req: Request, res: Response) => {
     try {
