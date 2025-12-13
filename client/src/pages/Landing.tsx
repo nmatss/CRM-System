@@ -184,7 +184,7 @@ export default function Landing() {
               <img 
                 src={zippiLogo} 
                 alt="Zippi CRM" 
-                className="h-10 w-auto object-contain"
+                className="h-10 w-auto object-contain bg-[#050A1A] rounded"
                 data-testid="header-logo"
               />
             </div>
@@ -644,7 +644,7 @@ export default function Landing() {
               <img 
                 src={zippiLogo} 
                 alt="Zippi CRM" 
-                className="h-8 w-auto object-contain"
+                className="h-8 w-auto object-contain bg-[#050A1A] rounded"
                 data-testid="footer-logo"
               />
             </div>
