@@ -55,7 +55,8 @@ import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import type { SellerTask, Customer } from "@shared/schema";
+import type { SellerTask, Customer, SellerGoal, CustomerInteraction } from "@shared/schema";
+import { Trophy, Settings2, MessageSquare } from "lucide-react";
 
 type TaskType = "aniversario" | "carrinho_abandonado" | "recompra" | "vip_sumido" | "manual";
 
@@ -68,6 +69,13 @@ interface SellerStats {
   completed: number;
   today: number;
   overdue: number;
+}
+
+interface SellerRankingItem {
+  sellerId: string;
+  sellerName: string;
+  completedTasks: number;
+  totalInteractions: number;
 }
 
 interface DashboardData {
@@ -431,6 +439,150 @@ function PerformanceGoalCard({
             {isCompleted ? 'Parabéns! Meta atingida!' : `Faltam ${goal - current} para a meta`}
           </p>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function GoalsSettingsDialog({ 
+  goals, 
+  onSaveGoals,
+  isManager
+}: { 
+  goals: SellerGoal | null;
+  onSaveGoals: (data: any) => void;
+  isManager: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    dailyTaskGoal: goals?.dailyTaskGoal || 10,
+    weeklyTaskGoal: goals?.weeklyTaskGoal || 50,
+    monthlyTaskGoal: goals?.monthlyTaskGoal || 200,
+  });
+
+  if (!isManager) return null;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSaveGoals(formData);
+    setOpen(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-2" data-testid="button-config-metas">
+          <Settings2 className="h-4 w-4" />
+          Metas
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Target className="h-5 w-5 text-primary" />
+            Configurar Metas
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="dailyGoal">Meta Diária de Tarefas</Label>
+            <Input
+              id="dailyGoal"
+              type="number"
+              min="1"
+              value={formData.dailyTaskGoal}
+              onChange={(e) => setFormData({...formData, dailyTaskGoal: parseInt(e.target.value) || 10})}
+              data-testid="input-meta-diaria"
+            />
+          </div>
+          <div>
+            <Label htmlFor="weeklyGoal">Meta Semanal de Tarefas</Label>
+            <Input
+              id="weeklyGoal"
+              type="number"
+              min="1"
+              value={formData.weeklyTaskGoal}
+              onChange={(e) => setFormData({...formData, weeklyTaskGoal: parseInt(e.target.value) || 50})}
+              data-testid="input-meta-semanal"
+            />
+          </div>
+          <div>
+            <Label htmlFor="monthlyGoal">Meta Mensal de Tarefas</Label>
+            <Input
+              id="monthlyGoal"
+              type="number"
+              min="1"
+              value={formData.monthlyTaskGoal}
+              onChange={(e) => setFormData({...formData, monthlyTaskGoal: parseInt(e.target.value) || 200})}
+              data-testid="input-meta-mensal"
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" data-testid="button-salvar-metas">
+              Salvar Metas
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RankingCard({ ranking, currentUserId }: { ranking: SellerRankingItem[]; currentUserId?: string }) {
+  const getMedalColor = (index: number) => {
+    switch (index) {
+      case 0: return "text-yellow-500";
+      case 1: return "text-gray-400";
+      case 2: return "text-amber-600";
+      default: return "text-muted-foreground";
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Trophy className="h-4 w-4 text-yellow-500" />
+          Ranking de Vendedores
+        </CardTitle>
+        <CardDescription className="text-xs">Tarefas concluídas esta semana</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {ranking.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            Nenhum ranking disponível
+          </p>
+        ) : (
+          ranking.slice(0, 5).map((seller, index) => (
+            <motion.div
+              key={seller.sellerId}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: index * 0.1 }}
+              className={`flex items-center gap-3 p-2 rounded-lg ${
+                seller.sellerId === currentUserId ? 'bg-primary/10 border border-primary/20' : 'bg-muted/30'
+              }`}
+            >
+              <div className={`text-lg font-bold w-6 ${getMedalColor(index)}`}>
+                {index < 3 ? ['🥇', '🥈', '🥉'][index] : `#${index + 1}`}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">
+                  {seller.sellerName}
+                  {seller.sellerId === currentUserId && (
+                    <Badge variant="secondary" className="ml-2 text-[10px]">Você</Badge>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {seller.completedTasks} tarefas • {seller.totalInteractions} interações
+                </p>
+              </div>
+            </motion.div>
+          ))
+        )}
       </CardContent>
     </Card>
   );
@@ -804,6 +956,49 @@ export default function AgendaVendedor() {
     }
   });
 
+  const { data: goals } = useQuery<SellerGoal>({
+    queryKey: ['/api/seller-goals'],
+    queryFn: async () => {
+      const res = await fetch('/api/seller-goals', { credentials: 'include' });
+      if (!res.ok) return { dailyTaskGoal: 10, weeklyTaskGoal: 50, monthlyTaskGoal: 200 };
+      return res.json();
+    }
+  });
+
+  const { data: ranking = [] } = useQuery<SellerRankingItem[]>({
+    queryKey: ['/api/seller-ranking'],
+    queryFn: async () => {
+      const res = await fetch('/api/seller-ranking?period=weekly', { credentials: 'include' });
+      if (!res.ok) return [];
+      return res.json();
+    }
+  });
+
+  const { data: recentInteractions = [] } = useQuery<CustomerInteraction[]>({
+    queryKey: ['/api/customer-interactions'],
+    queryFn: async () => {
+      const res = await fetch('/api/customer-interactions?limit=10', { credentials: 'include' });
+      if (!res.ok) return [];
+      return res.json();
+    }
+  });
+
+  const goalsMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch('/api/seller-goals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(data)
+      });
+      if (!res.ok) throw new Error('Falha ao salvar metas');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/seller-goals'] });
+    }
+  });
+
   const dashboardData = useMemo(() => {
     const now = new Date();
     const currentMonth = now.getMonth();
@@ -894,8 +1089,9 @@ export default function AgendaVendedor() {
     }
   };
 
-  const META_DIARIA = 10;
-  const META_SEMANAL = 50;
+  const META_DIARIA = goals?.dailyTaskGoal || 10;
+  const META_SEMANAL = goals?.weeklyTaskGoal || 50;
+  const isManager = user?.role === 'manager' || user?.isSuperAdmin;
   const completedToday = stats?.completed || 0;
   const completedWeek = completedTasks.filter(t => {
     const completedDate = new Date(t.completedAt || '');
@@ -938,6 +1134,11 @@ export default function AgendaVendedor() {
             </motion.div>
           </div>
           <div className="flex items-center gap-2">
+            <GoalsSettingsDialog 
+              goals={goals || null} 
+              onSaveGoals={goalsMutation.mutate} 
+              isManager={isManager} 
+            />
             <NewTaskDialog customers={customers} onCreateTask={createMutation.mutate} />
           </div>
         </div>
@@ -1239,6 +1440,9 @@ export default function AgendaVendedor() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Seller Ranking */}
+            <RankingCard ranking={ranking} currentUserId={user?.id} />
 
             {/* VIP Customers */}
             <Card>

@@ -1384,6 +1384,133 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== SELLER GOALS ROUTES ====================
+  app.get("/api/seller-goals", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const sellerId = req.query.sellerId as string | undefined;
+      const goals = await storage.getSellerGoals(tenantId, sellerId);
+      res.json(goals || {
+        dailyTaskGoal: 10,
+        weeklyTaskGoal: 50,
+        monthlyTaskGoal: 200,
+        dailySalesGoal: "0",
+        weeklySalesGoal: "0",
+        monthlySalesGoal: "0"
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar metas" });
+    }
+  });
+
+  app.post("/api/seller-goals", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const { dailyTaskGoal, weeklyTaskGoal, monthlyTaskGoal, dailySalesGoal, weeklySalesGoal, monthlySalesGoal, sellerId } = req.body;
+      
+      if (dailyTaskGoal !== undefined && (typeof dailyTaskGoal !== 'number' || dailyTaskGoal < 1)) {
+        return res.status(400).json({ error: "Meta diária deve ser um número maior que 0" });
+      }
+      if (weeklyTaskGoal !== undefined && (typeof weeklyTaskGoal !== 'number' || weeklyTaskGoal < 1)) {
+        return res.status(400).json({ error: "Meta semanal deve ser um número maior que 0" });
+      }
+      if (monthlyTaskGoal !== undefined && (typeof monthlyTaskGoal !== 'number' || monthlyTaskGoal < 1)) {
+        return res.status(400).json({ error: "Meta mensal deve ser um número maior que 0" });
+      }
+      
+      const goalsData = {
+        tenantId,
+        sellerId: sellerId || null,
+        dailyTaskGoal: dailyTaskGoal || 10,
+        weeklyTaskGoal: weeklyTaskGoal || 50,
+        monthlyTaskGoal: monthlyTaskGoal || 200,
+        dailySalesGoal: dailySalesGoal || "0",
+        weeklySalesGoal: weeklySalesGoal || "0",
+        monthlySalesGoal: monthlySalesGoal || "0",
+      };
+      const goals = await storage.upsertSellerGoals(goalsData);
+      res.json(goals);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao salvar metas" });
+    }
+  });
+
+  // ==================== CUSTOMER INTERACTIONS ROUTES ====================
+  app.get("/api/customer-interactions", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const customerId = req.query.customerId ? parseInt(req.query.customerId as string) : undefined;
+      const sellerId = req.query.sellerId as string | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      
+      const interactions = await storage.getCustomerInteractions(tenantId, customerId, sellerId, limit);
+      res.json(interactions);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar histórico de interações" });
+    }
+  });
+
+  app.post("/api/customer-interactions", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const { customerId, type, channel, notes, outcome, taskId } = req.body;
+      
+      if (!customerId || typeof customerId !== 'number') {
+        return res.status(400).json({ error: "ID do cliente é obrigatório" });
+      }
+      if (!type || typeof type !== 'string') {
+        return res.status(400).json({ error: "Tipo de interação é obrigatório" });
+      }
+      if (!channel || typeof channel !== 'string') {
+        return res.status(400).json({ error: "Canal de interação é obrigatório" });
+      }
+      
+      const interactionData = {
+        tenantId,
+        customerId,
+        sellerId: req.session.user?.id || req.body.sellerId,
+        taskId: taskId || null,
+        type,
+        channel,
+        notes: notes || null,
+        outcome: outcome || null,
+      };
+      const interaction = await storage.createCustomerInteraction(interactionData);
+      res.status(201).json(interaction);
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao registrar interação" });
+    }
+  });
+
+  // ==================== SELLER RANKING ROUTES ====================
+  app.get("/api/seller-ranking", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      const period = (req.query.period as 'daily' | 'weekly' | 'monthly') || 'weekly';
+      const ranking = await storage.getSellerRanking(tenantId, period);
+      res.json(ranking);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar ranking" });
+    }
+  });
+
   // ==================== REPORTS ROUTES ====================
   app.get("/api/reports", requireAuth, async (req: Request, res: Response) => {
     try {

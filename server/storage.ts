@@ -23,6 +23,10 @@ import {
   type InsertDemoRequest,
   type SellerTask,
   type InsertSellerTask,
+  type SellerGoal,
+  type InsertSellerGoal,
+  type CustomerInteraction,
+  type InsertCustomerInteraction,
   users,
   tenants,
   tenantUsers,
@@ -34,7 +38,9 @@ import {
   automations,
   contactRequests,
   demoRequests,
-  sellerTasks
+  sellerTasks,
+  sellerGoals,
+  customerInteractions
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
@@ -128,6 +134,17 @@ export interface IStorage {
   updateSellerTask(tenantId: number, id: number, data: Partial<InsertSellerTask & { completedAt?: Date }>): Promise<SellerTask | undefined>;
   deleteSellerTask(tenantId: number, id: number): Promise<boolean>;
   getSellerStats(tenantId: number, sellerId?: string): Promise<{ pending: number; completed: number; today: number; overdue: number }>;
+  
+  // Seller Goals (tenant-scoped)
+  getSellerGoals(tenantId: number, sellerId?: string): Promise<SellerGoal | undefined>;
+  upsertSellerGoals(goals: InsertSellerGoal): Promise<SellerGoal>;
+  
+  // Customer Interactions (tenant-scoped)
+  getCustomerInteractions(tenantId: number, customerId?: number, sellerId?: string, limit?: number): Promise<(CustomerInteraction & { customer?: Customer; seller?: User })[]>;
+  createCustomerInteraction(interaction: InsertCustomerInteraction): Promise<CustomerInteraction>;
+  
+  // Seller Ranking (tenant-scoped)
+  getSellerRanking(tenantId: number, period: 'daily' | 'weekly' | 'monthly'): Promise<{ sellerId: string; sellerName: string; completedTasks: number; totalInteractions: number }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -563,6 +580,136 @@ export class DatabaseStorage implements IStorage {
     const overdue = allTasks.filter(t => t.dueDate < today && t.status === 'pending').length;
     
     return { pending, completed, today: todayTasks, overdue };
+  }
+
+  // ==================== SELLER GOALS ====================
+  async getSellerGoals(tenantId: number, sellerId?: string): Promise<SellerGoal | undefined> {
+    let conditions = [eq(sellerGoals.tenantId, tenantId)];
+    if (sellerId) {
+      conditions.push(eq(sellerGoals.sellerId, sellerId));
+    } else {
+      conditions.push(sql`${sellerGoals.sellerId} IS NULL`);
+    }
+    
+    const result = await db.select().from(sellerGoals).where(and(...conditions));
+    return result[0];
+  }
+
+  async upsertSellerGoals(goals: InsertSellerGoal): Promise<SellerGoal> {
+    let conditions = [eq(sellerGoals.tenantId, goals.tenantId)];
+    if (goals.sellerId) {
+      conditions.push(eq(sellerGoals.sellerId, goals.sellerId));
+    } else {
+      conditions.push(sql`${sellerGoals.sellerId} IS NULL`);
+    }
+    
+    const existing = await db.select().from(sellerGoals).where(and(...conditions));
+    
+    if (existing.length > 0) {
+      const result = await db.update(sellerGoals)
+        .set({ ...goals, updatedAt: new Date() })
+        .where(eq(sellerGoals.id, existing[0].id))
+        .returning();
+      return result[0];
+    } else {
+      const result = await db.insert(sellerGoals).values(goals).returning();
+      return result[0];
+    }
+  }
+
+  // ==================== CUSTOMER INTERACTIONS ====================
+  async getCustomerInteractions(tenantId: number, customerId?: number, sellerId?: string, limit?: number): Promise<(CustomerInteraction & { customer?: Customer; seller?: User })[]> {
+    let conditions = [eq(customerInteractions.tenantId, tenantId)];
+    if (customerId) {
+      conditions.push(eq(customerInteractions.customerId, customerId));
+    }
+    if (sellerId) {
+      conditions.push(eq(customerInteractions.sellerId, sellerId));
+    }
+    
+    let query = db.select().from(customerInteractions)
+      .where(and(...conditions))
+      .orderBy(desc(customerInteractions.createdAt));
+    
+    const interactions = limit ? await query.limit(limit) : await query;
+    
+    const interactionsWithDetails = await Promise.all(interactions.map(async (interaction) => {
+      let customer: Customer | undefined;
+      let seller: User | undefined;
+      
+      if (interaction.customerId) {
+        const customerResult = await db.select().from(customers)
+          .where(and(eq(customers.tenantId, tenantId), eq(customers.id, interaction.customerId)));
+        customer = customerResult[0];
+      }
+      
+      if (interaction.sellerId) {
+        const sellerResult = await db.select().from(users)
+          .where(eq(users.id, interaction.sellerId));
+        seller = sellerResult[0];
+      }
+      
+      return { ...interaction, customer, seller };
+    }));
+    
+    return interactionsWithDetails;
+  }
+
+  async createCustomerInteraction(interaction: InsertCustomerInteraction): Promise<CustomerInteraction> {
+    const result = await db.insert(customerInteractions).values(interaction).returning();
+    return result[0];
+  }
+
+  // ==================== SELLER RANKING ====================
+  async getSellerRanking(tenantId: number, period: 'daily' | 'weekly' | 'monthly'): Promise<{ sellerId: string; sellerName: string; completedTasks: number; totalInteractions: number }[]> {
+    const now = new Date();
+    let startDate: Date;
+    
+    switch (period) {
+      case 'daily':
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      case 'weekly':
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+        break;
+      case 'monthly':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+    }
+    
+    const tenantUsersList = await db.select().from(tenantUsers)
+      .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.role, 'seller')));
+    
+    const ranking = await Promise.all(tenantUsersList.map(async (tu) => {
+      const user = await db.select().from(users).where(eq(users.id, tu.userId));
+      if (!user[0]) return null;
+      
+      const completedTasksResult = await db.select().from(sellerTasks)
+        .where(and(
+          eq(sellerTasks.tenantId, tenantId),
+          eq(sellerTasks.sellerId, tu.userId),
+          eq(sellerTasks.status, 'completed'),
+          gte(sellerTasks.completedAt, startDate)
+        ));
+      
+      const interactionsResult = await db.select().from(customerInteractions)
+        .where(and(
+          eq(customerInteractions.tenantId, tenantId),
+          eq(customerInteractions.sellerId, tu.userId),
+          gte(customerInteractions.createdAt, startDate)
+        ));
+      
+      return {
+        sellerId: tu.userId,
+        sellerName: user[0].name,
+        completedTasks: completedTasksResult.length,
+        totalInteractions: interactionsResult.length
+      };
+    }));
+    
+    return ranking
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+      .sort((a, b) => b.completedTasks - a.completedTasks);
   }
 }
 

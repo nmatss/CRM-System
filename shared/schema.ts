@@ -278,6 +278,52 @@ export const insertSellerTaskSchema = createInsertSchema(sellerTasks).omit({
 export type InsertSellerTask = z.infer<typeof insertSellerTaskSchema>;
 export type SellerTask = typeof sellerTasks.$inferSelect;
 
+// ==================== SELLER GOALS ====================
+export const sellerGoals = pgTable("seller_goals", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  sellerId: varchar("seller_id").references(() => users.id, { onDelete: "cascade" }),
+  dailyTaskGoal: integer("daily_task_goal").notNull().default(10),
+  weeklyTaskGoal: integer("weekly_task_goal").notNull().default(50),
+  monthlyTaskGoal: integer("monthly_task_goal").notNull().default(200),
+  dailySalesGoal: text("daily_sales_goal").default("0"),
+  weeklySalesGoal: text("weekly_sales_goal").default("0"),
+  monthlySalesGoal: text("monthly_sales_goal").default("0"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertSellerGoalSchema = createInsertSchema(sellerGoals).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSellerGoal = z.infer<typeof insertSellerGoalSchema>;
+export type SellerGoal = typeof sellerGoals.$inferSelect;
+
+// ==================== CUSTOMER INTERACTIONS ====================
+export const customerInteractions = pgTable("customer_interactions", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  customerId: integer("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  sellerId: varchar("seller_id").references(() => users.id, { onDelete: "set null" }),
+  taskId: integer("task_id").references(() => sellerTasks.id, { onDelete: "set null" }),
+  type: text("type").notNull(),
+  channel: text("channel").notNull(),
+  notes: text("notes"),
+  outcome: text("outcome"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCustomerInteractionSchema = createInsertSchema(customerInteractions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertCustomerInteraction = z.infer<typeof insertCustomerInteractionSchema>;
+export type CustomerInteraction = typeof customerInteractions.$inferSelect;
+
 // ==================== AUTH SCHEMAS ====================
 export const loginSchema = z.object({
   username: z.string().min(1),
