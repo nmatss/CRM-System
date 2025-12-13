@@ -171,12 +171,6 @@ const testimonials = [
   }
 ];
 
-const stats = [
-  { value: "500+", label: "Lojas ativas", icon: Store },
-  { value: "2M+", label: "Clientes gerenciados", icon: Users },
-  { value: "R$50M+", label: "Em vendas rastreadas", icon: TrendingUp },
-  { value: "99.9%", label: "Uptime garantido", icon: Shield }
-];
 
 export default function Landing() {
   const [, setLocation] = useLocation();
@@ -331,26 +325,6 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="py-16 px-4 sm:px-6 lg:px-8 border-y border-white/5 bg-[#0F172A]/30">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            {stats.map((stat, index) => (
-              <motion.div
-                key={stat.label}
-                className="text-center"
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
-              >
-                <stat.icon className="w-8 h-8 mx-auto mb-3 text-cyan-400" />
-                <div className="text-3xl font-bold text-white">{stat.value}</div>
-                <div className="text-sm text-gray-500">{stat.label}</div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       <section id="features" className="py-24 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
