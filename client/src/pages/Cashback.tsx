@@ -40,26 +40,28 @@ export default function Cashback() {
   return (
     <Layout>
       <div className="flex flex-col gap-8">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Cashback & Fidelidade</h1>
-            <p className="text-muted-foreground">Gerencie suas regras de bônus e retenção.</p>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Cashback & Fidelidade</h1>
+            <p className="text-sm text-muted-foreground">Gerencie suas regras de bônus e retenção.</p>
           </div>
-          <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700" data-testid="button-new-rule">
+          <Button className="gap-2 bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto" data-testid="button-new-rule">
             <Plus className="h-4 w-4" />
-            Nova Regra de Cashback
+            <span className="hidden sm:inline">Nova Regra de Cashback</span>
+            <span className="sm:hidden">Nova Regra</span>
           </Button>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
           <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white border-none">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-white/80">Cashback Disponível</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold flex items-center gap-2" data-testid="text-cashback-available">
-                <Wallet className="h-5 w-5" />
-                R$ 142.300
+              <div className="text-lg sm:text-2xl font-bold flex items-center gap-1 sm:gap-2" data-testid="text-cashback-available">
+                <Wallet className="h-4 w-4 sm:h-5 sm:w-5" />
+                <span className="hidden sm:inline">R$ 142.300</span>
+                <span className="sm:hidden">R$ 142K</span>
               </div>
               <p className="text-xs text-white/70 mt-1">Passivo pendente</p>
             </CardContent>
@@ -69,7 +71,7 @@ export default function Cashback() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Taxa de Resgate</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold" data-testid="text-redemption-rate">24.8%</div>
+              <div className="text-lg sm:text-2xl font-bold" data-testid="text-redemption-rate">24.8%</div>
               <p className="text-xs text-emerald-600 flex items-center gap-1 mt-1">
                 <ArrowUpRight className="h-3 w-3" />
                 +2.1% este mês
@@ -81,7 +83,10 @@ export default function Cashback() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Receita Gerada</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold" data-testid="text-revenue-generated">R$ 890.120</div>
+              <div className="text-lg sm:text-2xl font-bold" data-testid="text-revenue-generated">
+                <span className="hidden sm:inline">R$ 890.120</span>
+                <span className="sm:hidden">R$ 890K</span>
+              </div>
               <p className="text-xs text-muted-foreground mt-1">A partir de resgates</p>
             </CardContent>
           </Card>
@@ -90,14 +95,14 @@ export default function Cashback() {
               <CardTitle className="text-sm font-medium text-muted-foreground">ROI</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold" data-testid="text-roi">12x</div>
+              <div className="text-lg sm:text-2xl font-bold" data-testid="text-roi">12x</div>
               <p className="text-xs text-muted-foreground mt-1">Retorno sobre Investimento</p>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="col-span-2">
+        <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle>Regras de Bônus Ativas</CardTitle>
               <CardDescription>Configure como seus clientes ganham cashback.</CardDescription>

@@ -79,18 +79,24 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Visão Geral da Loja</h1>
-            <p className="text-muted-foreground">Performance da Coleção Primavera 2025</p>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Visão Geral da Loja</h1>
+            <p className="text-sm text-muted-foreground">Performance da Coleção Primavera 2025</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" data-testid="button-download-report">Baixar Relatório</Button>
-            <Button size="sm" data-testid="button-dashboard-new-order">Novo Pedido</Button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Button variant="outline" size="sm" className="text-xs sm:text-sm flex-1 sm:flex-none" data-testid="button-download-report">
+              <span className="hidden sm:inline">Baixar Relatório</span>
+              <span className="sm:hidden">Relatório</span>
+            </Button>
+            <Button size="sm" className="text-xs sm:text-sm flex-1 sm:flex-none" data-testid="button-dashboard-new-order">
+              <span className="hidden sm:inline">Novo Pedido</span>
+              <span className="sm:hidden">Novo</span>
+            </Button>
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
           {stats.map((stat, index) => (
             <Card key={index} data-testid={`card-stat-${index}`}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -100,7 +106,7 @@ export default function Dashboard() {
                 <stat.icon className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold" data-testid={`text-stat-value-${index}`}>{stat.value}</div>
+                <div className="text-lg sm:text-2xl font-bold" data-testid={`text-stat-value-${index}`}>{stat.value}</div>
                 <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                   {stat.trend === "up" ? (
                     <ArrowUpRight className="h-3 w-3 text-emerald-500" />
@@ -116,13 +122,13 @@ export default function Dashboard() {
           ))}
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-          <Card className="col-span-4">
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-7">
+          <Card className="lg:col-span-4">
             <CardHeader>
-              <CardTitle>Receita Semanal</CardTitle>
+              <CardTitle className="text-base sm:text-lg">Receita Semanal</CardTitle>
             </CardHeader>
             <CardContent className="pl-2">
-              <div className="h-[350px] w-full">
+              <div className="h-[250px] sm:h-[350px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
                     <XAxis 
@@ -158,10 +164,10 @@ export default function Dashboard() {
             </CardContent>
           </Card>
           
-          <Card className="col-span-3">
+          <Card className="lg:col-span-3">
             <CardHeader>
-              <CardTitle>Vendas Recentes</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-base sm:text-lg">Vendas Recentes</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">
                 Feed ao vivo de vendas online e loja física.
               </CardDescription>
             </CardHeader>

@@ -174,12 +174,12 @@ function ClienteCard({ tarefa, onMarcarFeito }: { tarefa: TarefaCliente; onMarca
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-col sm:flex-row flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setScriptExpandido(!scriptExpandido)}
-              className="gap-2"
+              className="gap-2 w-full sm:w-auto text-xs sm:text-sm"
               data-testid={`button-ver-script-${tarefa.id}`}
             >
               <MessageCircle className="h-4 w-4" />
@@ -191,18 +191,19 @@ function ClienteCard({ tarefa, onMarcarFeito }: { tarefa: TarefaCliente; onMarca
               variant="default"
               size="sm"
               onClick={handleChamarWhatsApp}
-              className="gap-2 bg-green-600 hover:bg-green-700"
+              className="gap-2 bg-green-600 hover:bg-green-700 w-full sm:w-auto text-xs sm:text-sm"
               data-testid={`button-whatsapp-${tarefa.id}`}
             >
               <Phone className="h-4 w-4" />
-              Chamar no WhatsApp
+              <span className="hidden sm:inline">Chamar no WhatsApp</span>
+              <span className="sm:hidden">WhatsApp</span>
             </Button>
 
             <Button
               variant="outline"
               size="sm"
               onClick={() => onMarcarFeito(tarefa.id)}
-              className="gap-2 text-green-600 border-green-600 hover:bg-green-50"
+              className="gap-2 text-green-600 border-green-600 hover:bg-green-50 w-full sm:w-auto text-xs sm:text-sm"
               data-testid={`button-marcar-feito-${tarefa.id}`}
             >
               <Check className="h-4 w-4" />
@@ -263,39 +264,39 @@ export default function AgendaVendedor() {
       <div className="flex flex-col gap-6 max-w-4xl mx-auto">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <Calendar className="h-6 w-6 text-primary" />
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+              <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
               Agenda do Vendedor
             </h1>
-            <p className="text-muted-foreground mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Seus contatos prioritários para hoje
             </p>
           </div>
         </div>
 
         <Card className="bg-gradient-to-r from-primary/10 to-primary/5 border-primary/20">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-3">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
               <div>
-                <h2 className="text-lg font-semibold" data-testid="text-meta-titulo">Sua Meta Hoje</h2>
-                <p className="text-3xl font-bold text-primary" data-testid="text-meta-progresso">
+                <h2 className="text-base sm:text-lg font-semibold" data-testid="text-meta-titulo">Sua Meta Hoje</h2>
+                <p className="text-2xl sm:text-3xl font-bold text-primary" data-testid="text-meta-progresso">
                   {totalContatosRealizados}/{META_DIARIA} contatos realizados
                 </p>
               </div>
-              <div className="text-right">
+              <div className="text-left sm:text-right">
                 {totalContatosRealizados >= META_DIARIA ? (
-                  <Badge className="bg-green-500 text-white text-sm px-3 py-1">
-                    <Check className="h-4 w-4 mr-1" />
+                  <Badge className="bg-green-500 text-white text-xs sm:text-sm px-2 sm:px-3 py-1">
+                    <Check className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
                     Meta Atingida!
                   </Badge>
                 ) : (
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-xs sm:text-sm text-muted-foreground">
                     Faltam {META_DIARIA - totalContatosRealizados} contatos
                   </span>
                 )}
               </div>
             </div>
-            <Progress value={progresso} className="h-3" data-testid="progress-meta" />
+            <Progress value={progresso} className="h-2 sm:h-3" data-testid="progress-meta" />
           </CardContent>
         </Card>
 

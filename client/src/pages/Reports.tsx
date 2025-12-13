@@ -40,19 +40,21 @@ export default function Reports() {
   return (
     <Layout>
       <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Relatórios</h1>
-            <p className="text-muted-foreground">Análise detalhada de performance.</p>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Relatórios</h1>
+            <p className="text-sm text-muted-foreground">Análise detalhada de performance.</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="gap-2">
+            <Button variant="outline" className="gap-2 text-xs sm:text-sm flex-1 sm:flex-none">
               <Calendar className="h-4 w-4" />
-              Últimos 30 dias
+              <span className="hidden sm:inline">Últimos 30 dias</span>
+              <span className="sm:hidden">30 dias</span>
             </Button>
-            <Button className="gap-2">
+            <Button className="gap-2 text-xs sm:text-sm flex-1 sm:flex-none">
               <Download className="h-4 w-4" />
-              Exportar PDF
+              <span className="hidden sm:inline">Exportar PDF</span>
+              <span className="sm:hidden">PDF</span>
             </Button>
           </div>
         </div>
@@ -91,15 +93,15 @@ export default function Reports() {
               <CardDescription>Distribuição de receita por tipo de produto.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[300px]">
+              <div className="h-[250px] sm:h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={categoryData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
+                      innerRadius={40}
+                      outerRadius={60}
                       fill="#8884d8"
                       paddingAngle={5}
                       dataKey="value"
@@ -111,9 +113,9 @@ export default function Reports() {
                     <Tooltip />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="flex justify-center gap-4 mt-4">
+                <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mt-4">
                   {categoryData.map((entry, index) => (
-                    <div key={index} className="flex items-center gap-2 text-sm">
+                    <div key={index} className="flex items-center gap-2 text-xs sm:text-sm">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
                       <span>{entry.name}</span>
                     </div>

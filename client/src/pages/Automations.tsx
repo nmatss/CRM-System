@@ -42,12 +42,12 @@ export default function Automations() {
   return (
     <Layout>
       <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Automações</h1>
-            <p className="text-muted-foreground">Configure regras de "Se Isso, Então Aquilo" para sua loja.</p>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Automações</h1>
+            <p className="text-sm text-muted-foreground">Configure regras de "Se Isso, Então Aquilo" para sua loja.</p>
           </div>
-          <Button className="gap-2 bg-amber-500 hover:bg-amber-600 text-black" data-testid="button-new-automation">
+          <Button className="gap-2 bg-amber-500 hover:bg-amber-600 text-black w-full sm:w-auto" data-testid="button-new-automation">
             <Zap className="h-4 w-4" />
             Nova Automação
           </Button>
