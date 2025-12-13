@@ -12,7 +12,10 @@ import {
   MoreHorizontal,
   ArrowUpDown,
   Package,
-  Loader2
+  Loader2,
+  Upload,
+  Download,
+  FileSpreadsheet
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -45,11 +48,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { Product } from "@shared/schema";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ProductFormData {
   name: string;
@@ -69,13 +74,44 @@ const initialFormData: ProductFormData = {
   image: "",
 };
 
+function parseCSV(csvText: string): any[] {
+  const lines = csvText.trim().split('\n');
+  if (lines.length < 2) return [];
+  
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+  const data: any[] = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+    const row: any = {};
+    headers.forEach((header, index) => {
+      row[header] = values[index] || '';
+    });
+    if (row.name || row.nome) {
+      data.push({
+        name: row.name || row.nome,
+        category: row.category || row.categoria || '',
+        price: row.price || row.preco || 'R$ 0,00',
+        stock: parseInt(row.stock || row.estoque || '0') || 0,
+        status: row.status || 'Ativo',
+        image: row.image || row.imagem || '',
+      });
+    }
+  }
+  return data;
+}
+
 export default function Products() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [formData, setFormData] = useState<ProductFormData>(initialFormData);
   const [searchTerm, setSearchTerm] = useState("");
+  const [importData, setImportData] = useState<any[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -134,6 +170,67 @@ export default function Products() {
       toast({ title: "Erro", description: "Não foi possível excluir o produto.", variant: "destructive" });
     },
   });
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const parsed = parseCSV(text);
+      setImportData(parsed);
+      setIsImportDialogOpen(true);
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleImport = async () => {
+    if (importData.length === 0) return;
+    setIsImporting(true);
+    try {
+      const response = await apiRequest("POST", "/api/import/products", { products: importData });
+      const result = await response.json();
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast({ 
+        title: "Sucesso!", 
+        description: `${result.imported || importData.length} produtos importados.` 
+      });
+      setIsImportDialogOpen(false);
+      setImportData([]);
+    } catch (error) {
+      toast({ title: "Erro", description: "Não foi possível importar os produtos.", variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const response = await fetch("/api/export/products");
+      if (!response.ok) throw new Error("Export failed");
+      const data = await response.json();
+      
+      const headers = ["name", "category", "price", "stock", "status"];
+      const csvContent = [
+        headers.join(","),
+        ...data.map((p: any) => headers.map(h => `"${p[h] || ''}"`).join(","))
+      ].join("\n");
+      
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `produtos_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      
+      toast({ title: "Sucesso!", description: "Produtos exportados com sucesso." });
+    } catch (error) {
+      toast({ title: "Erro", description: "Não foi possível exportar os produtos.", variant: "destructive" });
+    }
+  };
 
   const openCreateModal = () => {
     setEditingProduct(null);
@@ -196,10 +293,38 @@ export default function Products() {
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Produtos</h1>
             <p className="text-sm text-muted-foreground">Gerencie o catálogo da sua loja.</p>
           </div>
-          <Button className="gap-2" onClick={openCreateModal} data-testid="button-add-product">
-            <Plus className="h-4 w-4" />
-            Adicionar Produto
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <input
+              type="file"
+              accept=".csv"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              className="hidden"
+              data-testid="input-import-file"
+            />
+            <Button 
+              variant="outline" 
+              className="gap-2" 
+              onClick={() => fileInputRef.current?.click()}
+              data-testid="button-import-products"
+            >
+              <Upload className="h-4 w-4" />
+              Importar
+            </Button>
+            <Button 
+              variant="outline" 
+              className="gap-2" 
+              onClick={handleExport}
+              data-testid="button-export-products"
+            >
+              <Download className="h-4 w-4" />
+              Exportar
+            </Button>
+            <Button className="gap-2" onClick={openCreateModal} data-testid="button-add-product">
+              <Plus className="h-4 w-4" />
+              Adicionar Produto
+            </Button>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
@@ -451,6 +576,68 @@ export default function Products() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]" data-testid="import-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Importar Produtos
+            </DialogTitle>
+            <DialogDescription>
+              Revise os dados do arquivo CSV antes de importar.
+            </DialogDescription>
+          </DialogHeader>
+          {importData.length > 0 ? (
+            <ScrollArea className="max-h-[300px] border rounded-md">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Categoria</TableHead>
+                    <TableHead>Preço</TableHead>
+                    <TableHead>Estoque</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {importData.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{item.name}</TableCell>
+                      <TableCell>{item.category}</TableCell>
+                      <TableCell>{item.price}</TableCell>
+                      <TableCell>{item.stock}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          ) : (
+            <p className="text-muted-foreground text-center py-8">
+              Nenhum dado válido encontrado no arquivo.
+            </p>
+          )}
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsImportDialogOpen(false);
+                setImportData([]);
+              }}
+              data-testid="button-cancel-import"
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleImport} 
+              disabled={importData.length === 0 || isImporting}
+              data-testid="button-confirm-import"
+            >
+              {isImporting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Importar {importData.length} produtos
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

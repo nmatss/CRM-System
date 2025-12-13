@@ -46,12 +46,14 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MoreHorizontal, Plus, Filter, Tag, Search, UserPlus, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { MoreHorizontal, Plus, Filter, Tag, Search, UserPlus, Loader2, Upload, Download, FileSpreadsheet } from "lucide-react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { Customer } from "@shared/schema";
+import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface CustomerFormData {
   name: string;
@@ -73,13 +75,45 @@ const initialFormData: CustomerFormData = {
   favoriteCategory: "",
 };
 
+function parseCSV(csvText: string): any[] {
+  const lines = csvText.trim().split('\n');
+  if (lines.length < 2) return [];
+  
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+  const data: any[] = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+    const row: any = {};
+    headers.forEach((header, index) => {
+      row[header] = values[index] || '';
+    });
+    if ((row.name || row.nome) && (row.email || row.e_mail)) {
+      data.push({
+        name: row.name || row.nome,
+        email: row.email || row.e_mail,
+        phone: row.phone || row.telefone || '',
+        segment: row.segment || row.segmento || 'Novo',
+        ltv: row.ltv || 'R$ 0,00',
+        lastPurchase: row.lastpurchase || row.ultimacompra || new Date().toLocaleDateString("pt-BR"),
+        favoriteCategory: row.favoritecategory || row.categoriafavorita || '',
+      });
+    }
+  }
+  return data;
+}
+
 export default function Customers() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [formData, setFormData] = useState<CustomerFormData>(initialFormData);
   const [searchTerm, setSearchTerm] = useState("");
+  const [importData, setImportData] = useState<any[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -138,6 +172,67 @@ export default function Customers() {
       toast({ title: "Erro", description: "Não foi possível excluir o cliente.", variant: "destructive" });
     },
   });
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const parsed = parseCSV(text);
+      setImportData(parsed);
+      setIsImportDialogOpen(true);
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleImport = async () => {
+    if (importData.length === 0) return;
+    setIsImporting(true);
+    try {
+      const response = await apiRequest("POST", "/api/import/customers", { customers: importData });
+      const result = await response.json();
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      toast({ 
+        title: "Sucesso!", 
+        description: `${result.imported || importData.length} clientes importados.` 
+      });
+      setIsImportDialogOpen(false);
+      setImportData([]);
+    } catch (error) {
+      toast({ title: "Erro", description: "Não foi possível importar os clientes.", variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const response = await fetch("/api/export/customers");
+      if (!response.ok) throw new Error("Export failed");
+      const data = await response.json();
+      
+      const headers = ["name", "email", "phone", "segment", "ltv", "lastPurchase", "favoriteCategory"];
+      const csvContent = [
+        headers.join(","),
+        ...data.map((c: any) => headers.map(h => `"${c[h] || ''}"`).join(","))
+      ].join("\n");
+      
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `clientes_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      
+      toast({ title: "Sucesso!", description: "Clientes exportados com sucesso." });
+    } catch (error) {
+      toast({ title: "Erro", description: "Não foi possível exportar os clientes.", variant: "destructive" });
+    }
+  };
 
   const openCreateModal = () => {
     setEditingCustomer(null);
@@ -199,10 +294,38 @@ export default function Customers() {
       <div className="flex flex-col gap-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Clienteling</h1>
-          <Button className="gap-2 w-full sm:w-auto" onClick={openCreateModal} data-testid="button-add-customer">
-            <Plus className="h-4 w-4" />
-            Adicionar Cliente
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <input
+              type="file"
+              accept=".csv"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              className="hidden"
+              data-testid="input-import-file"
+            />
+            <Button 
+              variant="outline" 
+              className="gap-2" 
+              onClick={() => fileInputRef.current?.click()}
+              data-testid="button-import-customers"
+            >
+              <Upload className="h-4 w-4" />
+              Importar
+            </Button>
+            <Button 
+              variant="outline" 
+              className="gap-2" 
+              onClick={handleExport}
+              data-testid="button-export-customers"
+            >
+              <Download className="h-4 w-4" />
+              Exportar
+            </Button>
+            <Button className="gap-2" onClick={openCreateModal} data-testid="button-add-customer">
+              <Plus className="h-4 w-4" />
+              Adicionar Cliente
+            </Button>
+          </div>
         </div>
 
         <Card>
@@ -534,10 +657,66 @@ export default function Customers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]" data-testid="import-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Importar Clientes
+            </DialogTitle>
+            <DialogDescription>
+              Revise os dados do arquivo CSV antes de importar.
+            </DialogDescription>
+          </DialogHeader>
+          {importData.length > 0 ? (
+            <ScrollArea className="max-h-[300px] border rounded-md">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Segmento</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {importData.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{item.name}</TableCell>
+                      <TableCell>{item.email}</TableCell>
+                      <TableCell>{item.segment}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          ) : (
+            <p className="text-muted-foreground text-center py-8">
+              Nenhum dado válido encontrado no arquivo.
+            </p>
+          )}
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsImportDialogOpen(false);
+                setImportData([]);
+              }}
+              data-testid="button-cancel-import"
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleImport} 
+              disabled={importData.length === 0 || isImporting}
+              data-testid="button-confirm-import"
+            >
+              {isImporting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Importar {importData.length} clientes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
-}
-
-function DropdownMenuSeparator() {
-  return <div className="h-px bg-muted my-1" />;
 }

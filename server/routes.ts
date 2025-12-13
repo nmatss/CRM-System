@@ -1530,5 +1530,149 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== IMPORT/EXPORT ROUTES ====================
+  app.post("/api/import/customers", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const { data } = req.body;
+      if (!Array.isArray(data) || data.length === 0) {
+        return res.status(400).json({ error: "Dados inválidos. Envie um array de clientes." });
+      }
+      
+      const results = { success: 0, errors: [] as string[] };
+      
+      for (const row of data) {
+        try {
+          const customerData = {
+            tenantId,
+            name: row.name || row.nome || "",
+            email: row.email || "",
+            phone: row.phone || row.telefone || "",
+            segment: row.segment || row.segmento || "Novo",
+            ltv: row.ltv || "R$ 0,00",
+            lastPurchase: row.lastPurchase || row.ultimaCompra || new Date().toLocaleDateString("pt-BR"),
+            favoriteCategory: row.favoriteCategory || row.categoriaFavorita || "",
+          };
+          
+          if (!customerData.name) {
+            results.errors.push(`Linha sem nome: ${JSON.stringify(row)}`);
+            continue;
+          }
+          
+          await storage.createCustomer(customerData);
+          results.success++;
+        } catch (err: any) {
+          results.errors.push(`Erro ao importar: ${row.name || row.nome}: ${err.message}`);
+        }
+      }
+      
+      res.json({
+        message: `Importação concluída: ${results.success} clientes importados.`,
+        success: results.success,
+        errors: results.errors.slice(0, 10),
+        totalErrors: results.errors.length,
+      });
+    } catch (error) {
+      console.error("Customer import error:", error);
+      res.status(500).json({ error: "Erro ao importar clientes" });
+    }
+  });
+
+  app.post("/api/import/products", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const { data } = req.body;
+      if (!Array.isArray(data) || data.length === 0) {
+        return res.status(400).json({ error: "Dados inválidos. Envie um array de produtos." });
+      }
+      
+      const results = { success: 0, errors: [] as string[] };
+      
+      for (const row of data) {
+        try {
+          const productData = {
+            tenantId,
+            name: row.name || row.nome || "",
+            category: row.category || row.categoria || "",
+            price: row.price || row.preco || "R$ 0,00",
+            stock: parseInt(row.stock || row.estoque || "0") || 0,
+            status: row.status || "Ativo",
+            image: row.image || row.imagem || "",
+          };
+          
+          if (!productData.name) {
+            results.errors.push(`Linha sem nome: ${JSON.stringify(row)}`);
+            continue;
+          }
+          
+          await storage.createProduct(productData);
+          results.success++;
+        } catch (err: any) {
+          results.errors.push(`Erro ao importar: ${row.name || row.nome}: ${err.message}`);
+        }
+      }
+      
+      res.json({
+        message: `Importação concluída: ${results.success} produtos importados.`,
+        success: results.success,
+        errors: results.errors.slice(0, 10),
+        totalErrors: results.errors.length,
+      });
+    } catch (error) {
+      console.error("Product import error:", error);
+      res.status(500).json({ error: "Erro ao importar produtos" });
+    }
+  });
+
+  app.get("/api/export/customers", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const customers = await storage.getCustomers(tenantId);
+      res.json(customers);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao exportar clientes" });
+    }
+  });
+
+  app.get("/api/export/products", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const products = await storage.getProducts(tenantId);
+      res.json(products);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao exportar produtos" });
+    }
+  });
+
+  app.get("/api/export/orders", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const orders = await storage.getOrders(tenantId);
+      res.json(orders);
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao exportar pedidos" });
+    }
+  });
+
   return httpServer;
 }
