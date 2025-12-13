@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Building2, Plus, Users, Store, Crown, Pencil, Copy, ExternalLink, MessageSquare, Calendar, Mail, Phone, CheckCircle2, Trash2, UserPlus, Link, BarChart3, ShoppingCart, Package } from "lucide-react";
+import { Building2, Plus, Users, Store, Crown, Pencil, Copy, ExternalLink, MessageSquare, Calendar, Mail, Phone, CheckCircle2, Trash2, UserPlus, Link, BarChart3, ShoppingCart, Package, KeyRound, CreditCard, Hash } from "lucide-react";
 import type { Tenant, ContactRequest, DemoRequest, User, TenantUser } from "@shared/schema";
 
 type UserWithoutPassword = Omit<User, "password">;
@@ -37,7 +37,7 @@ export default function Admin() {
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
   const [isEditUserDialogOpen, setIsEditUserDialogOpen] = useState(false);
   const [isAssignTenantDialogOpen, setIsAssignTenantDialogOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ email: "", password: "", name: "", isSuperAdmin: false, tenantId: "", role: "seller" });
+  const [newUser, setNewUser] = useState({ email: "", password: "", name: "", cpf: "", sellerCode: "", phone: "", isSuperAdmin: false, tenantId: "", role: "seller" });
   const [editingUser, setEditingUser] = useState<UserWithoutPassword | null>(null);
   const [editUserPassword, setEditUserPassword] = useState("");
   const [assigningUser, setAssigningUser] = useState<UserWithoutPassword | null>(null);
@@ -203,7 +203,7 @@ export default function Admin() {
   });
 
   const createUserMutation = useMutation({
-    mutationFn: async (data: { email: string; password: string; name: string; isSuperAdmin?: boolean; tenantId?: string; role?: string }) => {
+    mutationFn: async (data: { email?: string; password: string; name: string; cpf?: string; sellerCode?: string; phone?: string; isSuperAdmin?: boolean; tenantId?: string; role?: string }) => {
       const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -218,7 +218,7 @@ export default function Admin() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
       setIsUserDialogOpen(false);
-      setNewUser({ email: "", password: "", name: "", isSuperAdmin: false, tenantId: "", role: "seller" });
+      setNewUser({ email: "", password: "", name: "", cpf: "", sellerCode: "", phone: "", isSuperAdmin: false, tenantId: "", role: "seller" });
       toast({ title: "Usuário criado!", description: "Novo usuário adicionado com sucesso." });
     },
     onError: (error: Error) => {
@@ -316,6 +316,26 @@ export default function Admin() {
     },
   });
 
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await fetch(`/api/admin/users/${userId}/reset-password`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to reset password");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+      toast({ title: "Senha resetada!", description: `Nova senha temporária: ${data.temporaryPassword}` });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleCreateTenant = (e: React.FormEvent) => {
     e.preventDefault();
     const slug = newTenant.slug || newTenant.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
@@ -331,8 +351,15 @@ export default function Admin() {
 
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanedCpf = newUser.cpf.replace(/\D/g, '');
     createUserMutation.mutate({
-      ...newUser,
+      name: newUser.name,
+      email: newUser.email || undefined,
+      cpf: cleanedCpf || undefined,
+      sellerCode: newUser.sellerCode || undefined,
+      phone: newUser.phone || undefined,
+      password: newUser.password || newUser.sellerCode,
+      isSuperAdmin: newUser.isSuperAdmin,
       tenantId: newUser.tenantId || undefined,
       role: newUser.tenantId ? newUser.role : undefined,
     });
@@ -747,36 +774,75 @@ export default function Admin() {
                   </DialogHeader>
                   <form onSubmit={handleCreateUser} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="user-name">Nome</Label>
+                      <Label htmlFor="user-name">Nome *</Label>
                       <Input
                         id="user-name"
                         value={newUser.name}
                         onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
                         placeholder="João Silva"
+                        required
                         data-testid="input-user-name"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="user-email">Email</Label>
-                      <Input
-                        id="user-email"
-                        type="email"
-                        value={newUser.email}
-                        onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                        placeholder="joao@exemplo.com"
-                        required
-                        data-testid="input-user-email"
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="user-cpf">CPF *</Label>
+                        <Input
+                          id="user-cpf"
+                          value={newUser.cpf}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '').slice(0, 11);
+                            const formatted = value.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+                            setNewUser({ ...newUser, cpf: formatted });
+                          }}
+                          placeholder="000.000.000-00"
+                          required
+                          data-testid="input-user-cpf"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="user-seller-code">Código Vendedor *</Label>
+                        <Input
+                          id="user-seller-code"
+                          value={newUser.sellerCode}
+                          onChange={(e) => setNewUser({ ...newUser, sellerCode: e.target.value.toUpperCase() })}
+                          placeholder="V001"
+                          required
+                          data-testid="input-user-seller-code"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="user-email">Email (opcional)</Label>
+                        <Input
+                          id="user-email"
+                          type="email"
+                          value={newUser.email}
+                          onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                          placeholder="joao@exemplo.com"
+                          data-testid="input-user-email"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="user-phone">Telefone</Label>
+                        <Input
+                          id="user-phone"
+                          value={newUser.phone}
+                          onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
+                          placeholder="(11) 99999-9999"
+                          data-testid="input-user-phone"
+                        />
+                      </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="user-password">Senha</Label>
+                      <Label htmlFor="user-password">Senha (deixe em branco para usar código vendedor)</Label>
                       <Input
                         id="user-password"
                         type="password"
                         value={newUser.password}
                         onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                        placeholder="Senha segura"
-                        required
+                        placeholder="Deixe em branco para usar código vendedor"
                         data-testid="input-user-password"
                       />
                     </div>
@@ -868,7 +934,26 @@ export default function Admin() {
                           </div>
                           <div>
                             <div className="font-medium">{u.name || u.email}</div>
-                            <div className="text-sm text-muted-foreground">{u.email}</div>
+                            <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
+                              {u.cpf && (
+                                <span className="flex items-center gap-1" data-testid={`user-cpf-${u.id}`}>
+                                  <CreditCard className="w-3 h-3" />
+                                  {u.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}
+                                </span>
+                              )}
+                              {u.sellerCode && (
+                                <span className="flex items-center gap-1" data-testid={`user-seller-code-${u.id}`}>
+                                  <Hash className="w-3 h-3" />
+                                  {u.sellerCode}
+                                </span>
+                              )}
+                              {u.email && (
+                                <span className="flex items-center gap-1" data-testid={`user-email-${u.id}`}>
+                                  <Mail className="w-3 h-3" />
+                                  {u.email}
+                                </span>
+                              )}
+                            </div>
                             {u.tenantUsers && u.tenantUsers.length > 0 && (
                               <div className="flex gap-1 mt-1 flex-wrap">
                                 {u.tenantUsers.map((tu) => (
@@ -883,6 +968,9 @@ export default function Admin() {
                         <div className="flex items-center gap-2">
                           {u.isSuperAdmin && (
                             <Badge className="bg-yellow-500">Super Admin</Badge>
+                          )}
+                          {u.mustChangePassword && (
+                            <Badge variant="outline" className="text-orange-600 border-orange-300">Primeiro acesso</Badge>
                           )}
                           <Button
                             variant="ghost"
@@ -902,6 +990,37 @@ export default function Admin() {
                           >
                             <Pencil className="w-4 h-4" />
                           </Button>
+                          {u.id !== user?.id && !u.isSuperAdmin && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-blue-500 hover:text-blue-700"
+                                  title="Resetar Senha"
+                                  data-testid={`button-reset-password-${u.id}`}
+                                >
+                                  <KeyRound className="w-4 h-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Resetar Senha?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    A senha do usuário "{u.name || u.email}" será resetada para o código de vendedor ou senha padrão.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => resetPasswordMutation.mutate(u.id)}
+                                  >
+                                    Resetar
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
                           {u.id !== user?.id && (
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
@@ -919,7 +1038,7 @@ export default function Admin() {
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Excluir Usuário?</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    Esta ação não pode ser desfeita. O usuário "{u.email}" será removido permanentemente.
+                                    Esta ação não pode ser desfeita. O usuário "{u.name || u.email}" será removido permanentemente.
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>

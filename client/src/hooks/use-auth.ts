@@ -4,6 +4,7 @@ import type { SessionUser } from "@shared/schema";
 interface AuthResponse {
   user: SessionUser;
   message: string;
+  mustChangePassword?: boolean;
 }
 
 export function useAuth() {
@@ -25,7 +26,7 @@ export function useAuth() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const loginMutation = useMutation<AuthResponse, Error, { email: string; password: string }>({
+  const loginMutation = useMutation<AuthResponse, Error, { username: string; password: string }>({
     mutationFn: async (credentials) => {
       const response = await fetch("/api/auth/login", {
         method: "POST",
@@ -94,19 +95,41 @@ export function useAuth() {
     },
   });
 
+  const changePasswordMutation = useMutation<{ message: string }, Error, { currentPassword: string; newPassword: string; confirmPassword: string }>({
+    mutationFn: async (data) => {
+      const response = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Falha ao alterar senha");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    },
+  });
+
   return {
     user,
     isLoading,
     isAuthenticated: !!user,
     isSuperAdmin: user?.isSuperAdmin ?? false,
+    mustChangePassword: user?.mustChangePassword ?? false,
     login: loginMutation.mutateAsync,
     register: registerMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,
     switchTenant: switchTenantMutation.mutateAsync,
+    changePassword: changePasswordMutation.mutateAsync,
     isLoggingIn: loginMutation.isPending,
     isRegistering: registerMutation.isPending,
     isLoggingOut: logoutMutation.isPending,
+    isChangingPassword: changePasswordMutation.isPending,
     loginError: loginMutation.error,
     registerError: registerMutation.error,
+    loginData: loginMutation.data,
   };
 }

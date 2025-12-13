@@ -363,19 +363,39 @@ export async function registerRoutes(
 
   app.post("/api/admin/users", requireSuperAdmin, async (req: Request, res: Response) => {
     try {
-      const { email, password, name, isSuperAdmin, tenantId, role } = req.body;
+      const { email, password, name, cpf, sellerCode, phone, isSuperAdmin, tenantId, role } = req.body;
       
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(400).json({ error: "Email já está em uso" });
+      // Check for duplicate CPF
+      if (cpf) {
+        const existingByCpf = await storage.getUserByCpf(cpf);
+        if (existingByCpf) {
+          return res.status(400).json({ error: "CPF já está em uso" });
+        }
       }
       
-      const hashedPassword = await hashPassword(password);
+      // Check for duplicate email only if provided
+      if (email) {
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser) {
+          return res.status(400).json({ error: "Email já está em uso" });
+        }
+      }
+      
+      const finalPassword = password || sellerCode;
+      if (!finalPassword) {
+        return res.status(400).json({ error: "Senha ou código vendedor é obrigatório" });
+      }
+      
+      const hashedPassword = await hashPassword(finalPassword);
       const user = await storage.createUser({
-        email,
+        email: email || null,
+        cpf: cpf || null,
+        sellerCode: sellerCode || null,
+        phone: phone || null,
         password: hashedPassword,
         name,
         isSuperAdmin: isSuperAdmin || false,
+        mustChangePassword: !isSuperAdmin,
       });
       
       if (tenantId && !isSuperAdmin) {
@@ -467,6 +487,185 @@ export async function registerRoutes(
       res.json({ message: "Vínculo removido com sucesso" });
     } catch (error) {
       res.status(500).json({ error: "Erro ao remover vínculo" });
+    }
+  });
+
+  app.post("/api/admin/users/:userId/reset-password", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId } = req.params;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "Usuário não encontrado" });
+      }
+      
+      const newPassword = user.sellerCode || "123456";
+      const hashedPassword = await hashPassword(newPassword);
+      await storage.updateUserPassword(userId, hashedPassword);
+      
+      res.json({ message: "Senha resetada com sucesso", temporaryPassword: newPassword });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao resetar senha" });
+    }
+  });
+
+  // ==================== TENANT USER MANAGEMENT (FOR MANAGERS) ====================
+  app.get("/api/team", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const tenantUsers = await storage.getTenantUsers(tenantId);
+      const usersWithDetails = await Promise.all(tenantUsers.map(async (tu) => {
+        const user = await storage.getUser(tu.userId);
+        if (!user) return null;
+        const { password, ...userWithoutPassword } = user;
+        return { ...tu, user: userWithoutPassword };
+      }));
+      
+      res.json(usersWithDetails.filter(Boolean));
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar equipe" });
+    }
+  });
+
+  app.post("/api/team", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const { name, cpf, sellerCode, phone, email, role } = req.body;
+      
+      if (cpf) {
+        const existingByCpf = await storage.getUserByCpf(cpf);
+        if (existingByCpf) {
+          return res.status(400).json({ error: "CPF já está em uso" });
+        }
+      }
+      
+      if (email) {
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser) {
+          return res.status(400).json({ error: "Email já está em uso" });
+        }
+      }
+      
+      const finalPassword = sellerCode || "123456";
+      const hashedPassword = await hashPassword(finalPassword);
+      
+      const user = await storage.createUser({
+        email: email || null,
+        cpf: cpf || null,
+        sellerCode: sellerCode || null,
+        phone: phone || null,
+        password: hashedPassword,
+        name,
+        isSuperAdmin: false,
+        mustChangePassword: true,
+      });
+      
+      await storage.createTenantUser({
+        tenantId,
+        userId: user.id,
+        role: role || "seller",
+      });
+      
+      const { password, ...userWithoutPassword } = user;
+      res.status(201).json(userWithoutPassword);
+    } catch (error) {
+      console.error("Error creating team member:", error);
+      res.status(400).json({ error: "Erro ao criar membro da equipe" });
+    }
+  });
+
+  app.put("/api/team/:userId", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const { userId } = req.params;
+      const { name, phone, role } = req.body;
+      
+      const tenantUser = await storage.getTenantUser(tenantId, userId);
+      if (!tenantUser) {
+        return res.status(404).json({ error: "Usuário não encontrado nesta empresa" });
+      }
+      
+      const updateData: Record<string, any> = {};
+      if (name !== undefined) updateData.name = name;
+      if (phone !== undefined) updateData.phone = phone;
+      
+      if (Object.keys(updateData).length > 0) {
+        await storage.updateUser(userId, updateData);
+      }
+      
+      if (role !== undefined) {
+        await storage.updateTenantUserRole(tenantId, userId, role);
+      }
+      
+      res.json({ message: "Membro atualizado com sucesso" });
+    } catch (error) {
+      res.status(400).json({ error: "Erro ao atualizar membro" });
+    }
+  });
+
+  app.post("/api/team/:userId/reset-password", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const { userId } = req.params;
+      
+      const tenantUser = await storage.getTenantUser(tenantId, userId);
+      if (!tenantUser) {
+        return res.status(404).json({ error: "Usuário não encontrado nesta empresa" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "Usuário não encontrado" });
+      }
+      
+      const newPassword = user.sellerCode || "123456";
+      const hashedPassword = await hashPassword(newPassword);
+      await storage.updateUserPassword(userId, hashedPassword);
+      
+      res.json({ message: "Senha resetada com sucesso", temporaryPassword: newPassword });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao resetar senha" });
+    }
+  });
+
+  app.delete("/api/team/:userId", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return res.status(400).json({ error: "Tenant não selecionado" });
+      }
+      
+      const { userId } = req.params;
+      
+      if (req.session.user?.id === userId) {
+        return res.status(400).json({ error: "Você não pode remover a si mesmo" });
+      }
+      
+      const tenantUser = await storage.getTenantUser(tenantId, userId);
+      if (!tenantUser) {
+        return res.status(404).json({ error: "Usuário não encontrado nesta empresa" });
+      }
+      
+      await storage.deleteTenantUser(tenantId, userId);
+      
+      res.json({ message: "Membro removido da equipe" });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao remover membro" });
     }
   });
 

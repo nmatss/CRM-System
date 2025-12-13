@@ -7,24 +7,97 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
-import { Store, Mail, Lock, Sparkles, ArrowLeft } from "lucide-react";
+import { Store, User, Lock, Sparkles, ArrowLeft, KeyRound, Eye, EyeOff } from "lucide-react";
 import zippiLogo from "@assets/generated_images/zippi_crm_modern_logo.png";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+function formatCpf(value: string): string {
+  const numbers = value.replace(/\D/g, "");
+  if (numbers.length <= 3) return numbers;
+  if (numbers.length <= 6) return `${numbers.slice(0, 3)}.${numbers.slice(3)}`;
+  if (numbers.length <= 9) return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6)}`;
+  return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6, 9)}-${numbers.slice(9, 11)}`;
+}
+
+function isNumericInput(value: string): boolean {
+  return /^\d+$/.test(value.replace(/\D/g, ""));
+}
 
 export default function Login() {
   const [, setLocation] = useLocation();
-  const { login, isLoggingIn } = useAuth();
+  const { login, isLoggingIn, changePassword, isChangingPassword } = useAuth();
   const { toast } = useToast();
 
-  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const cleanValue = value.replace(/[.\-]/g, "");
+    
+    if (isNumericInput(cleanValue) && cleanValue.length <= 11) {
+      setLoginForm({ ...loginForm, username: formatCpf(cleanValue) });
+    } else {
+      setLoginForm({ ...loginForm, username: value });
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await login(loginForm);
-      toast({ title: "Bem-vindo de volta!", description: "Login realizado com sucesso." });
-      setLocation("/dashboard");
+      const cleanUsername = loginForm.username.replace(/[.\-]/g, "");
+      const result = await login({ username: cleanUsername, password: loginForm.password });
+      
+      if (result.user?.mustChangePassword) {
+        setPasswordForm({ ...passwordForm, currentPassword: loginForm.password });
+        setShowPasswordModal(true);
+        toast({ 
+          title: "Primeiro acesso detectado", 
+          description: "Por segurança, você precisa alterar sua senha.",
+        });
+      } else {
+        toast({ title: "Bem-vindo de volta!", description: "Login realizado com sucesso." });
+        setLocation("/dashboard");
+      }
     } catch (error: any) {
       toast({ title: "Erro no login", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast({ title: "Erro", description: "As senhas não coincidem.", variant: "destructive" });
+      return;
+    }
+    
+    if (passwordForm.newPassword.length < 6) {
+      toast({ title: "Erro", description: "A nova senha deve ter pelo menos 6 caracteres.", variant: "destructive" });
+      return;
+    }
+    
+    try {
+      await changePassword({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+        confirmPassword: passwordForm.confirmPassword,
+      });
+      toast({ title: "Senha alterada!", description: "Sua senha foi alterada com sucesso." });
+      setShowPasswordModal(false);
+      setLocation("/dashboard");
+    } catch (error: any) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
     }
   };
 
@@ -89,18 +162,18 @@ export default function Login() {
             <CardContent>
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="login-email" className="text-gray-300">Email</Label>
+                  <Label htmlFor="login-username" className="text-gray-300">CPF ou Email</Label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-500" />
+                    <User className="absolute left-3 top-3 h-4 w-4 text-gray-500" />
                     <Input
-                      id="login-email"
-                      type="email"
-                      placeholder="seu@email.com"
+                      id="login-username"
+                      type="text"
+                      placeholder="Digite seu CPF ou email"
                       className="pl-10 bg-[#1F2937]/50 border-white/10 text-white placeholder:text-gray-500 focus:border-cyan-500/50 focus:ring-cyan-500/20"
-                      value={loginForm.email}
-                      onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                      value={loginForm.username}
+                      onChange={handleUsernameChange}
                       required
-                      data-testid="input-login-email"
+                      data-testid="input-login-username"
                     />
                   </div>
                 </div>
@@ -161,6 +234,101 @@ export default function Login() {
       </div>
 
       <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent" />
+
+      <Dialog open={showPasswordModal} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-md bg-[#0F172A] border-white/10 text-white" data-testid="password-change-modal">
+          <DialogHeader>
+            <div className="flex justify-center mb-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl flex items-center justify-center">
+                <KeyRound className="w-6 h-6 text-white" />
+              </div>
+            </div>
+            <DialogTitle className="text-xl text-center text-white">Alterar Senha</DialogTitle>
+            <DialogDescription className="text-center text-gray-400">
+              Este é seu primeiro acesso. Por segurança, você precisa criar uma nova senha.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handlePasswordChange} className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="current-password" className="text-gray-300">Senha Atual</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-500" />
+                <Input
+                  id="current-password"
+                  type={showCurrentPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  className="pl-10 pr-10 bg-[#1F2937]/50 border-white/10 text-white placeholder:text-gray-500"
+                  value={passwordForm.currentPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                  required
+                  data-testid="input-current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  className="absolute right-3 top-3 text-gray-500 hover:text-gray-300"
+                >
+                  {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-password" className="text-gray-300">Nova Senha</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-500" />
+                <Input
+                  id="new-password"
+                  type={showNewPassword ? "text" : "password"}
+                  placeholder="Mínimo 6 caracteres"
+                  className="pl-10 pr-10 bg-[#1F2937]/50 border-white/10 text-white placeholder:text-gray-500"
+                  value={passwordForm.newPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                  required
+                  data-testid="input-new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute right-3 top-3 text-gray-500 hover:text-gray-300"
+                >
+                  {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password" className="text-gray-300">Confirmar Nova Senha</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-500" />
+                <Input
+                  id="confirm-password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  className="pl-10 pr-10 bg-[#1F2937]/50 border-white/10 text-white placeholder:text-gray-500"
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                  required
+                  data-testid="input-confirm-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-3 text-gray-500 hover:text-gray-300"
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <Button 
+              type="submit" 
+              className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
+              disabled={isChangingPassword}
+              data-testid="button-change-password"
+            >
+              {isChangingPassword ? "Alterando..." : "Alterar Senha"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

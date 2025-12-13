@@ -1,13 +1,20 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Store, Mail, Lock, ArrowLeft, Loader2 } from "lucide-react";
+import { Store, User, Lock, ArrowLeft, Loader2, KeyRound, Eye, EyeOff } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface TenantInfo {
   id: number;
@@ -19,13 +26,30 @@ interface TenantInfo {
   loginMessage?: string | null;
 }
 
+function formatCpf(value: string): string {
+  const numbers = value.replace(/\D/g, "");
+  if (numbers.length <= 3) return numbers;
+  if (numbers.length <= 6) return `${numbers.slice(0, 3)}.${numbers.slice(3)}`;
+  if (numbers.length <= 9) return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6)}`;
+  return `${numbers.slice(0, 3)}.${numbers.slice(3, 6)}.${numbers.slice(6, 9)}-${numbers.slice(9, 11)}`;
+}
+
+function isNumericInput(value: string): boolean {
+  return /^\d+$/.test(value.replace(/\D/g, ""));
+}
+
 export default function TenantLogin() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/loja/:slug");
   const slug = params?.slug;
   const { toast } = useToast();
 
-  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const { data: tenant, isLoading: isLoadingTenant, error: tenantError } = useQuery<TenantInfo>({
     queryKey: ["tenant", slug],
@@ -41,12 +65,33 @@ export default function TenantLogin() {
     retry: false,
   });
 
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const cleanValue = value.replace(/[.\-]/g, "");
+    
+    if (isNumericInput(cleanValue) && cleanValue.length <= 11) {
+      setLoginForm({ ...loginForm, username: formatCpf(cleanValue) });
+    } else {
+      setLoginForm({ ...loginForm, username: value });
+    }
+  };
+
   const loginMutation = useMutation({
-    mutationFn: async (data: { email: string; password: string }) => {
+    mutationFn: async (data: { username: string; password: string }) => {
       const response = await apiRequest("POST", "/api/auth/login", data);
       return response.json();
     },
     onSuccess: async (data) => {
+      if (data.user?.mustChangePassword) {
+        setPasswordForm({ ...passwordForm, currentPassword: loginForm.password });
+        setShowPasswordModal(true);
+        toast({ 
+          title: "Primeiro acesso detectado", 
+          description: "Por segurança, você precisa alterar sua senha.",
+        });
+        return;
+      }
+
       if (tenant && data.user) {
         try {
           await apiRequest("POST", `/api/auth/switch-tenant/${tenant.id}`);
@@ -61,9 +106,51 @@ export default function TenantLogin() {
     },
   });
 
+  const changePasswordMutation = useMutation({
+    mutationFn: async (data: { currentPassword: string; newPassword: string; confirmPassword: string }) => {
+      const response = await apiRequest("POST", "/api/auth/change-password", data);
+      return response.json();
+    },
+    onSuccess: async () => {
+      if (tenant) {
+        try {
+          await apiRequest("POST", `/api/auth/switch-tenant/${tenant.id}`);
+        } catch (e) {
+        }
+      }
+      toast({ title: "Senha alterada!", description: "Sua senha foi alterada com sucesso." });
+      setShowPasswordModal(false);
+      setLocation("/dashboard");
+    },
+    onError: (error: any) => {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    loginMutation.mutate(loginForm);
+    const cleanUsername = loginForm.username.replace(/[.\-]/g, "");
+    loginMutation.mutate({ username: cleanUsername, password: loginForm.password });
+  };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast({ title: "Erro", description: "As senhas não coincidem.", variant: "destructive" });
+      return;
+    }
+    
+    if (passwordForm.newPassword.length < 6) {
+      toast({ title: "Erro", description: "A nova senha deve ter pelo menos 6 caracteres.", variant: "destructive" });
+      return;
+    }
+
+    changePasswordMutation.mutate({
+      currentPassword: passwordForm.currentPassword,
+      newPassword: passwordForm.newPassword,
+      confirmPassword: passwordForm.confirmPassword,
+    });
   };
 
   if (isLoadingTenant) {
@@ -144,18 +231,18 @@ export default function TenantLogin() {
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="login-email">Email</Label>
+              <Label htmlFor="login-username">CPF ou Email</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
-                  id="login-email"
-                  type="email"
-                  placeholder="seu@email.com"
+                  id="login-username"
+                  type="text"
+                  placeholder="Digite seu CPF ou email"
                   className="pl-10"
-                  value={loginForm.email}
-                  onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                  value={loginForm.username}
+                  onChange={handleUsernameChange}
                   required
-                  data-testid="input-tenant-email"
+                  data-testid="input-tenant-username"
                 />
               </div>
             </div>
@@ -199,6 +286,102 @@ export default function TenantLogin() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={showPasswordModal} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-md" data-testid="password-change-modal">
+          <DialogHeader>
+            <div className="flex justify-center mb-4">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={gradientStyle}>
+                <KeyRound className="w-6 h-6 text-white" />
+              </div>
+            </div>
+            <DialogTitle className="text-xl text-center">Alterar Senha</DialogTitle>
+            <DialogDescription className="text-center">
+              Este é seu primeiro acesso. Por segurança, você precisa criar uma nova senha.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handlePasswordChange} className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="current-password">Senha Atual</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="current-password"
+                  type={showCurrentPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  className="pl-10 pr-10"
+                  value={passwordForm.currentPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                  required
+                  data-testid="input-current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                >
+                  {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-password">Nova Senha</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="new-password"
+                  type={showNewPassword ? "text" : "password"}
+                  placeholder="Mínimo 6 caracteres"
+                  className="pl-10 pr-10"
+                  value={passwordForm.newPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                  required
+                  data-testid="input-new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                >
+                  {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirmar Nova Senha</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="confirm-password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  className="pl-10 pr-10"
+                  value={passwordForm.confirmPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                  required
+                  data-testid="input-confirm-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <Button 
+              type="submit" 
+              className="w-full"
+              style={gradientStyle}
+              disabled={changePasswordMutation.isPending}
+              data-testid="button-change-password"
+            >
+              {changePasswordMutation.isPending ? "Alterando..." : "Alterar Senha"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
