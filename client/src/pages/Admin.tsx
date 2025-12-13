@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Building2, Plus, Users, Store, Crown } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Building2, Plus, Users, Store, Crown, Pencil, Copy, ExternalLink } from "lucide-react";
 import type { Tenant } from "@shared/schema";
 
 export default function Admin() {
@@ -18,7 +19,9 @@ export default function Admin() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [newTenant, setNewTenant] = useState({ name: "", slug: "", plan: "free" });
+  const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
 
   const { data: tenants = [], isLoading } = useQuery<Tenant[]>({
     queryKey: ["admin", "tenants"],
@@ -54,10 +57,51 @@ export default function Admin() {
     },
   });
 
+  const updateTenantMutation = useMutation({
+    mutationFn: async (data: Partial<Tenant> & { id: number }) => {
+      const response = await fetch(`/api/admin/tenants/${data.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update tenant");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin", "tenants"] });
+      setIsEditDialogOpen(false);
+      setEditingTenant(null);
+      toast({ title: "Loja atualizada!", description: "Personalização salva com sucesso." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    },
+  });
+
   const handleCreateTenant = (e: React.FormEvent) => {
     e.preventDefault();
     const slug = newTenant.slug || newTenant.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
     createTenantMutation.mutate({ ...newTenant, slug });
+  };
+
+  const handleUpdateTenant = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingTenant) {
+      updateTenantMutation.mutate(editingTenant);
+    }
+  };
+
+  const openEditDialog = (tenant: Tenant) => {
+    setEditingTenant({ ...tenant });
+    setIsEditDialogOpen(true);
+  };
+
+  const copyLoginUrl = (slug: string) => {
+    navigator.clipboard.writeText(`${window.location.origin}/loja/${slug}`);
+    toast({ title: "Link copiado!", description: "URL de login copiada para a área de transferência." });
   };
 
   if (!isSuperAdmin) {
@@ -216,6 +260,24 @@ export default function Admin() {
                         {tenant.status === "active" ? "Ativo" : "Inativo"}
                       </Badge>
                       <Badge variant="outline">{tenant.plan}</Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => copyLoginUrl(tenant.slug)}
+                        title="Copiar link de login"
+                        data-testid={`button-copy-url-${tenant.id}`}
+                      >
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditDialog(tenant)}
+                        title="Personalizar"
+                        data-testid={`button-edit-${tenant.id}`}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -223,6 +285,132 @@ export default function Admin() {
             )}
           </CardContent>
         </Card>
+
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Personalizar Loja</DialogTitle>
+            </DialogHeader>
+            {editingTenant && (
+              <form onSubmit={handleUpdateTenant} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Nome da Loja</Label>
+                  <Input
+                    value={editingTenant.name}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, name: e.target.value })}
+                    data-testid="input-edit-name"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select
+                    value={editingTenant.status}
+                    onValueChange={(value) => setEditingTenant({ ...editingTenant, status: value })}
+                  >
+                    <SelectTrigger data-testid="select-edit-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Ativo</SelectItem>
+                      <SelectItem value="inactive">Inativo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Cor Primária</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="color"
+                        value={editingTenant.primaryColor || "#9333ea"}
+                        onChange={(e) => setEditingTenant({ ...editingTenant, primaryColor: e.target.value })}
+                        className="w-12 h-10 p-1 cursor-pointer"
+                        data-testid="input-edit-primary-color"
+                      />
+                      <Input
+                        value={editingTenant.primaryColor || "#9333ea"}
+                        onChange={(e) => setEditingTenant({ ...editingTenant, primaryColor: e.target.value })}
+                        className="flex-1"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Cor Secundária</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="color"
+                        value={editingTenant.secondaryColor || "#db2777"}
+                        onChange={(e) => setEditingTenant({ ...editingTenant, secondaryColor: e.target.value })}
+                        className="w-12 h-10 p-1 cursor-pointer"
+                        data-testid="input-edit-secondary-color"
+                      />
+                      <Input
+                        value={editingTenant.secondaryColor || "#db2777"}
+                        onChange={(e) => setEditingTenant({ ...editingTenant, secondaryColor: e.target.value })}
+                        className="flex-1"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>URL do Logo (opcional)</Label>
+                  <Input
+                    value={editingTenant.logo || ""}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, logo: e.target.value })}
+                    placeholder="https://exemplo.com/logo.png"
+                    data-testid="input-edit-logo"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Mensagem de Login (opcional)</Label>
+                  <Textarea
+                    value={editingTenant.loginMessage || ""}
+                    onChange={(e) => setEditingTenant({ ...editingTenant, loginMessage: e.target.value })}
+                    placeholder="Bem-vindo à nossa loja! Entre com suas credenciais."
+                    rows={3}
+                    data-testid="input-edit-login-message"
+                  />
+                </div>
+
+                <div className="p-3 bg-muted rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">Link de Login da Loja:</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-sm flex-1 truncate">{window.location.origin}/loja/{editingTenant.slug}</code>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyLoginUrl(editingTenant.slug)}
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => window.open(`/loja/${editingTenant.slug}`, "_blank")}
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600"
+                  disabled={updateTenantMutation.isPending}
+                  data-testid="button-save-tenant"
+                >
+                  {updateTenantMutation.isPending ? "Salvando..." : "Salvar Alterações"}
+                </Button>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

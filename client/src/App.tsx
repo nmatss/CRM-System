@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import Login from "@/pages/Login";
 import Admin from "@/pages/Admin";
 import Landing from "@/pages/Landing";
+import TenantLogin from "@/pages/TenantLogin";
 import Dashboard from "@/pages/Dashboard";
 import Customers from "@/pages/Customers";
 import AgendaVendedor from "@/pages/AgendaVendedor";
@@ -55,6 +56,9 @@ function Router() {
       </Route>
       <Route path="/login">
         {isAuthenticated ? <Redirect to="/dashboard" /> : <Login />}
+      </Route>
+      <Route path="/loja/:slug">
+        {isAuthenticated ? <Redirect to="/dashboard" /> : <TenantLogin />}
       </Route>
       <Route path="/dashboard">
         <ProtectedRoute component={Dashboard} />

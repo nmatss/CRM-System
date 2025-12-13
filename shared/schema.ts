@@ -10,6 +10,10 @@ export const tenants = pgTable("tenants", {
   slug: text("slug").notNull().unique(),
   plan: text("plan").notNull().default("free"),
   status: text("status").notNull().default("active"),
+  logo: text("logo"),
+  primaryColor: text("primary_color").default("#9333ea"),
+  secondaryColor: text("secondary_color").default("#db2777"),
+  loginMessage: text("login_message"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -179,6 +179,34 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== PUBLIC TENANT ROUTES ====================
+  app.get("/api/tenants/by-slug/:slug", async (req: Request, res: Response) => {
+    try {
+      const { slug } = req.params;
+      const tenant = await storage.getTenantBySlug(slug);
+      
+      if (!tenant) {
+        return res.status(404).json({ error: "Loja não encontrada" });
+      }
+      
+      if (tenant.status !== "active") {
+        return res.status(403).json({ error: "Esta loja não está ativa" });
+      }
+      
+      res.json({
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        logo: tenant.logo,
+        primaryColor: tenant.primaryColor,
+        secondaryColor: tenant.secondaryColor,
+        loginMessage: tenant.loginMessage,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Erro ao buscar loja" });
+    }
+  });
+
   // ==================== ADMIN ROUTES ====================
   app.get("/api/admin/tenants", requireSuperAdmin, async (req: Request, res: Response) => {
     try {
@@ -196,6 +224,34 @@ export async function registerRoutes(
       res.status(201).json(tenant);
     } catch (error) {
       res.status(400).json({ error: "Dados de tenant inválidos" });
+    }
+  });
+
+  app.put("/api/admin/tenants/:tenantId", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const tenantId = parseInt(req.params.tenantId);
+      const { name, slug, plan, status, logo, primaryColor, secondaryColor, loginMessage } = req.body;
+      
+      const updateData: Record<string, string | null | undefined> = {};
+      if (name !== undefined) updateData.name = name;
+      if (slug !== undefined) updateData.slug = slug;
+      if (plan !== undefined) updateData.plan = plan;
+      if (status !== undefined) updateData.status = status;
+      if (logo !== undefined) updateData.logo = logo || null;
+      if (primaryColor !== undefined) updateData.primaryColor = primaryColor;
+      if (secondaryColor !== undefined) updateData.secondaryColor = secondaryColor;
+      if (loginMessage !== undefined) updateData.loginMessage = loginMessage || null;
+      
+      const updated = await storage.updateTenant(tenantId, updateData as any);
+      
+      if (!updated) {
+        return res.status(404).json({ error: "Tenant não encontrado" });
+      }
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating tenant:", error);
+      res.status(400).json({ error: "Erro ao atualizar tenant" });
     }
   });
 
