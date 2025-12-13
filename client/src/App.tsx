@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/use-auth";
 import Login from "@/pages/Login";
 import Admin from "@/pages/Admin";
+import AdminLogin from "@/pages/AdminLogin";
 import Landing from "@/pages/Landing";
 import TenantLogin from "@/pages/TenantLogin";
 import Dashboard from "@/pages/Dashboard";
@@ -60,6 +61,9 @@ function Router() {
       </Route>
       <Route path="/loja/:slug">
         {isAuthenticated ? <Redirect to="/dashboard" /> : <TenantLogin />}
+      </Route>
+      <Route path="/zippi-sistema-x7k9">
+        {isAuthenticated ? <Redirect to="/admin" /> : <AdminLogin />}
       </Route>
       <Route path="/dashboard">
         <ProtectedRoute component={Dashboard} />

@@ -111,12 +111,8 @@ export function requireRole(...roles: UserRole[]) {
 }
 
 export async function createSuperAdminIfNotExists() {
-  if (process.env.NODE_ENV === "production") {
-    return;
-  }
-  
-  const adminEmail = process.env.ADMIN_EMAIL || "admin@moda.crm";
-  const adminPassword = process.env.ADMIN_PASSWORD || "admin123";
+  const adminEmail = process.env.ADMIN_EMAIL || "admin@zippi.crm";
+  const adminPassword = process.env.ADMIN_PASSWORD || "ZippiAdmin2024!";
   
   const existingAdmin = await storage.getUserByEmail(adminEmail);
   if (!existingAdmin) {
@@ -127,6 +123,6 @@ export async function createSuperAdminIfNotExists() {
       name: "Super Admin",
       isSuperAdmin: true,
     });
-    console.log(`[DEV] Super Admin created: ${adminEmail}`);
+    console.log(`[SYSTEM] Super Admin created: ${adminEmail}`);
   }
 }
