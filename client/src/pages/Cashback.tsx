@@ -47,21 +47,26 @@ const triggerOptions = [
 ];
 
 const validityOptions = [
-  { value: "7 dias", label: "7 dias" },
-  { value: "15 dias", label: "15 dias" },
-  { value: "30 dias", label: "30 dias" },
-  { value: "60 dias", label: "60 dias" },
-  { value: "90 dias", label: "90 dias" },
-  { value: "180 dias", label: "180 dias" },
-  { value: "1 ano", label: "1 ano" },
-  { value: "Sem expiração", label: "Sem expiração" },
+  { value: "7", label: "7 dias" },
+  { value: "15", label: "15 dias" },
+  { value: "30", label: "30 dias" },
+  { value: "60", label: "60 dias" },
+  { value: "90", label: "90 dias" },
+  { value: "180", label: "180 dias" },
+  { value: "365", label: "1 ano" },
+  { value: "0", label: "Sem expiração" },
 ];
+
+const getValidityLabel = (days: number): string => {
+  const option = validityOptions.find(opt => opt.value === String(days));
+  return option ? option.label : `${days} dias`;
+};
 
 const defaultFormData: CashbackRuleFormData = {
   name: "",
   trigger: "",
   value: "",
-  validity: "30 dias",
+  validity: "30",
   status: "Ativo",
 };
 
@@ -154,8 +159,8 @@ export default function Cashback() {
     setFormData({
       name: rule.name,
       trigger: rule.trigger,
-      value: rule.value,
-      validity: rule.validity,
+      value: String(rule.value || 0),
+      validity: String(rule.validity),
       status: rule.status,
     });
     setDialogOpen(true);
@@ -174,10 +179,17 @@ export default function Cashback() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const dataToSubmit = {
+      name: formData.name,
+      trigger: formData.trigger,
+      value: formData.value,
+      validity: parseInt(formData.validity) || 30,
+      status: formData.status,
+    };
     if (editingRule) {
-      updateMutation.mutate({ id: editingRule.id, data: formData });
+      updateMutation.mutate({ id: editingRule.id, data: dataToSubmit as any });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(dataToSubmit as any);
     }
   };
 
@@ -282,18 +294,18 @@ export default function Cashback() {
                     <div key={rule.id} className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0" data-testid={`row-rule-${rule.id}`}>
                       <div className="flex items-center gap-4">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                          {rule.value.includes('%') ? <Percent className="h-5 w-5" /> : <Gift className="h-5 w-5" />}
+                          {rule.trigger.toLowerCase().includes('percentual') ? <Percent className="h-5 w-5" /> : <Gift className="h-5 w-5" />}
                         </div>
                         <div>
                           <p className="font-semibold" data-testid={`text-rule-name-${rule.id}`}>{rule.name}</p>
                           <p className="text-sm text-muted-foreground">
-                            <span className="font-medium text-primary">{rule.value}</span> • Gatilho: {rule.trigger} • Expira em {rule.validity}
+                            <span className="font-medium text-primary">{rule.value}%</span> • Gatilho: {rule.trigger} • Expira em {getValidityLabel(rule.validity)}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 sm:gap-4">
                         <div className="text-right hidden sm:block">
-                          <p className="text-sm font-medium" data-testid={`text-usage-${rule.id}`}>{rule.usage} usos</p>
+                          <p className="text-sm font-medium" data-testid={`text-usage-${rule.id}`}>{rule.usageCount} usos</p>
                           <Badge variant={rule.status === "Ativo" ? "default" : "secondary"} className="mt-1" data-testid={`badge-status-${rule.id}`}>
                             {rule.status}
                           </Badge>

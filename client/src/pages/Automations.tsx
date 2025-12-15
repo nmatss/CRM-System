@@ -119,7 +119,7 @@ interface AutomationFormData {
   title: string;
   description: string;
   icon: string;
-  active: number;
+  isActive: boolean;
   stats: string;
 }
 
@@ -127,7 +127,7 @@ const initialFormData: AutomationFormData = {
   title: "",
   description: "",
   icon: "Zap",
-  active: 1,
+  isActive: true,
   stats: "0 execuções",
 };
 
@@ -221,8 +221,8 @@ export default function Automations() {
       title: automation.title,
       description: automation.description,
       icon: automation.icon,
-      active: automation.active,
-      stats: automation.stats,
+      isActive: automation.isActive,
+      stats: automation.stats || "",
     });
     setIsModalOpen(true);
   };
@@ -235,12 +235,12 @@ export default function Automations() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const automationData = {
       title: formData.title,
       description: formData.description,
       icon: formData.icon,
-      active: formData.active,
+      isActive: formData.isActive,
       stats: formData.stats || "0 execuções",
     };
 
@@ -316,19 +316,19 @@ export default function Automations() {
             {automations.map((automation) => {
               const IconComponent = getIconComponent(automation.icon);
               return (
-                <Card key={automation.id} className={`relative overflow-hidden border-l-4 transition-all ${automation.active === 1 ? 'border-l-amber-500' : 'border-l-transparent opacity-60'}`} data-testid={`card-automation-${automation.id}`}>
+                <Card key={automation.id} className={`relative overflow-hidden border-l-4 transition-all ${automation.isActive ? 'border-l-amber-500' : 'border-l-transparent opacity-60'}`} data-testid={`card-automation-${automation.id}`}>
                   <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
                     <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-md ${automation.active === 1 ? 'bg-amber-100' : 'bg-muted'}`}>
-                        <IconComponent className={`h-5 w-5 ${automation.active === 1 ? 'text-amber-600' : 'text-muted-foreground'}`} />
+                      <div className={`p-2 rounded-md ${automation.isActive ? 'bg-amber-100' : 'bg-muted'}`}>
+                        <IconComponent className={`h-5 w-5 ${automation.isActive ? 'text-amber-600' : 'text-muted-foreground'}`} />
                       </div>
                       <CardTitle className="text-base font-semibold" data-testid={`text-title-${automation.id}`}>{automation.title}</CardTitle>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Switch 
-                        checked={automation.active === 1} 
+                      <Switch
+                        checked={automation.isActive}
                         onCheckedChange={() => handleToggle(automation)}
-                        data-testid={`switch-active-${automation.id}`} 
+                        data-testid={`switch-active-${automation.id}`}
                       />
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -467,11 +467,11 @@ export default function Automations() {
             </div>
 
             <div className="flex items-center justify-between">
-              <Label htmlFor="active">Automação ativa</Label>
+              <Label htmlFor="isActive">Automação ativa</Label>
               <Switch
-                id="active"
-                checked={formData.active === 1}
-                onCheckedChange={(checked) => setFormData({ ...formData, active: checked ? 1 : 0 })}
+                id="isActive"
+                checked={formData.isActive}
+                onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
                 data-testid="switch-form-active"
               />
             </div>

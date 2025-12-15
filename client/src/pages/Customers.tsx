@@ -55,6 +55,18 @@ import type { Customer } from "@shared/schema";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+const formatDate = (date: Date | string | null): string => {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleDateString("pt-BR");
+};
+
+const formatDateForInput = (date: Date | string | null): string => {
+  if (!date) return new Date().toISOString().split('T')[0];
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toISOString().split('T')[0];
+};
+
 interface CustomerFormData {
   name: string;
   email: string;
@@ -70,8 +82,8 @@ const initialFormData: CustomerFormData = {
   email: "",
   phone: "",
   segment: "Novo",
-  ltv: "R$ 0,00",
-  lastPurchase: new Date().toLocaleDateString("pt-BR"),
+  ltv: "0",
+  lastPurchase: new Date().toISOString().split('T')[0],
   favoriteCategory: "",
 };
 
@@ -247,8 +259,8 @@ export default function Customers() {
       email: customer.email,
       phone: customer.phone || "",
       segment: customer.segment,
-      ltv: customer.ltv,
-      lastPurchase: customer.lastPurchase,
+      ltv: `R$ ${(customer.ltv || 0).toFixed(2).replace('.', ',')}`,
+      lastPurchase: formatDateForInput(customer.lastPurchase),
       favoriteCategory: customer.favoriteCategory || "",
     });
     setIsModalOpen(true);
@@ -423,7 +435,7 @@ export default function Customers() {
                             </div>
                           </TableCell>
                           <TableCell className="font-medium" data-testid={`text-ltv-${customer.id}`}>{customer.ltv}</TableCell>
-                          <TableCell className="text-muted-foreground text-sm" data-testid={`text-last-purchase-${customer.id}`}>{customer.lastPurchase}</TableCell>
+                          <TableCell className="text-muted-foreground text-sm" data-testid={`text-last-purchase-${customer.id}`}>{formatDate(customer.lastPurchase)}</TableCell>
                           <TableCell className="text-right">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -513,7 +525,7 @@ export default function Customers() {
                         </div>
                         <div>
                           <p className="text-muted-foreground text-xs">Última Compra</p>
-                          <p className="text-muted-foreground">{customer.lastPurchase}</p>
+                          <p className="text-muted-foreground">{formatDate(customer.lastPurchase)}</p>
                         </div>
                       </div>
                     </div>
@@ -606,9 +618,9 @@ export default function Customers() {
                 <Label htmlFor="lastPurchase">Última Compra</Label>
                 <Input
                   id="lastPurchase"
+                  type="date"
                   value={formData.lastPurchase}
                   onChange={(e) => setFormData({ ...formData, lastPurchase: e.target.value })}
-                  placeholder="01/01/2024"
                   data-testid="input-customer-last-purchase"
                 />
               </div>

@@ -15,6 +15,12 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useQuery } from "@tanstack/react-query";
 import type { Order } from "@shared/schema";
 
+const formatDate = (date: Date | string | null): string => {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleDateString("pt-BR");
+};
+
 interface DashboardStats {
   totalRevenue: string;
   averageTicket: string;
@@ -202,7 +208,7 @@ export default function Dashboard() {
                       <div className="ml-4 space-y-1">
                         <p className="text-sm font-medium leading-none" data-testid={`text-customer-name-${index}`}>{order.customer}</p>
                         <p className="text-sm text-muted-foreground truncate w-[140px]" data-testid={`text-order-date-${index}`}>
-                          {order.date}
+                          {formatDate(order.orderDate)}
                         </p>
                       </div>
                       <div className="ml-auto font-medium" data-testid={`text-order-total-${index}`}>{order.total}</div>

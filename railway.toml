@@ -1,0 +1,21 @@
+# Railway.app deployment configuration
+# https://docs.railway.app/reference/config-as-code
+# Note: Uses SQLite embedded database
+
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm ci && npm run build"
+
+[deploy]
+startCommand = "npm run start"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+[service]
+port = 6000
+
+# Note: For persistent SQLite data on Railway,
+# you need to attach a volume in the Railway dashboard
+# Mount path: /app/data

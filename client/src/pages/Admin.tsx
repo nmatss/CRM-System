@@ -16,6 +16,12 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Building2, Plus, Users, Store, Crown, Pencil, Copy, ExternalLink, MessageSquare, Calendar, Mail, Phone, CheckCircle2, Trash2, UserPlus, Link, BarChart3, ShoppingCart, Package, KeyRound, CreditCard, Hash } from "lucide-react";
 import type { Tenant, ContactRequest, DemoRequest, User, TenantUser } from "@shared/schema";
 
+const formatDate = (date: Date | string | null): string => {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleDateString("pt-BR");
+};
+
 type UserWithoutPassword = Omit<User, "password">;
 
 interface UserWithTenants extends UserWithoutPassword {
@@ -1233,7 +1239,7 @@ export default function Admin() {
                           <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {demo.email}</span>
                           {demo.storeCount && <span>{demo.storeCount} lojas</span>}
                         </div>
-                        {demo.preferredDate && <p className="text-sm text-muted-foreground">Preferência: {demo.preferredDate}</p>}
+                        {demo.preferredDate && <p className="text-sm text-muted-foreground">Preferência: {formatDate(demo.preferredDate)}</p>}
                         <div className="flex gap-2">
                           <Button size="sm" variant="outline" onClick={() => updateDemoStatusMutation.mutate({ id: demo.id, status: "scheduled" })}>
                             <CheckCircle2 className="w-3 h-3 mr-1" /> Agendar

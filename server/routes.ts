@@ -35,8 +35,31 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   setupSession(app);
-  
+
   await createSuperAdminIfNotExists();
+
+  // ==================== HEALTH CHECK ====================
+  app.get("/api/health", async (_req: Request, res: Response) => {
+    try {
+      // Check database connectivity
+      const dbCheck = await storage.healthCheck();
+
+      res.json({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        database: dbCheck ? "connected" : "disconnected",
+        version: "1.0.0",
+        environment: process.env.NODE_ENV || "development"
+      });
+    } catch (error) {
+      res.status(503).json({
+        status: "unhealthy",
+        timestamp: new Date().toISOString(),
+        database: "error",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
 
   // ==================== AUTH ROUTES ====================
   app.post("/api/auth/login", async (req: Request, res: Response) => {
@@ -782,29 +805,26 @@ export async function registerRoutes(
       ]);
       
       const totalRevenue = orders.reduce((sum, order) => {
-        const value = parseFloat(order.total.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
-        return sum + value;
+        return sum + (order.total || 0);
       }, 0);
-      
+
       const totalOrders = orders.length;
       const averageTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
       const vipCustomers = customers.filter(c => c.segment === "VIP").length;
       const newCustomers = customers.filter(c => c.segment === "Novo").length;
-      
+
       const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
       const today = new Date();
       const weeklyData = weekDays.map((name, dayIndex) => {
         const dayOrders = orders.filter(order => {
-          const parts = order.date.split('/');
-          if (parts.length === 3) {
-            const orderDate = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-            return orderDate.getDay() === dayIndex;
+          if (order.orderDate) {
+            const orderDateObj = new Date(order.orderDate);
+            return orderDateObj.getDay() === dayIndex;
           }
           return false;
         });
         const total = dayOrders.reduce((sum, order) => {
-          const value = parseFloat(order.total.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
-          return sum + value;
+          return sum + (order.total || 0);
         }, 0);
         return { name, total: Math.round(total) };
       });
@@ -1276,7 +1296,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Automação não encontrada" });
       }
       const updated = await storage.updateAutomation(tenantId, id, {
-        active: automation.active === 1 ? 0 : 1
+        isActive: !automation.isActive
       });
       res.json(updated);
     } catch (error) {
@@ -1626,31 +1646,20 @@ export async function registerRoutes(
         storage.getCampaigns(tenantId),
       ]);
       
-      const parseOrderDate = (dateStr: string): Date | null => {
-        const parts = dateStr.split('/');
-        if (parts.length === 3) {
-          return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-        }
-        return null;
-      };
-      
-      const parseOrderValue = (total: string): number => {
-        return parseFloat(total.replace(/[^\d,.-]/g, '').replace(',', '.')) || 0;
-      };
-      
       let filteredOrders = orders;
       if (startDate && endDate) {
         const start = new Date(startDate as string);
         const end = new Date(endDate as string);
         end.setHours(23, 59, 59, 999);
-        
+
         filteredOrders = orders.filter(order => {
-          const orderDate = parseOrderDate(order.date);
-          return orderDate && orderDate >= start && orderDate <= end;
+          if (!order.orderDate) return false;
+          const orderDateObj = new Date(order.orderDate);
+          return orderDateObj >= start && orderDateObj <= end;
         });
       }
-      
-      const totalRevenue = filteredOrders.reduce((sum, order) => sum + parseOrderValue(order.total), 0);
+
+      const totalRevenue = filteredOrders.reduce((sum, order) => sum + (order.total || 0), 0);
       const totalOrders = filteredOrders.length;
       const averageTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
       
@@ -1658,13 +1667,13 @@ export async function registerRoutes(
       const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
       
       filteredOrders.forEach(order => {
-        const orderDate = parseOrderDate(order.date);
-        if (orderDate) {
-          const monthKey = months[orderDate.getMonth()];
+        if (order.orderDate) {
+          const orderDateObj = new Date(order.orderDate);
+          const monthKey = months[orderDateObj.getMonth()];
           if (!monthlyData[monthKey]) {
             monthlyData[monthKey] = { sales: 0, orders: 0 };
           }
-          monthlyData[monthKey].sales += parseOrderValue(order.total);
+          monthlyData[monthKey].sales += (order.total || 0);
           monthlyData[monthKey].orders += 1;
         }
       });
@@ -1681,10 +1690,7 @@ export async function registerRoutes(
         if (!categoryTotals[category]) {
           categoryTotals[category] = 0;
         }
-        const productOrders = filteredOrders.filter(o => o.product === product.name);
-        productOrders.forEach(o => {
-          categoryTotals[category] += parseOrderValue(o.total);
-        });
+        categoryTotals[category] += (product.price || 0);
       });
       
       const salesByCategory = Object.entries(categoryTotals)
@@ -1712,8 +1718,7 @@ export async function registerRoutes(
           ltv: customer.ltv,
           orderCount: filteredOrders.filter(o => o.customer === customer.name).length,
         }))
-        .sort((a, b) => parseFloat(b.ltv?.replace(/[^\d,.-]/g, '').replace(',', '.') || '0') - 
-                        parseFloat(a.ltv?.replace(/[^\d,.-]/g, '').replace(',', '.') || '0'))
+        .sort((a, b) => (b.ltv || 0) - (a.ltv || 0))
         .slice(0, 10);
       
       const campaignStats = campaigns.map(campaign => ({
@@ -1743,8 +1748,7 @@ export async function registerRoutes(
         orders: filteredOrders.map(o => ({
           id: o.id,
           customer: o.customer,
-          product: o.product,
-          date: o.date,
+          orderDate: o.orderDate,
           total: o.total,
           status: o.status,
         })),

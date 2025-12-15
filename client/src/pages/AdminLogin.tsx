@@ -14,7 +14,7 @@ export default function AdminLogin() {
   const { login, isLoggingIn } = useAuth();
   const { toast } = useToast();
 
-  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,8 +87,8 @@ export default function AdminLogin() {
                     type="email"
                     placeholder="admin@sistema.com"
                     className="pl-10 bg-[#1F2937]/50 border-red-500/20 text-white placeholder:text-gray-500 focus:border-red-500/50 focus:ring-red-500/20"
-                    value={loginForm.email}
-                    onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                    value={loginForm.username}
+                    onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
                     required
                     data-testid="input-admin-email"
                   />

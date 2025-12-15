@@ -64,8 +64,20 @@ interface CampaignFormData {
   audience: string;
   message: string;
   status: string;
-  date: string;
+  scheduledAt: string;
 }
+
+const formatDate = (date: Date | string | null): string => {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleDateString("pt-BR");
+};
+
+const formatDateForInput = (date: Date | string | null): string => {
+  if (!date) return new Date().toISOString().split('T')[0];
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toISOString().split('T')[0];
+};
 
 const initialFormData: CampaignFormData = {
   name: "",
@@ -73,7 +85,7 @@ const initialFormData: CampaignFormData = {
   audience: "Todos os clientes",
   message: "",
   status: "Rascunho",
-  date: new Date().toLocaleDateString("pt-BR"),
+  scheduledAt: new Date().toISOString().split('T')[0],
 };
 
 const messageTemplates = {
@@ -233,7 +245,7 @@ export default function Campaigns() {
       audience: campaign.audience,
       message: campaign.message || "",
       status: campaign.status,
-      date: campaign.date,
+      scheduledAt: formatDateForInput(campaign.scheduledAt),
     });
     setIsModalOpen(true);
   };
@@ -246,18 +258,18 @@ export default function Campaigns() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const campaignData = {
       name: formData.name,
       channel: formData.channel,
       audience: formData.audience,
       message: formData.message || null,
       status: formData.status,
-      date: formData.date,
+      scheduledAt: formData.scheduledAt ? new Date(formData.scheduledAt).toISOString() : null,
       sent: 0,
-      openRate: "0%",
-      conversion: "0%",
-      revenue: "R$ 0,00",
+      openRate: 0,
+      conversion: 0,
+      revenue: 0,
     };
 
     if (editingCampaign) {
@@ -365,7 +377,7 @@ export default function Campaigns() {
                           {campaign.audience}
                         </Badge>
                         <span>•</span>
-                        <span data-testid={`text-date-${campaign.id}`}>{campaign.date}</span>
+                        <span data-testid={`text-date-${campaign.id}`}>{formatDate(campaign.scheduledAt)}</span>
                       </div>
                     </div>
                   </div>
@@ -628,13 +640,12 @@ export default function Campaigns() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="date">Data de Envio</Label>
+                <Label htmlFor="scheduledAt">Data de Envio</Label>
                 <Input
-                  id="date"
-                  type="text"
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  placeholder="DD/MM/AAAA"
+                  id="scheduledAt"
+                  type="date"
+                  value={formData.scheduledAt}
+                  onChange={(e) => setFormData({ ...formData, scheduledAt: e.target.value })}
                   data-testid="input-date"
                 />
               </div>

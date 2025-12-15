@@ -63,12 +63,24 @@ interface OrderFormData {
   orderId: string;
   customer: string;
   customerId?: number;
-  date: string;
+  orderDate: string;
   total: string;
   status: string;
   items: number;
   method: string;
 }
+
+const formatDate = (date: Date | string | null): string => {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleDateString("pt-BR");
+};
+
+const formatDateForInput = (date: Date | string | null): string => {
+  if (!date) return new Date().toISOString().split('T')[0];
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toISOString().split('T')[0];
+};
 
 const generateOrderId = () => {
   const prefix = "PED";
@@ -79,7 +91,7 @@ const generateOrderId = () => {
 const initialFormData: OrderFormData = {
   orderId: generateOrderId(),
   customer: "",
-  date: new Date().toLocaleDateString("pt-BR"),
+  orderDate: new Date().toISOString().split('T')[0],
   total: "R$ 0,00",
   status: "Pendente",
   items: 1,
@@ -173,8 +185,8 @@ export default function Orders() {
       orderId: order.orderId,
       customer: order.customer,
       customerId: order.customerId || undefined,
-      date: order.date,
-      total: order.total,
+      orderDate: formatDateForInput(order.orderDate),
+      total: `R$ ${(order.total || 0).toFixed(2).replace('.', ',')}`,
       status: order.status,
       items: order.items,
       method: order.method,
@@ -212,7 +224,7 @@ export default function Orders() {
     (order) =>
       order.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.total.includes(searchTerm)
+      String(order.total).includes(searchTerm)
   );
 
   const isMutating = createMutation.isPending || updateMutation.isPending;
@@ -313,7 +325,7 @@ export default function Orders() {
                           <TableRow key={order.id} data-testid={`row-order-${order.id}`}>
                             <TableCell className="font-medium" data-testid={`text-order-id-${order.id}`}>{order.orderId}</TableCell>
                             <TableCell data-testid={`text-customer-${order.id}`}>{order.customer}</TableCell>
-                            <TableCell data-testid={`text-date-${order.id}`}>{order.date}</TableCell>
+                            <TableCell data-testid={`text-date-${order.id}`}>{formatDate(order.orderDate)}</TableCell>
                             <TableCell>
                               <Badge 
                                 variant={badgeProps.variant as any}
@@ -396,7 +408,7 @@ export default function Orders() {
                         <div className="grid grid-cols-2 gap-2 text-sm">
                           <div>
                             <p className="text-muted-foreground text-xs">Data</p>
-                            <p>{order.date}</p>
+                            <p>{formatDate(order.orderDate)}</p>
                           </div>
                           <div>
                             <p className="text-muted-foreground text-xs">Pagamento</p>
@@ -435,12 +447,12 @@ export default function Orders() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="date">Data</Label>
+                <Label htmlFor="orderDate">Data</Label>
                 <Input
-                  id="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  placeholder="01/01/2024"
+                  id="orderDate"
+                  type="date"
+                  value={formData.orderDate}
+                  onChange={(e) => setFormData({ ...formData, orderDate: e.target.value })}
                   required
                   data-testid="input-order-date"
                 />

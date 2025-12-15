@@ -58,6 +58,30 @@ import { useAuth } from "@/hooks/use-auth";
 import type { SellerTask, Customer, SellerGoal, CustomerInteraction } from "@shared/schema";
 import { Trophy, Settings2, MessageSquare } from "lucide-react";
 
+const formatDate = (date: Date | string | null): string => {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleDateString("pt-BR");
+};
+
+const formatDateForInput = (date: Date | string | null): string => {
+  if (!date) return new Date().toISOString().split('T')[0];
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toISOString().split('T')[0];
+};
+
+const getDateOnly = (date: Date | string | null): string => {
+  if (!date) return "";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toISOString().split('T')[0];
+};
+
+const isBeforeDate = (date1: Date | string | null, date2: string): boolean => {
+  if (!date1) return false;
+  const d1 = getDateOnly(date1);
+  return d1 < date2;
+};
+
 type TaskType = "aniversario" | "carrinho_abandonado" | "recompra" | "vip_sumido" | "manual";
 
 interface TaskWithCustomer extends SellerTask {
@@ -132,9 +156,9 @@ function getGreeting(): string {
   return "Boa noite";
 }
 
-function getDaysAgo(dateStr: string | null | undefined): number {
-  if (!dateStr) return 999;
-  const date = new Date(dateStr);
+function getDaysAgo(dateInput: Date | string | null | undefined): number {
+  if (!dateInput) return 999;
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
   const today = new Date();
   const diffTime = today.getTime() - date.getTime();
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -144,8 +168,9 @@ function formatCurrency(value: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 }
 
-function parseCurrencyToNumber(value: string | null | undefined): number {
-  if (!value) return 0;
+function parseCurrencyToNumber(value: string | number | null | undefined): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return value;
   // Remove currency symbols and spaces, then handle Brazilian format (1.234,56)
   // First strip thousands separator (.), then replace decimal comma with dot
   const cleaned = value
@@ -156,7 +181,10 @@ function parseCurrencyToNumber(value: string | null | undefined): number {
   return isNaN(parsed) ? 0 : parsed;
 }
 
-function formatLTV(value: string | null | undefined): string {
+function formatLTV(value: string | number | null | undefined): string {
+  if (typeof value === 'number') {
+    return formatCurrency(value);
+  }
   const num = parseCurrencyToNumber(value);
   return formatCurrency(num);
 }
@@ -333,7 +361,8 @@ function TaskMiniCard({
   isUpdating: boolean;
 }) {
   const config = taskTypeConfig[task.type as TaskType] || taskTypeConfig.manual;
-  const isOverdue = task.dueDate < new Date().toISOString().split('T')[0] && task.status === 'pending';
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isOverdue = isBeforeDate(task.dueDate, todayStr) && task.status === 'pending';
 
   const handleWhatsApp = () => {
     if (!task.customer?.phone || !task.script) return;
@@ -733,7 +762,8 @@ function TaskCard({
   const [copied, setCopied] = useState(false);
   const config = taskTypeConfig[task.type as TaskType] || taskTypeConfig.manual;
   const isCompleted = task.status === 'completed';
-  const isOverdue = task.dueDate < new Date().toISOString().split('T')[0] && task.status === 'pending';
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isOverdue = isBeforeDate(task.dueDate, todayStr) && task.status === 'pending';
 
   const handleWhatsApp = () => {
     if (!task.customer?.phone || !task.script) return;
@@ -1100,7 +1130,7 @@ export default function AgendaVendedor() {
     return completedDate >= weekAgo;
   }).length;
 
-  const overdueTasks = weekTasks.filter(t => t.dueDate < today);
+  const overdueTasks = weekTasks.filter(t => isBeforeDate(t.dueDate, today));
 
   const filteredTasks = useMemo(() => {
     const tasksToFilter = activeTab === 'completed' ? completedTasks : 
@@ -1134,10 +1164,10 @@ export default function AgendaVendedor() {
             </motion.div>
           </div>
           <div className="flex items-center gap-2">
-            <GoalsSettingsDialog 
-              goals={goals || null} 
-              onSaveGoals={goalsMutation.mutate} 
-              isManager={isManager} 
+            <GoalsSettingsDialog
+              goals={goals || null}
+              onSaveGoals={goalsMutation.mutate}
+              isManager={isManager ?? false}
             />
             <NewTaskDialog customers={customers} onCreateTask={createMutation.mutate} />
           </div>

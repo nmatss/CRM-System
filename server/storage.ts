@@ -42,7 +42,7 @@ import {
   sellerGoals,
   customerInteractions
 } from "@shared/schema";
-import { db } from "./db";
+import { db, sqlite } from "./db";
 import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
 
 export interface IStorage {
@@ -131,7 +131,7 @@ export interface IStorage {
   getSellerTasks(tenantId: number, filters?: { sellerId?: string; status?: string; dateFrom?: string; dateTo?: string; type?: string }): Promise<(SellerTask & { customer?: Customer })[]>;
   getSellerTask(tenantId: number, id: number): Promise<SellerTask | undefined>;
   createSellerTask(task: InsertSellerTask): Promise<SellerTask>;
-  updateSellerTask(tenantId: number, id: number, data: Partial<InsertSellerTask & { completedAt?: Date }>): Promise<SellerTask | undefined>;
+  updateSellerTask(tenantId: number, id: number, data: Partial<InsertSellerTask & { completedAt?: string }>): Promise<SellerTask | undefined>;
   deleteSellerTask(tenantId: number, id: number): Promise<boolean>;
   getSellerStats(tenantId: number, sellerId?: string): Promise<{ pending: number; completed: number; today: number; overdue: number }>;
   
@@ -145,6 +145,9 @@ export interface IStorage {
   
   // Seller Ranking (tenant-scoped)
   getSellerRanking(tenantId: number, period: 'daily' | 'weekly' | 'monthly'): Promise<{ sellerId: string; sellerName: string; completedTasks: number; totalInteractions: number }[]>;
+
+  // Health Check
+  healthCheck(): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -180,10 +183,10 @@ export class DatabaseStorage implements IStorage {
 
   async updateUserPassword(id: string, hashedPassword: string): Promise<User | undefined> {
     const result = await db.update(users)
-      .set({ 
-        password: hashedPassword, 
+      .set({
+        password: hashedPassword,
         mustChangePassword: false,
-        lastPasswordChange: new Date()
+        lastPasswordChange: new Date().toISOString()
       })
       .where(eq(users.id, id))
       .returning();
@@ -515,10 +518,10 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(sellerTasks.type, filters.type));
     }
     if (filters?.dateFrom) {
-      conditions.push(gte(sellerTasks.dueDate, filters.dateFrom));
+      conditions.push(gte(sellerTasks.dueDate, new Date(filters.dateFrom).toISOString()));
     }
     if (filters?.dateTo) {
-      conditions.push(lte(sellerTasks.dueDate, filters.dateTo));
+      conditions.push(lte(sellerTasks.dueDate, new Date(filters.dateTo).toISOString()));
     }
     
     const tasks = await db.select().from(sellerTasks)
@@ -549,7 +552,7 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async updateSellerTask(tenantId: number, id: number, data: Partial<InsertSellerTask & { completedAt?: Date }>): Promise<SellerTask | undefined> {
+  async updateSellerTask(tenantId: number, id: number, data: Partial<InsertSellerTask & { completedAt?: string }>): Promise<SellerTask | undefined> {
     const result = await db.update(sellerTasks)
       .set(data)
       .where(and(eq(sellerTasks.tenantId, tenantId), eq(sellerTasks.id, id)))
@@ -572,13 +575,24 @@ export class DatabaseStorage implements IStorage {
     
     const allTasks = await db.select().from(sellerTasks).where(and(...conditions));
     
-    const today = new Date().toISOString().split('T')[0];
-    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
     const pending = allTasks.filter(t => t.status === 'pending').length;
     const completed = allTasks.filter(t => t.status === 'completed').length;
-    const todayTasks = allTasks.filter(t => t.dueDate === today && t.status === 'pending').length;
-    const overdue = allTasks.filter(t => t.dueDate < today && t.status === 'pending').length;
-    
+    const todayTasks = allTasks.filter(t => {
+      const dueDate = new Date(t.dueDate);
+      dueDate.setHours(0, 0, 0, 0);
+      return dueDate.getTime() === today.getTime() && t.status === 'pending';
+    }).length;
+    const overdue = allTasks.filter(t => {
+      const dueDate = new Date(t.dueDate);
+      dueDate.setHours(0, 0, 0, 0);
+      return dueDate < today && t.status === 'pending';
+    }).length;
+
     return { pending, completed, today: todayTasks, overdue };
   }
 
@@ -607,7 +621,7 @@ export class DatabaseStorage implements IStorage {
     
     if (existing.length > 0) {
       const result = await db.update(sellerGoals)
-        .set({ ...goals, updatedAt: new Date() })
+        .set({ ...goals, updatedAt: new Date().toISOString() })
         .where(eq(sellerGoals.id, existing[0].id))
         .returning();
       return result[0];
@@ -663,27 +677,27 @@ export class DatabaseStorage implements IStorage {
   // ==================== SELLER RANKING ====================
   async getSellerRanking(tenantId: number, period: 'daily' | 'weekly' | 'monthly'): Promise<{ sellerId: string; sellerName: string; completedTasks: number; totalInteractions: number }[]> {
     const now = new Date();
-    let startDate: Date;
-    
+    let startDate: string;
+
     switch (period) {
       case 'daily':
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
         break;
       case 'weekly':
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7).toISOString();
         break;
       case 'monthly':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
         break;
     }
-    
+
     const tenantUsersList = await db.select().from(tenantUsers)
       .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.role, 'seller')));
-    
+
     const ranking = await Promise.all(tenantUsersList.map(async (tu) => {
       const user = await db.select().from(users).where(eq(users.id, tu.userId));
       if (!user[0]) return null;
-      
+
       const completedTasksResult = await db.select().from(sellerTasks)
         .where(and(
           eq(sellerTasks.tenantId, tenantId),
@@ -691,14 +705,14 @@ export class DatabaseStorage implements IStorage {
           eq(sellerTasks.status, 'completed'),
           gte(sellerTasks.completedAt, startDate)
         ));
-      
+
       const interactionsResult = await db.select().from(customerInteractions)
         .where(and(
           eq(customerInteractions.tenantId, tenantId),
           eq(customerInteractions.sellerId, tu.userId),
           gte(customerInteractions.createdAt, startDate)
         ));
-      
+
       return {
         sellerId: tu.userId,
         sellerName: user[0].name,
@@ -706,10 +720,22 @@ export class DatabaseStorage implements IStorage {
         totalInteractions: interactionsResult.length
       };
     }));
-    
+
     return ranking
       .filter((r): r is NonNullable<typeof r> => r !== null)
       .sort((a, b) => b.completedTasks - a.completedTasks);
+  }
+
+  // ==================== HEALTH CHECK ====================
+  async healthCheck(): Promise<boolean> {
+    try {
+      // Simple query to check database connectivity
+      sqlite.prepare("SELECT 1").get();
+      return true;
+    } catch (error) {
+      console.error("Database health check failed:", error);
+      return false;
+    }
   }
 }
 

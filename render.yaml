@@ -1,0 +1,28 @@
+# Render.com deployment configuration
+# https://render.com/docs/blueprint-spec
+# Note: Uses SQLite embedded database (data persists on disk)
+
+services:
+  # Web Service - ZippiCRM Application
+  - type: web
+    name: zippcrm
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    disk:
+      name: zippcrm-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 6000
+      - key: DATABASE_PATH
+        value: /app/data/zippcrm.db
+      - key: SESSION_SECRET
+        generateValue: true
+    healthCheckPath: /api/health
+    autoDeploy: true

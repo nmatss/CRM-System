@@ -243,7 +243,7 @@ export default function Products() {
     setFormData({
       name: product.name,
       category: product.category,
-      price: product.price,
+      price: `R$ ${(product.price || 0).toFixed(2).replace('.', ',')}`,
       stock: product.stock,
       status: product.status,
       image: product.image || "",
