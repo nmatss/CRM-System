@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, real, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index, uniqueIndex, check } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -41,7 +41,7 @@ export type Tenant = typeof tenants.$inferSelect;
 // ==================== USERS ====================
 export const users = sqliteTable("users", {
   id: text("id").primaryKey().$defaultFn(() => generateUUID()),
-  email: text("email"),
+  email: text("email").notNull(),
   cpf: text("cpf").unique(),
   sellerCode: text("seller_code"),
   password: text("password").notNull(),
@@ -138,7 +138,9 @@ export const customers = sqliteTable("customers", {
   index("customers_tenant_id_idx").on(table.tenantId),
   index("customers_email_idx").on(table.email),
   index("customers_segment_idx").on(table.segment),
+  index("customers_created_at_idx").on(table.createdAt),
   index("customers_tenant_segment_idx").on(table.tenantId, table.segment),
+  check("customers_ltv_check", sql`${table.ltv} >= 0`),
 ]);
 
 export const insertCustomerSchema = createInsertSchema(customers).omit({
@@ -167,6 +169,8 @@ export const products = sqliteTable("products", {
   index("products_category_idx").on(table.category),
   index("products_status_idx").on(table.status),
   index("products_tenant_category_idx").on(table.tenantId, table.category),
+  check("products_price_check", sql`${table.price} >= 0`),
+  check("products_stock_check", sql`${table.stock} >= 0`),
 ]);
 
 export const insertProductSchema = createInsertSchema(products).omit({
@@ -196,9 +200,11 @@ export const orders = sqliteTable("orders", {
   index("orders_tenant_id_idx").on(table.tenantId),
   index("orders_customer_id_idx").on(table.customerId),
   index("orders_status_idx").on(table.status),
+  index("orders_created_at_idx").on(table.createdAt),
   index("orders_order_date_idx").on(table.orderDate),
   index("orders_tenant_status_idx").on(table.tenantId, table.status),
   uniqueIndex("orders_tenant_order_id_unique").on(table.tenantId, table.orderId),
+  check("orders_total_check", sql`${table.total} >= 0`),
 ]);
 
 export const insertOrderSchema = createInsertSchema(orders).omit({
@@ -236,6 +242,36 @@ export const insertCashbackRuleSchema = createInsertSchema(cashbackRules).omit({
 export type InsertCashbackRule = z.infer<typeof insertCashbackRuleSchema>;
 export type CashbackRule = typeof cashbackRules.$inferSelect;
 
+// ==================== CASHBACK TRANSACTIONS ====================
+export const cashbackTransactions = sqliteTable("cashback_transactions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  customerId: integer("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  ruleId: integer("rule_id").references(() => cashbackRules.id, { onDelete: "set null" }),
+  orderId: integer("order_id").references(() => orders.id, { onDelete: "set null" }),
+  type: text("type").notNull(), // 'credit' or 'debit'
+  amount: real("amount").notNull().default(0),
+  balance: real("balance").notNull().default(0),
+  description: text("description").notNull(),
+  expiresAt: text("expires_at"),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
+}, (table) => [
+  index("cashback_transactions_tenant_id_idx").on(table.tenantId),
+  index("cashback_transactions_customer_id_idx").on(table.customerId),
+  index("cashback_transactions_created_at_idx").on(table.createdAt),
+  index("cashback_transactions_expires_at_idx").on(table.expiresAt),
+  check("cashback_transactions_amount_check", sql`${table.amount} >= 0`),
+  check("cashback_transactions_balance_check", sql`${table.balance} >= 0`),
+]);
+
+export const insertCashbackTransactionSchema = createInsertSchema(cashbackTransactions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertCashbackTransaction = z.infer<typeof insertCashbackTransactionSchema>;
+export type CashbackTransaction = typeof cashbackTransactions.$inferSelect;
+
 // ==================== CAMPAIGNS ====================
 export const campaigns = sqliteTable("campaigns", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -255,7 +291,10 @@ export const campaigns = sqliteTable("campaigns", {
 }, (table) => [
   index("campaigns_tenant_id_idx").on(table.tenantId),
   index("campaigns_status_idx").on(table.status),
+  index("campaigns_created_at_idx").on(table.createdAt),
   index("campaigns_channel_idx").on(table.channel),
+  check("campaigns_open_rate_check", sql`${table.openRate} >= 0 AND ${table.openRate} <= 100`),
+  check("campaigns_conversion_check", sql`${table.conversion} >= 0 AND ${table.conversion} <= 100`),
 ]);
 
 export const insertCampaignSchema = createInsertSchema(campaigns).omit({
@@ -362,6 +401,8 @@ export const sellerTasks = sqliteTable("seller_tasks", {
   index("seller_tasks_seller_id_idx").on(table.sellerId),
   index("seller_tasks_customer_id_idx").on(table.customerId),
   index("seller_tasks_status_idx").on(table.status),
+  index("seller_tasks_completed_at_idx").on(table.completedAt),
+  index("seller_tasks_type_idx").on(table.type),
   index("seller_tasks_due_date_idx").on(table.dueDate),
   index("seller_tasks_tenant_seller_idx").on(table.tenantId, table.sellerId),
   index("seller_tasks_tenant_status_idx").on(table.tenantId, table.status),
@@ -423,6 +464,7 @@ export const customerInteractions = sqliteTable("customer_interactions", {
   index("customer_interactions_customer_id_idx").on(table.customerId),
   index("customer_interactions_seller_id_idx").on(table.sellerId),
   index("customer_interactions_task_id_idx").on(table.taskId),
+  index("customer_interactions_channel_idx").on(table.channel),
   index("customer_interactions_type_idx").on(table.type),
   index("customer_interactions_created_at_idx").on(table.createdAt),
 ]);
@@ -435,6 +477,44 @@ export const insertCustomerInteractionSchema = createInsertSchema(customerIntera
 
 export type InsertCustomerInteraction = z.infer<typeof insertCustomerInteractionSchema>;
 export type CustomerInteraction = typeof customerInteractions.$inferSelect;
+
+// ==================== NOTIFICATIONS ====================
+export const notifications = sqliteTable("notifications", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tenantId: integer("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  channel: text("channel").notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  status: text("status").notNull().default("pending"),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
+}, (table) => [
+  index("notifications_tenant_id_idx").on(table.tenantId),
+  index("notifications_user_id_idx").on(table.userId),
+  index("notifications_status_idx").on(table.status),
+  index("notifications_created_at_idx").on(table.createdAt),
+  index("notifications_tenant_user_idx").on(table.tenantId, table.userId),
+]);
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+
+// ==================== SESSIONS ====================
+export const sessions = sqliteTable("sessions", {
+  sid: text("sid").primaryKey(),
+  sess: text("sess").notNull(),
+  expired: integer("expired", { mode: "timestamp" }).notNull(),
+}, (table) => [
+  index("sessions_expired_idx").on(table.expired),
+]);
+
+export type Session = typeof sessions.$inferSelect;
 
 // ==================== AUTH SCHEMAS ====================
 export const loginSchema = z.object({

@@ -1,0 +1,1086 @@
+openapi: 3.0.3
+info:
+  title: ZippiCRM API
+  description: |
+    Multi-tenant CRM system API for managing customers, products, orders, campaigns, and sales operations.
+
+    ## Authentication
+    This API uses session-based authentication. Users must first login via `/api/auth/login` to obtain a session cookie.
+
+    ## Multi-tenancy
+    Most endpoints are tenant-scoped, requiring users to be authenticated and associated with a tenant.
+    Super admins have access to all tenants.
+
+    ## User Roles
+    - **super_admin**: Full system access across all tenants
+    - **manager**: Full access within their tenant(s)
+    - **seller**: Limited access for sales operations within their tenant(s)
+  version: 1.0.0
+  contact:
+    name: ZippiCRM Support
+    email: admin@zippi.crm
+
+servers:
+  - url: http://localhost:5000
+    description: Development server
+  - url: https://api.zippi.crm
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User authentication and session management
+  - name: Customers
+    description: Customer management operations
+  - name: Products
+    description: Product catalog management
+  - name: Orders
+    description: Order processing and tracking
+  - name: Health
+    description: System health checks
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: connect.sid
+      description: Session-based authentication using cookies
+
+  schemas:
+    # ==================== ERROR RESPONSES ====================
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+      required:
+        - error
+      example:
+        error: "Invalid credentials"
+
+    # ==================== AUTH MODELS ====================
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          description: User email or CPF (cleaned)
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          description: User password
+          example: "SecurePass123!"
+      required:
+        - username
+        - password
+
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 6
+          description: User password (minimum 6 characters)
+          example: "SecurePass123!"
+        name:
+          type: string
+          minLength: 2
+          description: User full name
+          example: "John Doe"
+        tenantName:
+          type: string
+          minLength: 2
+          description: Optional tenant/company name to create
+          example: "My Store"
+      required:
+        - email
+        - password
+        - name
+
+    SessionUser:
+      type: object
+      properties:
+        id:
+          type: string
+          description: User unique identifier (UUID)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        email:
+          type: string
+          format: email
+          nullable: true
+          example: "user@example.com"
+        cpf:
+          type: string
+          nullable: true
+          example: "12345678900"
+        name:
+          type: string
+          example: "John Doe"
+        isSuperAdmin:
+          type: boolean
+          example: false
+        mustChangePassword:
+          type: boolean
+          example: false
+        tenantId:
+          type: integer
+          nullable: true
+          example: 1
+        role:
+          type: string
+          enum: [super_admin, manager, seller]
+          nullable: true
+          example: "manager"
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/SessionUser'
+        message:
+          type: string
+          example: "Login realizado com sucesso"
+
+    # ==================== CUSTOMER MODELS ====================
+    Customer:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Customer unique identifier
+          example: 1
+        tenantId:
+          type: integer
+          description: Tenant identifier
+          example: 1
+        name:
+          type: string
+          description: Customer full name
+          example: "Maria Silva"
+        email:
+          type: string
+          format: email
+          description: Customer email
+          example: "maria@example.com"
+        phone:
+          type: string
+          nullable: true
+          description: Customer phone number
+          example: "+55 11 98765-4321"
+        segment:
+          type: string
+          description: Customer segment classification
+          example: "VIP"
+          enum: [Novo, Regular, VIP, "Em Risco", Inativo]
+        ltv:
+          type: number
+          format: float
+          description: Customer lifetime value
+          example: 5420.50
+        lastPurchase:
+          type: string
+          nullable: true
+          description: Date of last purchase
+          example: "2024-12-14"
+        favoriteCategory:
+          type: string
+          nullable: true
+          description: Customer's favorite product category
+          example: "Electronics"
+        image:
+          type: string
+          nullable: true
+          description: Customer avatar URL
+          example: "https://example.com/avatar.jpg"
+        birthDate:
+          type: string
+          nullable: true
+          description: Customer birth date (DD/MM/YYYY)
+          example: "15/03/1990"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-12-14T15:45:00Z"
+
+    CustomerInput:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Customer full name
+          example: "Maria Silva"
+        email:
+          type: string
+          format: email
+          description: Customer email
+          example: "maria@example.com"
+        phone:
+          type: string
+          description: Customer phone number
+          example: "+55 11 98765-4321"
+        segment:
+          type: string
+          description: Customer segment
+          example: "VIP"
+        ltv:
+          type: number
+          format: float
+          description: Customer lifetime value
+          example: 5420.50
+        lastPurchase:
+          type: string
+          description: Date of last purchase
+          example: "2024-12-14"
+        favoriteCategory:
+          type: string
+          description: Favorite category
+          example: "Electronics"
+        birthDate:
+          type: string
+          description: Birth date (DD/MM/YYYY)
+          example: "15/03/1990"
+      required:
+        - name
+        - email
+        - segment
+
+    # ==================== PRODUCT MODELS ====================
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Product unique identifier
+          example: 1
+        tenantId:
+          type: integer
+          description: Tenant identifier
+          example: 1
+        name:
+          type: string
+          description: Product name
+          example: "Wireless Headphones"
+        category:
+          type: string
+          description: Product category
+          example: "Electronics"
+        price:
+          type: number
+          format: float
+          description: Product price
+          example: 299.99
+        stock:
+          type: integer
+          description: Available stock quantity
+          example: 45
+        status:
+          type: string
+          description: Product status
+          enum: [active, inactive]
+          example: "active"
+        image:
+          type: string
+          nullable: true
+          description: Product image URL
+          example: "https://example.com/product.jpg"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-12-14T15:45:00Z"
+
+    ProductInput:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Product name
+          example: "Wireless Headphones"
+        category:
+          type: string
+          description: Product category
+          example: "Electronics"
+        price:
+          type: number
+          format: float
+          description: Product price
+          example: 299.99
+        stock:
+          type: integer
+          description: Stock quantity
+          example: 45
+        status:
+          type: string
+          description: Product status
+          enum: [active, inactive]
+          example: "active"
+        image:
+          type: string
+          description: Product image URL
+          example: "https://example.com/product.jpg"
+      required:
+        - name
+        - category
+        - price
+
+    # ==================== ORDER MODELS ====================
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Order unique identifier
+          example: 1
+        tenantId:
+          type: integer
+          description: Tenant identifier
+          example: 1
+        orderId:
+          type: string
+          description: Human-readable order ID
+          example: "ORD-2024-001"
+        customerId:
+          type: integer
+          nullable: true
+          description: Associated customer ID
+          example: 1
+        customer:
+          type: string
+          description: Customer name
+          example: "Maria Silva"
+        orderDate:
+          type: string
+          format: date-time
+          description: Order date
+          example: "2024-12-14T10:30:00Z"
+        total:
+          type: number
+          format: float
+          description: Order total amount
+          example: 599.98
+        status:
+          type: string
+          description: Order status
+          enum: [pending, processing, completed, cancelled]
+          example: "completed"
+        items:
+          type: integer
+          description: Number of items in order
+          example: 2
+        method:
+          type: string
+          description: Payment method
+          example: "credit_card"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-12-14T10:30:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2024-12-14T15:45:00Z"
+
+    OrderInput:
+      type: object
+      properties:
+        orderId:
+          type: string
+          description: Order ID
+          example: "ORD-2024-001"
+        customerId:
+          type: integer
+          description: Customer ID
+          example: 1
+        customer:
+          type: string
+          description: Customer name
+          example: "Maria Silva"
+        orderDate:
+          type: string
+          format: date-time
+          description: Order date
+          example: "2024-12-14T10:30:00Z"
+        total:
+          type: number
+          format: float
+          description: Order total
+          example: 599.98
+        status:
+          type: string
+          description: Order status
+          example: "completed"
+        items:
+          type: integer
+          description: Number of items
+          example: 2
+        method:
+          type: string
+          description: Payment method
+          example: "credit_card"
+      required:
+        - orderId
+        - customer
+        - total
+        - method
+
+    # ==================== HEALTH CHECK ====================
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          example: "healthy"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-12-14T15:45:00Z"
+        database:
+          type: string
+          enum: [connected, disconnected, error]
+          example: "connected"
+        version:
+          type: string
+          example: "1.0.0"
+        environment:
+          type: string
+          example: "production"
+        error:
+          type: string
+          nullable: true
+          description: Error message if unhealthy
+          example: null
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Não autenticado"
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Permissão insuficiente"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Recurso não encontrado"
+
+    BadRequest:
+      description: Invalid request data
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Dados inválidos"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Erro interno do servidor"
+
+paths:
+  # ==================== HEALTH CHECK ====================
+  /api/health:
+    get:
+      summary: Health check
+      description: Check API and database connectivity status
+      operationId: getHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: System is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  # ==================== AUTHENTICATION ====================
+  /api/auth/login:
+    post:
+      summary: User login
+      description: |
+        Authenticate user with email/CPF and password. Returns session cookie.
+        Username can be either email or CPF (with or without formatting).
+      operationId: login
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: connect.sid=s%3A...; Path=/; HttpOnly
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid credentials or inactive user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid_credentials:
+                  value:
+                    error: "Usuário ou senha inválidos"
+                inactive_user:
+                  value:
+                    error: "Usuário inativo. Entre em contato com o administrador."
+
+  /api/auth/logout:
+    post:
+      summary: User logout
+      description: Destroy current session
+      operationId: logout
+      tags:
+        - Authentication
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Logout realizado com sucesso"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/auth/me:
+    get:
+      summary: Get current user
+      description: Get information about the currently authenticated user
+      operationId: getCurrentUser
+      tags:
+        - Authentication
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Current user information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/SessionUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/register:
+    post:
+      summary: Register new user
+      description: |
+        Register a new user account. Optionally creates a new tenant if tenantName is provided.
+        User is automatically logged in after registration.
+      operationId: register
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Registration successful
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Invalid data or email already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                duplicate_email:
+                  value:
+                    error: "Email já está em uso"
+                invalid_data:
+                  value:
+                    error: "Dados de registro inválidos"
+
+  # ==================== CUSTOMERS ====================
+  /api/customers:
+    get:
+      summary: List customers
+      description: Get all customers for the authenticated user's tenant
+      operationId: listCustomers
+      tags:
+        - Customers
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of customers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Customer'
+        '400':
+          description: Tenant not selected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Tenant não selecionado"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create customer
+      description: Create a new customer (requires manager or seller role)
+      operationId: createCustomer
+      tags:
+        - Customers
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerInput'
+      responses:
+        '201':
+          description: Customer created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/customers/{id}:
+    put:
+      summary: Update customer
+      description: Update an existing customer (requires manager or seller role)
+      operationId: updateCustomer
+      tags:
+        - Customers
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Customer ID
+          schema:
+            type: integer
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerInput'
+      responses:
+        '200':
+          description: Customer updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      summary: Delete customer
+      description: Delete a customer (requires manager or seller role)
+      operationId: deleteCustomer
+      tags:
+        - Customers
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Customer ID
+          schema:
+            type: integer
+            example: 1
+      responses:
+        '200':
+          description: Customer deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Cliente excluído com sucesso"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ==================== PRODUCTS ====================
+  /api/products:
+    get:
+      summary: List products
+      description: Get all products for the authenticated user's tenant
+      operationId: listProducts
+      tags:
+        - Products
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+        '400':
+          description: Tenant not selected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Tenant não selecionado"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create product
+      description: Create a new product (requires manager role)
+      operationId: createProduct
+      tags:
+        - Products
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        '201':
+          description: Product created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/products/{id}:
+    put:
+      summary: Update product
+      description: Update an existing product (requires manager role)
+      operationId: updateProduct
+      tags:
+        - Products
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Product ID
+          schema:
+            type: integer
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        '200':
+          description: Product updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      summary: Delete product
+      description: Delete a product (requires manager role)
+      operationId: deleteProduct
+      tags:
+        - Products
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Product ID
+          schema:
+            type: integer
+            example: 1
+      responses:
+        '200':
+          description: Product deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Produto excluído com sucesso"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ==================== ORDERS ====================
+  /api/orders:
+    get:
+      summary: List orders
+      description: Get all orders for the authenticated user's tenant
+      operationId: listOrders
+      tags:
+        - Orders
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+        '400':
+          description: Tenant not selected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Tenant não selecionado"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create order
+      description: Create a new order (requires manager or seller role)
+      operationId: createOrder
+      tags:
+        - Orders
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderInput'
+      responses:
+        '201':
+          description: Order created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/orders/{id}:
+    put:
+      summary: Update order
+      description: Update an existing order (requires manager or seller role)
+      operationId: updateOrder
+      tags:
+        - Orders
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Order ID
+          schema:
+            type: integer
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderInput'
+      responses:
+        '200':
+          description: Order updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      summary: Delete order
+      description: Delete an order (requires manager or seller role)
+      operationId: deleteOrder
+      tags:
+        - Orders
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Order ID
+          schema:
+            type: integer
+            example: 1
+      responses:
+        '200':
+          description: Order deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Pedido excluído com sucesso"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'

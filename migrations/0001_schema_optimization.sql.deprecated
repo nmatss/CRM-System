@@ -1,0 +1,265 @@
+-- Migration: Schema Optimization for Supabase
+-- Description: Adds indexes, fixes data types, adds audit fields, and improves constraints
+-- Compatible with: PostgreSQL / Supabase
+-- Generated: 2024
+
+-- ==================== TENANTS ====================
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS tenants_status_idx ON tenants(status);
+
+-- ==================== USERS ====================
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS users_email_idx ON users(email);
+CREATE INDEX IF NOT EXISTS users_status_idx ON users(status);
+CREATE INDEX IF NOT EXISTS users_seller_code_idx ON users(seller_code);
+
+-- ==================== TENANT USERS ====================
+ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS tenant_users_tenant_id_idx ON tenant_users(tenant_id);
+CREATE INDEX IF NOT EXISTS tenant_users_user_id_idx ON tenant_users(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS tenant_users_tenant_user_unique ON tenant_users(tenant_id, user_id);
+
+-- ==================== PASSWORD RESETS ====================
+CREATE INDEX IF NOT EXISTS password_resets_user_id_idx ON password_resets(user_id);
+CREATE INDEX IF NOT EXISTS password_resets_expires_at_idx ON password_resets(expires_at);
+
+-- ==================== CUSTOMERS ====================
+-- Add new columns
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+-- Convert LTV to numeric (requires data migration)
+ALTER TABLE customers ALTER COLUMN ltv TYPE NUMERIC(12, 2) USING ltv::NUMERIC(12, 2);
+
+-- Convert last_purchase to timestamp (requires data migration)
+-- Note: This may require manual data conversion if format varies
+ALTER TABLE customers ALTER COLUMN last_purchase TYPE TIMESTAMP USING
+  CASE
+    WHEN last_purchase ~ '^\d{4}-\d{2}-\d{2}' THEN last_purchase::TIMESTAMP
+    ELSE NULL
+  END;
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS customers_tenant_id_idx ON customers(tenant_id);
+CREATE INDEX IF NOT EXISTS customers_email_idx ON customers(email);
+CREATE INDEX IF NOT EXISTS customers_segment_idx ON customers(segment);
+CREATE INDEX IF NOT EXISTS customers_tenant_segment_idx ON customers(tenant_id, segment);
+
+-- ==================== PRODUCTS ====================
+-- Add new columns
+ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+ALTER TABLE products ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+-- Convert price to numeric
+ALTER TABLE products ALTER COLUMN price TYPE NUMERIC(12, 2) USING price::NUMERIC(12, 2);
+
+-- Set defaults for existing columns
+ALTER TABLE products ALTER COLUMN stock SET DEFAULT 0;
+ALTER TABLE products ALTER COLUMN status SET DEFAULT 'active';
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS products_tenant_id_idx ON products(tenant_id);
+CREATE INDEX IF NOT EXISTS products_category_idx ON products(category);
+CREATE INDEX IF NOT EXISTS products_status_idx ON products(status);
+CREATE INDEX IF NOT EXISTS products_tenant_category_idx ON products(tenant_id, category);
+
+-- ==================== ORDERS ====================
+-- Add new columns
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+-- Rename date to order_date and convert type
+ALTER TABLE orders RENAME COLUMN date TO order_date;
+ALTER TABLE orders ALTER COLUMN order_date TYPE TIMESTAMP USING
+  CASE
+    WHEN order_date ~ '^\d{4}-\d{2}-\d{2}' THEN order_date::TIMESTAMP
+    ELSE NOW()
+  END;
+
+-- Convert total to numeric
+ALTER TABLE orders ALTER COLUMN total TYPE NUMERIC(12, 2) USING total::NUMERIC(12, 2);
+
+-- Update customer foreign key behavior
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_customer_id_fkey;
+ALTER TABLE orders ADD CONSTRAINT orders_customer_id_fkey
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;
+
+-- Set defaults
+ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'pending';
+ALTER TABLE orders ALTER COLUMN items SET DEFAULT 0;
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS orders_tenant_id_idx ON orders(tenant_id);
+CREATE INDEX IF NOT EXISTS orders_customer_id_idx ON orders(customer_id);
+CREATE INDEX IF NOT EXISTS orders_status_idx ON orders(status);
+CREATE INDEX IF NOT EXISTS orders_order_date_idx ON orders(order_date);
+CREATE INDEX IF NOT EXISTS orders_tenant_status_idx ON orders(tenant_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS orders_tenant_order_id_unique ON orders(tenant_id, order_id);
+
+-- ==================== CASHBACK RULES ====================
+-- Add new columns
+ALTER TABLE cashback_rules ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+ALTER TABLE cashback_rules ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+-- Rename usage to usage_count (avoid reserved keyword)
+ALTER TABLE cashback_rules RENAME COLUMN usage TO usage_count;
+
+-- Convert value to numeric
+ALTER TABLE cashback_rules ALTER COLUMN value TYPE NUMERIC(10, 2) USING value::NUMERIC(10, 2);
+
+-- Convert validity to integer (days)
+ALTER TABLE cashback_rules ALTER COLUMN validity TYPE INTEGER USING validity::INTEGER;
+
+-- Set defaults
+ALTER TABLE cashback_rules ALTER COLUMN status SET DEFAULT 'active';
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS cashback_rules_tenant_id_idx ON cashback_rules(tenant_id);
+CREATE INDEX IF NOT EXISTS cashback_rules_status_idx ON cashback_rules(status);
+
+-- ==================== CAMPAIGNS ====================
+-- Add new columns
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMP;
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+-- Convert numeric text fields
+ALTER TABLE campaigns ALTER COLUMN open_rate TYPE NUMERIC(5, 2) USING open_rate::NUMERIC(5, 2);
+ALTER TABLE campaigns ALTER COLUMN conversion TYPE NUMERIC(5, 2) USING conversion::NUMERIC(5, 2);
+ALTER TABLE campaigns ALTER COLUMN revenue TYPE NUMERIC(12, 2) USING revenue::NUMERIC(12, 2);
+
+-- Migrate date to scheduled_at and drop old column
+UPDATE campaigns SET scheduled_at =
+  CASE
+    WHEN date ~ '^\d{4}-\d{2}-\d{2}' THEN date::TIMESTAMP
+    ELSE NULL
+  END
+WHERE scheduled_at IS NULL;
+ALTER TABLE campaigns DROP COLUMN IF EXISTS date;
+
+-- Set defaults
+ALTER TABLE campaigns ALTER COLUMN status SET DEFAULT 'draft';
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS campaigns_tenant_id_idx ON campaigns(tenant_id);
+CREATE INDEX IF NOT EXISTS campaigns_status_idx ON campaigns(status);
+CREATE INDEX IF NOT EXISTS campaigns_channel_idx ON campaigns(channel);
+
+-- ==================== AUTOMATIONS ====================
+-- Add new columns
+ALTER TABLE automations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+ALTER TABLE automations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+-- Convert active from integer to boolean
+ALTER TABLE automations ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+UPDATE automations SET is_active = (active = 1);
+ALTER TABLE automations DROP COLUMN IF EXISTS active;
+
+-- Make stats nullable
+ALTER TABLE automations ALTER COLUMN stats DROP NOT NULL;
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS automations_tenant_id_idx ON automations(tenant_id);
+CREATE INDEX IF NOT EXISTS automations_is_active_idx ON automations(is_active);
+
+-- ==================== CONTACT REQUESTS ====================
+ALTER TABLE contact_requests ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS contact_requests_status_idx ON contact_requests(status);
+CREATE INDEX IF NOT EXISTS contact_requests_created_at_idx ON contact_requests(created_at);
+
+-- ==================== DEMO REQUESTS ====================
+ALTER TABLE demo_requests ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+-- Convert preferred_date to timestamp
+ALTER TABLE demo_requests ALTER COLUMN preferred_date TYPE TIMESTAMP USING
+  CASE
+    WHEN preferred_date ~ '^\d{4}-\d{2}-\d{2}' THEN preferred_date::TIMESTAMP
+    ELSE NULL
+  END;
+
+CREATE INDEX IF NOT EXISTS demo_requests_status_idx ON demo_requests(status);
+CREATE INDEX IF NOT EXISTS demo_requests_created_at_idx ON demo_requests(created_at);
+
+-- ==================== SELLER TASKS ====================
+ALTER TABLE seller_tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+-- Convert due_date to timestamp
+ALTER TABLE seller_tasks ALTER COLUMN due_date TYPE TIMESTAMP USING
+  CASE
+    WHEN due_date ~ '^\d{4}-\d{2}-\d{2}' THEN due_date::TIMESTAMP
+    ELSE NOW()
+  END;
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS seller_tasks_tenant_id_idx ON seller_tasks(tenant_id);
+CREATE INDEX IF NOT EXISTS seller_tasks_seller_id_idx ON seller_tasks(seller_id);
+CREATE INDEX IF NOT EXISTS seller_tasks_customer_id_idx ON seller_tasks(customer_id);
+CREATE INDEX IF NOT EXISTS seller_tasks_status_idx ON seller_tasks(status);
+CREATE INDEX IF NOT EXISTS seller_tasks_due_date_idx ON seller_tasks(due_date);
+CREATE INDEX IF NOT EXISTS seller_tasks_tenant_seller_idx ON seller_tasks(tenant_id, seller_id);
+CREATE INDEX IF NOT EXISTS seller_tasks_tenant_status_idx ON seller_tasks(tenant_id, status);
+
+-- ==================== SELLER GOALS ====================
+-- Convert sales goals to numeric
+ALTER TABLE seller_goals ALTER COLUMN daily_sales_goal TYPE NUMERIC(12, 2) USING COALESCE(daily_sales_goal::NUMERIC(12, 2), 0);
+ALTER TABLE seller_goals ALTER COLUMN weekly_sales_goal TYPE NUMERIC(12, 2) USING COALESCE(weekly_sales_goal::NUMERIC(12, 2), 0);
+ALTER TABLE seller_goals ALTER COLUMN monthly_sales_goal TYPE NUMERIC(12, 2) USING COALESCE(monthly_sales_goal::NUMERIC(12, 2), 0);
+
+-- Set NOT NULL with defaults
+ALTER TABLE seller_goals ALTER COLUMN daily_sales_goal SET NOT NULL;
+ALTER TABLE seller_goals ALTER COLUMN daily_sales_goal SET DEFAULT 0;
+ALTER TABLE seller_goals ALTER COLUMN weekly_sales_goal SET NOT NULL;
+ALTER TABLE seller_goals ALTER COLUMN weekly_sales_goal SET DEFAULT 0;
+ALTER TABLE seller_goals ALTER COLUMN monthly_sales_goal SET NOT NULL;
+ALTER TABLE seller_goals ALTER COLUMN monthly_sales_goal SET DEFAULT 0;
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS seller_goals_tenant_id_idx ON seller_goals(tenant_id);
+CREATE INDEX IF NOT EXISTS seller_goals_seller_id_idx ON seller_goals(seller_id);
+CREATE UNIQUE INDEX IF NOT EXISTS seller_goals_tenant_seller_unique ON seller_goals(tenant_id, seller_id);
+
+-- ==================== CUSTOMER INTERACTIONS ====================
+ALTER TABLE customer_interactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS customer_interactions_tenant_id_idx ON customer_interactions(tenant_id);
+CREATE INDEX IF NOT EXISTS customer_interactions_customer_id_idx ON customer_interactions(customer_id);
+CREATE INDEX IF NOT EXISTS customer_interactions_seller_id_idx ON customer_interactions(seller_id);
+CREATE INDEX IF NOT EXISTS customer_interactions_task_id_idx ON customer_interactions(task_id);
+CREATE INDEX IF NOT EXISTS customer_interactions_type_idx ON customer_interactions(type);
+CREATE INDEX IF NOT EXISTS customer_interactions_created_at_idx ON customer_interactions(created_at);
+
+-- ==================== TRIGGER FOR UPDATED_AT ====================
+-- Create a function to automatically update updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Apply trigger to all tables with updated_at column
+DO $$
+DECLARE
+    t text;
+BEGIN
+    FOR t IN
+        SELECT table_name
+        FROM information_schema.columns
+        WHERE column_name = 'updated_at'
+        AND table_schema = 'public'
+    LOOP
+        EXECUTE format('
+            DROP TRIGGER IF EXISTS update_%I_updated_at ON %I;
+            CREATE TRIGGER update_%I_updated_at
+            BEFORE UPDATE ON %I
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at_column();
+        ', t, t, t, t);
+    END LOOP;
+END;
+$$;

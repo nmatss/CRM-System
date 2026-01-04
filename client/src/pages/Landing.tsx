@@ -158,7 +158,7 @@ const testimonials = [
     name: "Maria Santos",
     role: "Proprietária",
     company: "Boutique Elegance",
-    text: "O Moda CRM transformou nossa loja. Aumentamos o ticket médio em 35% com as campanhas de cashback!",
+    text: "O Zippi CRM transformou nossa loja. Aumentamos o ticket médio em 35% com as campanhas de cashback!",
     rating: 5,
     metric: "+35%",
     metricLabel: "Ticket Médio"
@@ -800,6 +800,7 @@ export default function Landing() {
                 onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
                 placeholder="Seu nome"
                 required
+                autoComplete="name"
                 className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                 data-testid="input-contact-name"
               />
@@ -813,6 +814,7 @@ export default function Landing() {
                 onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
                 placeholder="seu@email.com"
                 required
+                autoComplete="email"
                 className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                 data-testid="input-contact-email"
               />
@@ -824,6 +826,7 @@ export default function Landing() {
                 value={contactForm.phone}
                 onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
                 placeholder="(11) 99999-9999"
+                autoComplete="tel"
                 className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                 data-testid="input-contact-phone"
               />
@@ -875,6 +878,7 @@ export default function Landing() {
                   onChange={(e) => setDemoForm({ ...demoForm, name: e.target.value })}
                   placeholder="Seu nome"
                   required
+                  autoComplete="name"
                   className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                   data-testid="input-demo-name"
                 />
@@ -886,6 +890,7 @@ export default function Landing() {
                   value={demoForm.phone}
                   onChange={(e) => setDemoForm({ ...demoForm, phone: e.target.value })}
                   placeholder="(11) 99999-9999"
+                  autoComplete="tel"
                   className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                   data-testid="input-demo-phone"
                 />
@@ -900,6 +905,7 @@ export default function Landing() {
                 onChange={(e) => setDemoForm({ ...demoForm, email: e.target.value })}
                 placeholder="seu@email.com"
                 required
+                autoComplete="email"
                 className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                 data-testid="input-demo-email"
               />
@@ -913,6 +919,7 @@ export default function Landing() {
                   onChange={(e) => setDemoForm({ ...demoForm, company: e.target.value })}
                   placeholder="Nome da loja"
                   required
+                  autoComplete="organization"
                   className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                   data-testid="input-demo-company"
                 />

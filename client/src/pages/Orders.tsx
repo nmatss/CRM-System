@@ -105,6 +105,7 @@ export default function Orders() {
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
   const [formData, setFormData] = useState<OrderFormData>(initialFormData);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("Todos");
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -112,7 +113,7 @@ export default function Orders() {
   const { data: orders = [], isLoading } = useQuery<Order[]>({
     queryKey: ["orders"],
     queryFn: async () => {
-      const response = await fetch("/api/orders");
+      const response = await fetch("/api/v1/orders");
       if (!response.ok) throw new Error("Erro ao carregar pedidos");
       return response.json();
     },
@@ -121,7 +122,7 @@ export default function Orders() {
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ["customers"],
     queryFn: async () => {
-      const response = await fetch("/api/customers");
+      const response = await fetch("/api/v1/customers");
       if (!response.ok) throw new Error("Erro ao carregar clientes");
       return response.json();
     },
@@ -129,7 +130,7 @@ export default function Orders() {
 
   const createMutation = useMutation({
     mutationFn: async (data: OrderFormData) => {
-      const response = await apiRequest("POST", "/api/orders", data);
+      const response = await apiRequest("POST", "/orders", data);
       return response.json();
     },
     onSuccess: () => {
@@ -144,7 +145,7 @@ export default function Orders() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<OrderFormData> }) => {
-      const response = await apiRequest("PUT", `/api/orders/${id}`, data);
+      const response = await apiRequest("PUT", `/orders/${id}`, data);
       return response.json();
     },
     onSuccess: () => {
@@ -159,7 +160,7 @@ export default function Orders() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await apiRequest("DELETE", `/api/orders/${id}`);
+      const response = await apiRequest("DELETE", `/orders/${id}`);
       return response.json();
     },
     onSuccess: () => {
@@ -186,7 +187,7 @@ export default function Orders() {
       customer: order.customer,
       customerId: order.customerId || undefined,
       orderDate: formatDateForInput(order.orderDate),
-      total: `R$ ${(order.total || 0).toFixed(2).replace('.', ',')}`,
+      total: `R$ ${(order.total ?? 0).toFixed(2).replace('.', ',')}`,
       status: order.status,
       items: order.items,
       method: order.method,
@@ -221,11 +222,16 @@ export default function Orders() {
   };
 
   const filteredOrders = orders.filter(
-    (order) =>
-      order.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(order.total).includes(searchTerm)
+    (order) => {
+      const matchesSearch = order.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        String(order.total).includes(searchTerm);
+      const matchesStatus = statusFilter === "Todos" || order.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    }
   );
+
+  const statusOptions = ["Todos", "Pendente", "Processando", "Pago", "Enviado", "Entregue", "Cancelado"];
 
   const isMutating = createMutation.isPending || updateMutation.isPending;
 
@@ -260,21 +266,34 @@ export default function Orders() {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input 
-              placeholder="Buscar pedido, cliente ou valor..." 
-              className="w-full pl-9" 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              data-testid="input-search"
-            />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar pedido, cliente ou valor..."
+                className="w-full pl-9"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                data-testid="input-search"
+              />
+            </div>
           </div>
-          <Button variant="outline" className="gap-2 w-full sm:w-auto" data-testid="button-filter">
-            <Filter className="h-4 w-4" />
-            Filtros
-          </Button>
+
+          <div className="flex overflow-x-auto gap-2 pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide">
+            {statusOptions.map((status) => (
+              <Button
+                key={status}
+                variant={statusFilter === status ? "default" : "outline"}
+                size="sm"
+                onClick={() => setStatusFilter(status)}
+                className="whitespace-nowrap text-xs sm:text-sm px-3 py-1.5 flex-shrink-0"
+                data-testid={`filter-${status.toLowerCase()}`}
+              >
+                {status}
+              </Button>
+            ))}
+          </div>
         </div>
 
         <Card>
@@ -327,9 +346,9 @@ export default function Orders() {
                             <TableCell data-testid={`text-customer-${order.id}`}>{order.customer}</TableCell>
                             <TableCell data-testid={`text-date-${order.id}`}>{formatDate(order.orderDate)}</TableCell>
                             <TableCell>
-                              <Badge 
+                              <Badge
                                 variant={badgeProps.variant as any}
-                                className={badgeProps.className}
+                                className={`${badgeProps.className} text-xs sm:text-sm whitespace-nowrap`}
                                 data-testid={`badge-status-${order.id}`}
                               >
                                 {order.status}
@@ -397,13 +416,13 @@ export default function Orders() {
                           </DropdownMenu>
                         </div>
                         <div className="flex items-center justify-between">
-                          <Badge 
+                          <Badge
                             variant={badgeProps.variant as any}
-                            className={badgeProps.className}
+                            className={`${badgeProps.className} text-xs sm:text-sm whitespace-nowrap`}
                           >
                             {order.status}
                           </Badge>
-                          <p className="font-semibold">{order.total}</p>
+                          <p className="font-semibold text-sm sm:text-base">{order.total}</p>
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-sm">
                           <div>
@@ -426,17 +445,17 @@ export default function Orders() {
       </div>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-[500px]" data-testid="order-modal">
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto" data-testid="order-modal">
           <DialogHeader>
             <DialogTitle>{editingOrder ? "Editar Pedido" : "Novo Pedido"}</DialogTitle>
             <DialogDescription>
-              {editingOrder 
-                ? "Atualize as informações do pedido abaixo." 
+              {editingOrder
+                ? "Atualize as informações do pedido abaixo."
                 : "Preencha os dados do novo pedido."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="orderId">Número do Pedido</Label>
                 <Input
@@ -494,7 +513,7 @@ export default function Orders() {
                 />
               )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="total">Total *</Label>
                 <Input
@@ -518,7 +537,7 @@ export default function Orders() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>
                 <Select
@@ -557,11 +576,11 @@ export default function Orders() {
                 </Select>
               </div>
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={closeModal} data-testid="button-cancel">
+            <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={closeModal} className="w-full sm:w-auto" data-testid="button-cancel">
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isMutating} data-testid="button-save-order">
+              <Button type="submit" disabled={isMutating} className="w-full sm:w-auto" data-testid="button-save-order">
                 {isMutating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {editingOrder ? "Salvar" : "Criar Pedido"}
               </Button>
@@ -571,18 +590,18 @@ export default function Orders() {
       </Dialog>
 
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent data-testid="delete-dialog">
+        <AlertDialogContent className="max-w-[90vw] sm:max-w-lg" data-testid="delete-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>Cancelar pedido?</AlertDialogTitle>
             <AlertDialogDescription>
               Esta ação não pode ser desfeita. O pedido "{orderToDelete?.orderId}" será cancelado permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete">Voltar</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDelete} 
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
+            <AlertDialogCancel className="w-full sm:w-auto" data-testid="button-cancel-delete">Voltar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="w-full sm:w-auto bg-destructive text-destructive-foreground hover:bg-destructive/90"
               data-testid="button-confirm-delete"
             >
               {deleteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

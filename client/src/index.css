@@ -4,12 +4,41 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* ===== DESIGN TOKENS - ZIPPICRM ===== */
+
+  /* Breakpoints (for consistent responsive design) */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+
+  /* Border Radius */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  
-  /* Zippi Brand Colors - Cyan/Blue Gradient Theme */
+
+  /* Spacing Scale (consistent gaps, margins, paddings) */
+  --spacing-xs: 0.5rem;    /* 8px */
+  --spacing-sm: 0.75rem;   /* 12px */
+  --spacing-md: 1rem;      /* 16px */
+  --spacing-lg: 1.5rem;    /* 24px */
+  --spacing-xl: 2rem;      /* 32px */
+  --spacing-2xl: 3rem;     /* 48px */
+  --spacing-3xl: 4rem;     /* 64px */
+
+  /* Typography Scale */
+  --text-xs: 0.75rem;      /* 12px */
+  --text-sm: 0.875rem;     /* 14px */
+  --text-base: 1rem;       /* 16px */
+  --text-lg: 1.125rem;     /* 18px */
+  --text-xl: 1.25rem;      /* 20px */
+  --text-2xl: 1.5rem;      /* 24px */
+  --text-3xl: 1.875rem;    /* 30px */
+  --text-4xl: 2.25rem;     /* 36px */
+
+  /* Zippi Brand Colors - Purple Primary + Cyan/Blue Accents */
   --color-brand-50: hsl(185 100% 98%);
   --color-brand-100: hsl(185 100% 96%);
   --color-brand-200: hsl(185 100% 90%);
@@ -21,6 +50,33 @@
   --color-brand-800: hsl(221 83% 53%);
   --color-brand-900: hsl(224 76% 48%);
   --color-brand-950: hsl(226 71% 40%);
+
+  /* Purple Primary */
+  --color-purple-400: hsl(270 95% 75%);
+  --color-purple-500: hsl(270 91% 65%);
+  --color-purple-600: hsl(271 91% 55%);
+  --color-purple-700: hsl(272 83% 45%);
+
+  /* Success Colors */
+  --color-success-50: hsl(142 76% 96%);
+  --color-success-100: hsl(142 76% 91%);
+  --color-success-500: hsl(142 76% 36%);
+  --color-success-600: hsl(142 76% 30%);
+  --color-success-700: hsl(142 76% 24%);
+
+  /* Warning Colors */
+  --color-warning-50: hsl(48 100% 96%);
+  --color-warning-100: hsl(48 96% 89%);
+  --color-warning-500: hsl(45 93% 47%);
+  --color-warning-600: hsl(43 96% 41%);
+  --color-warning-700: hsl(42 96% 35%);
+
+  /* Danger Colors */
+  --color-danger-50: hsl(0 86% 97%);
+  --color-danger-100: hsl(0 93% 94%);
+  --color-danger-500: hsl(0 84% 60%);
+  --color-danger-600: hsl(0 72% 51%);
+  --color-danger-700: hsl(0 74% 42%);
 
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -41,7 +97,7 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
-  
+
   --color-sidebar: hsl(var(--sidebar));
   --color-sidebar-foreground: hsl(var(--sidebar-foreground));
   --color-sidebar-primary: hsl(var(--sidebar-primary));
@@ -61,7 +117,7 @@
   --font-display: 'Outfit', sans-serif;
 }
 
-/* LIGHT MODE - Zippi Cyan/Blue Theme */
+/* LIGHT MODE - Zippi Purple Primary Theme */
 :root {
   --background: 210 20% 98%;
   --foreground: 222 47% 11%;
@@ -72,24 +128,24 @@
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 11%;
 
-  --primary: 187 94% 43%; /* Cyan */
+  --primary: 271 91% 55%; /* Purple #7c3aed */
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 199 89% 48%; /* Blue */
+  --secondary: 187 94% 43%; /* Cyan */
   --secondary-foreground: 0 0% 100%;
 
   --muted: 210 40% 96.1%;
   --muted-foreground: 215.4 16.3% 46.9%;
 
-  --accent: 187 94% 95%;
-  --accent-foreground: 187 94% 30%;
+  --accent: 271 100% 96%;
+  --accent-foreground: 271 91% 35%;
 
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
 
   --border: 214.3 31.8% 91.4%;
   --input: 214.3 31.8% 91.4%;
-  --ring: 187 94% 43%;
+  --ring: 271 91% 55%;
 
   --radius: 0.5rem;
 
@@ -103,11 +159,11 @@
   --sidebar-ring: 187 94% 43%;
 
   /* Charts - Zippi Colors */
-  --chart-1: 187 94% 43%; /* Cyan */
-  --chart-2: 199 89% 48%; /* Blue */
-  --chart-3: 217 91% 60%; /* Indigo */
-  --chart-4: 160 60% 45%; /* Emerald */
-  --chart-5: 280 65% 60%; /* Purple */
+  --chart-1: 271 91% 55%; /* Purple Primary */
+  --chart-2: 187 94% 43%; /* Cyan */
+  --chart-3: 199 89% 48%; /* Blue */
+  --chart-4: 142 76% 36%; /* Success Green */
+  --chart-5: 45 93% 47%; /* Warning Yellow */
 }
 
 .dark {
@@ -120,10 +176,10 @@
   --popover: 222 47% 8%;
   --popover-foreground: 210 40% 98%;
 
-  --primary: 187 94% 43%; /* Cyan */
+  --primary: 271 91% 55%; /* Purple #7c3aed */
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 199 89% 48%; /* Blue */
+  --secondary: 187 94% 43%; /* Cyan */
   --secondary-foreground: 0 0% 100%;
 
   --muted: 217.2 32.6% 17.5%;
@@ -137,8 +193,8 @@
 
   --border: 217.2 32.6% 17.5%;
   --input: 217.2 32.6% 17.5%;
-  --ring: 187 94% 43%;
-  
+  --ring: 271 91% 55%;
+
   --sidebar: 222 47% 6%;
   --sidebar-foreground: 210 40% 98%;
   --sidebar-primary: 187 94% 43%;
@@ -148,21 +204,195 @@
   --sidebar-border: 217.2 32.6% 17.5%;
   --sidebar-ring: 187 94% 43%;
 
-  --chart-1: 187 94% 50%;
-  --chart-2: 199 89% 55%;
-  --chart-3: 217 91% 65%;
-  --chart-4: 160 60% 50%;
-  --chart-5: 280 65% 65%;
+  --chart-1: 271 91% 60%; /* Purple Primary */
+  --chart-2: 187 94% 50%; /* Cyan */
+  --chart-3: 199 89% 55%; /* Blue */
+  --chart-4: 142 76% 40%; /* Success Green */
+  --chart-5: 45 93% 50%; /* Warning Yellow */
 }
 
 @layer base {
+  /* Mobile-first improvements */
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   * {
     @apply border-border;
   }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
   }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-display font-semibold tracking-tight;
+  }
+
+  /* Prevent zoom on input focus in iOS - minimum 16px font size */
+  input, select, textarea {
+    font-size: 16px;
+  }
+
+  @media (min-width: 640px) {
+    input, select, textarea {
+      font-size: 14px;
+    }
+  }
+
+  /* Improve touch targets on mobile */
+  button, a, [role="button"] {
+    touch-action: manipulation;
+  }
+
+  /* Smooth transitions for dark mode toggle */
+  * {
+    transition-property: color, background-color, border-color;
+    transition-duration: 150ms;
+    transition-timing-function: ease-in-out;
+  }
+}
+
+/* ===== UTILITY CLASSES FOR DESIGN SYSTEM ===== */
+@layer utilities {
+  /* Responsive Grid Layouts */
+  .grid-responsive-cards {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4;
+  }
+
+  .grid-responsive-2col {
+    @apply grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4;
+  }
+
+  /* Responsive Container Padding */
+  .container-padding {
+    @apply px-3 sm:px-4 lg:px-6;
+  }
+
+  /* Responsive Text Sizes */
+  .text-responsive-xl {
+    @apply text-xl sm:text-2xl lg:text-3xl;
+  }
+
+  .text-responsive-lg {
+    @apply text-lg sm:text-xl lg:text-2xl;
+  }
+
+  .text-responsive-base {
+    @apply text-sm sm:text-base;
+  }
+
+  /* Card Styles */
+  .card-elevated {
+    @apply bg-card rounded-lg border border-border shadow-sm hover:shadow-md transition-shadow;
+  }
+
+  /* Spacing Utilities */
+  .spacing-xs { gap: var(--spacing-xs); }
+  .spacing-sm { gap: var(--spacing-sm); }
+  .spacing-md { gap: var(--spacing-md); }
+  .spacing-lg { gap: var(--spacing-lg); }
+  .spacing-xl { gap: var(--spacing-xl); }
+
+  /* Mobile-friendly table wrapper */
+  .table-responsive {
+    @apply w-full overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Thin scrollbar for mobile */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* Safe area insets for notched devices (iPhone X+) */
+  .safe-area-inset-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-area-inset-left {
+    padding-left: env(safe-area-inset-left);
+  }
+  .safe-area-inset-right {
+    padding-right: env(safe-area-inset-right);
+  }
+  .safe-area-inset {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Page container with consistent padding */
+  .page-padding {
+    @apply px-3 py-4 sm:px-4 sm:py-6 lg:px-6 lg:py-8;
+  }
+
+  /* Container with max-width and centering */
+  .container-responsive {
+    @apply w-full mx-auto px-3 sm:px-4 lg:px-6;
+    max-width: 1400px;
+  }
+
+  /* Mobile-friendly spacing */
+  .section-spacing {
+    @apply mb-4 sm:mb-6 lg:mb-8;
+  }
+
+  /* Prevent text selection on interactive elements */
+  .no-select {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  /* Full viewport height accounting for mobile browsers */
+  .min-h-screen-mobile {
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+  }
+
+  /* Improved focus states for accessibility */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2;
+  }
+
+  /* Touch-friendly minimum sizes */
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
   }
 }

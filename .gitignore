@@ -5,8 +5,22 @@ server/public
 vite.config.ts.*
 *.tar.gz
 
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
 # SQLite database
 data/
 *.db
 *.db-wal
 *.db-shm
+
+# Coverage
+coverage/

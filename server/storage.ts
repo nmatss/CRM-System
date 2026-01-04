@@ -1,5 +1,5 @@
-import { 
-  type User, 
+import {
+  type User,
   type InsertUser,
   type Tenant,
   type InsertTenant,
@@ -13,6 +13,8 @@ import {
   type InsertOrder,
   type CashbackRule,
   type InsertCashbackRule,
+  type CashbackTransaction,
+  type InsertCashbackTransaction,
   type Campaign,
   type InsertCampaign,
   type Automation,
@@ -27,6 +29,8 @@ import {
   type InsertSellerGoal,
   type CustomerInteraction,
   type InsertCustomerInteraction,
+  type Notification,
+  type InsertNotification,
   users,
   tenants,
   tenantUsers,
@@ -34,13 +38,15 @@ import {
   products,
   orders,
   cashbackRules,
+  cashbackTransactions,
   campaigns,
   automations,
   contactRequests,
   demoRequests,
   sellerTasks,
   sellerGoals,
-  customerInteractions
+  customerInteractions,
+  notifications
 } from "@shared/schema";
 import { db, sqlite } from "./db";
 import { eq, and, desc, gte, lte, sql } from "drizzle-orm";
@@ -73,21 +79,21 @@ export interface IStorage {
   deleteTenant(id: number): Promise<boolean>;
   
   // Customers (tenant-scoped)
-  getCustomers(tenantId: number): Promise<Customer[]>;
+  getCustomers(tenantId: number, limit?: number, offset?: number): Promise<{ data: Customer[]; total: number }>;
   getCustomer(tenantId: number, id: number): Promise<Customer | undefined>;
   createCustomer(customer: InsertCustomer): Promise<Customer>;
   updateCustomer(tenantId: number, id: number, data: Partial<InsertCustomer>): Promise<Customer | undefined>;
   deleteCustomer(tenantId: number, id: number): Promise<boolean>;
 
   // Products (tenant-scoped)
-  getProducts(tenantId: number): Promise<Product[]>;
+  getProducts(tenantId: number, limit?: number, offset?: number): Promise<{ data: Product[]; total: number }>;
   getProduct(tenantId: number, id: number): Promise<Product | undefined>;
   createProduct(product: InsertProduct): Promise<Product>;
   updateProduct(tenantId: number, id: number, data: Partial<InsertProduct>): Promise<Product | undefined>;
   deleteProduct(tenantId: number, id: number): Promise<boolean>;
 
   // Orders (tenant-scoped)
-  getOrders(tenantId: number): Promise<Order[]>;
+  getOrders(tenantId: number, limit?: number, offset?: number): Promise<{ data: Order[]; total: number }>;
   getOrder(tenantId: number, id: number): Promise<Order | undefined>;
   createOrder(order: InsertOrder): Promise<Order>;
   updateOrder(tenantId: number, id: number, data: Partial<InsertOrder>): Promise<Order | undefined>;
@@ -99,6 +105,13 @@ export interface IStorage {
   createCashbackRule(rule: InsertCashbackRule): Promise<CashbackRule>;
   updateCashbackRule(tenantId: number, id: number, data: Partial<InsertCashbackRule>): Promise<CashbackRule | undefined>;
   deleteCashbackRule(tenantId: number, id: number): Promise<boolean>;
+
+  // Cashback Transactions (tenant-scoped)
+  getCashbackTransactions(tenantId: number, customerId?: number, limit?: number): Promise<CashbackTransaction[]>;
+  createCashbackTransaction(transaction: InsertCashbackTransaction): Promise<CashbackTransaction>;
+  getCustomerCashbackBalance(tenantId: number, customerId: number): Promise<number>;
+  getCashbackDistribution(tenantId: number): Promise<{ range: string; count: number }[]>;
+  getExpiringCashback(tenantId: number, daysAhead: number): Promise<{ customer: Customer; balance: number; expiresAt: string }[]>;
 
   // Campaigns (tenant-scoped)
   getCampaigns(tenantId: number): Promise<Campaign[]>;
@@ -145,6 +158,39 @@ export interface IStorage {
   
   // Seller Ranking (tenant-scoped)
   getSellerRanking(tenantId: number, period: 'daily' | 'weekly' | 'monthly'): Promise<{ sellerId: string; sellerName: string; completedTasks: number; totalInteractions: number }[]>;
+
+  // Notifications (tenant-scoped)
+  getNotifications(tenantId: number, userId?: string, limit?: number): Promise<Notification[]>;
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  updateNotificationStatus(id: number, status: string): Promise<Notification | undefined>;
+
+  // Dashboard Stats (tenant-scoped)
+  getDashboardStats(tenantId: number): Promise<{
+    totalCustomers: number;
+    totalRevenue: number;
+    totalOrders: number;
+    averageTicket: number;
+    revenueGrowth: number;
+    newCustomers: number;
+    activeCustomers: number;
+  }>;
+  getDashboardCharts(tenantId: number): Promise<{
+    revenueByMonth: { month: string; revenue: number }[];
+    ordersByStatus: { status: string; count: number }[];
+    customersBySegment: { segment: string; count: number }[];
+    topProducts: { name: string; revenue: number; quantity: number }[];
+  }>;
+
+  // Customer 360 View (tenant-scoped)
+  getCustomer360(tenantId: number, customerId: number): Promise<{
+    customer: Customer;
+    totalOrders: number;
+    totalSpent: number;
+    averageOrderValue: number;
+    lastOrder?: Order;
+    cashbackBalance: number;
+    interactions: CustomerInteraction[];
+  } | undefined>;
 
   // Health Check
   healthCheck(): Promise<boolean>;
@@ -264,8 +310,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ==================== CUSTOMERS ====================
-  async getCustomers(tenantId: number): Promise<Customer[]> {
-    return await db.select().from(customers).where(eq(customers.tenantId, tenantId));
+  async getCustomers(tenantId: number, limit?: number, offset?: number): Promise<{ data: Customer[]; total: number }> {
+    const condition = eq(customers.tenantId, tenantId);
+
+    // Get total count
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(customers)
+      .where(condition);
+    const total = Number(countResult[0]?.count || 0);
+
+    // Get paginated data
+    const data = limit !== undefined && offset !== undefined
+      ? await db.select().from(customers).where(condition).limit(limit).offset(offset)
+      : await db.select().from(customers).where(condition);
+
+    return { data, total };
   }
 
   async getCustomer(tenantId: number, id: number): Promise<Customer | undefined> {
@@ -295,8 +355,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ==================== PRODUCTS ====================
-  async getProducts(tenantId: number): Promise<Product[]> {
-    return await db.select().from(products).where(eq(products.tenantId, tenantId));
+  async getProducts(tenantId: number, limit?: number, offset?: number): Promise<{ data: Product[]; total: number }> {
+    const condition = eq(products.tenantId, tenantId);
+
+    // Get total count
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(products)
+      .where(condition);
+    const total = Number(countResult[0]?.count || 0);
+
+    // Get paginated data
+    const data = limit !== undefined && offset !== undefined
+      ? await db.select().from(products).where(condition).limit(limit).offset(offset)
+      : await db.select().from(products).where(condition);
+
+    return { data, total };
   }
 
   async getProduct(tenantId: number, id: number): Promise<Product | undefined> {
@@ -326,8 +400,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ==================== ORDERS ====================
-  async getOrders(tenantId: number): Promise<Order[]> {
-    return await db.select().from(orders).where(eq(orders.tenantId, tenantId));
+  async getOrders(tenantId: number, limit?: number, offset?: number): Promise<{ data: Order[]; total: number }> {
+    const condition = eq(orders.tenantId, tenantId);
+
+    // Get total count
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(orders)
+      .where(condition);
+    const total = Number(countResult[0]?.count || 0);
+
+    // Get paginated data
+    const data = limit !== undefined && offset !== undefined
+      ? await db.select().from(orders).where(condition).limit(limit).offset(offset)
+      : await db.select().from(orders).where(condition);
+
+    return { data, total };
   }
 
   async getOrder(tenantId: number, id: number): Promise<Order | undefined> {
@@ -385,6 +473,94 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(cashbackRules.tenantId, tenantId), eq(cashbackRules.id, id)))
       .returning();
     return result.length > 0;
+  }
+
+  // ==================== CASHBACK TRANSACTIONS ====================
+  async getCashbackTransactions(tenantId: number, customerId?: number, limit?: number): Promise<CashbackTransaction[]> {
+    let conditions = [eq(cashbackTransactions.tenantId, tenantId)];
+    if (customerId) {
+      conditions.push(eq(cashbackTransactions.customerId, customerId));
+    }
+
+    let query = db.select()
+      .from(cashbackTransactions)
+      .where(and(...conditions))
+      .orderBy(desc(cashbackTransactions.createdAt));
+
+    return limit ? await query.limit(limit) : await query;
+  }
+
+  async createCashbackTransaction(transaction: InsertCashbackTransaction): Promise<CashbackTransaction> {
+    const result = await db.insert(cashbackTransactions).values(transaction).returning();
+    return result[0];
+  }
+
+  async getCustomerCashbackBalance(tenantId: number, customerId: number): Promise<number> {
+    const transactions = await db.select()
+      .from(cashbackTransactions)
+      .where(and(
+        eq(cashbackTransactions.tenantId, tenantId),
+        eq(cashbackTransactions.customerId, customerId)
+      ))
+      .orderBy(desc(cashbackTransactions.createdAt))
+      .limit(1);
+
+    return transactions[0]?.balance || 0;
+  }
+
+  async getCashbackDistribution(tenantId: number): Promise<{ range: string; count: number }[]> {
+    // Get all customers with their latest cashback balance
+    const allCustomers = await db.select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.tenantId, tenantId));
+
+    const balances = await Promise.all(
+      allCustomers.map(async (customer) => {
+        return await this.getCustomerCashbackBalance(tenantId, customer.id);
+      })
+    );
+
+    // Group by ranges
+    const ranges = [
+      { range: 'R$ 0', min: 0, max: 0, count: 0 },
+      { range: 'R$ 1-50', min: 0.01, max: 50, count: 0 },
+      { range: 'R$ 51-100', min: 51, max: 100, count: 0 },
+      { range: 'R$ 101-200', min: 101, max: 200, count: 0 },
+      { range: 'R$ 201+', min: 201, max: Infinity, count: 0 }
+    ];
+
+    balances.forEach(balance => {
+      const range = ranges.find(r => balance >= r.min && balance <= r.max);
+      if (range) range.count++;
+    });
+
+    return ranges.map(({ range, count }) => ({ range, count }));
+  }
+
+  async getExpiringCashback(tenantId: number, daysAhead: number): Promise<{ customer: Customer; balance: number; expiresAt: string }[]> {
+    const now = new Date();
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + daysAhead);
+
+    const expiringTransactions = await db.select({
+      transaction: cashbackTransactions,
+      customer: customers
+    })
+      .from(cashbackTransactions)
+      .innerJoin(customers, eq(cashbackTransactions.customerId, customers.id))
+      .where(and(
+        eq(cashbackTransactions.tenantId, tenantId),
+        gte(cashbackTransactions.expiresAt, now.toISOString()),
+        lte(cashbackTransactions.expiresAt, futureDate.toISOString()),
+        sql`${cashbackTransactions.balance} > 0`
+      ))
+      .orderBy(cashbackTransactions.expiresAt);
+
+    return expiringTransactions.map(({ transaction, customer }) => ({
+      customer,
+      balance: transaction.balance,
+      expiresAt: transaction.expiresAt!
+    }));
   }
 
   // ==================== CAMPAIGNS ====================
@@ -507,7 +683,7 @@ export class DatabaseStorage implements IStorage {
   // ==================== SELLER TASKS ====================
   async getSellerTasks(tenantId: number, filters?: { sellerId?: string; status?: string; dateFrom?: string; dateTo?: string; type?: string }): Promise<(SellerTask & { customer?: Customer })[]> {
     let conditions = [eq(sellerTasks.tenantId, tenantId)];
-    
+
     if (filters?.sellerId) {
       conditions.push(eq(sellerTasks.sellerId, filters.sellerId));
     }
@@ -523,22 +699,25 @@ export class DatabaseStorage implements IStorage {
     if (filters?.dateTo) {
       conditions.push(lte(sellerTasks.dueDate, new Date(filters.dateTo).toISOString()));
     }
-    
-    const tasks = await db.select().from(sellerTasks)
+
+    // Use LEFT JOIN to fetch tasks with customers in a single query
+    const results = await db.select({
+      task: sellerTasks,
+      customer: customers
+    })
+      .from(sellerTasks)
+      .leftJoin(customers, and(
+        eq(sellerTasks.customerId, customers.id),
+        eq(customers.tenantId, tenantId)
+      ))
       .where(and(...conditions))
       .orderBy(desc(sellerTasks.createdAt));
-    
-    const tasksWithCustomers = await Promise.all(tasks.map(async (task) => {
-      let customer: Customer | undefined;
-      if (task.customerId) {
-        const customerResult = await db.select().from(customers)
-          .where(and(eq(customers.tenantId, tenantId), eq(customers.id, task.customerId)));
-        customer = customerResult[0];
-      }
-      return { ...task, customer };
+
+    // Map the results to the expected format
+    return results.map(({ task, customer }) => ({
+      ...task,
+      customer: customer || undefined
     }));
-    
-    return tasksWithCustomers;
   }
 
   async getSellerTask(tenantId: number, id: number): Promise<SellerTask | undefined> {
@@ -640,33 +819,30 @@ export class DatabaseStorage implements IStorage {
     if (sellerId) {
       conditions.push(eq(customerInteractions.sellerId, sellerId));
     }
-    
-    let query = db.select().from(customerInteractions)
+
+    // Use LEFT JOINs to fetch interactions with customers and sellers in a single query
+    let query = db.select({
+      interaction: customerInteractions,
+      customer: customers,
+      seller: users
+    })
+      .from(customerInteractions)
+      .leftJoin(customers, and(
+        eq(customerInteractions.customerId, customers.id),
+        eq(customers.tenantId, tenantId)
+      ))
+      .leftJoin(users, eq(customerInteractions.sellerId, users.id))
       .where(and(...conditions))
       .orderBy(desc(customerInteractions.createdAt));
-    
-    const interactions = limit ? await query.limit(limit) : await query;
-    
-    const interactionsWithDetails = await Promise.all(interactions.map(async (interaction) => {
-      let customer: Customer | undefined;
-      let seller: User | undefined;
-      
-      if (interaction.customerId) {
-        const customerResult = await db.select().from(customers)
-          .where(and(eq(customers.tenantId, tenantId), eq(customers.id, interaction.customerId)));
-        customer = customerResult[0];
-      }
-      
-      if (interaction.sellerId) {
-        const sellerResult = await db.select().from(users)
-          .where(eq(users.id, interaction.sellerId));
-        seller = sellerResult[0];
-      }
-      
-      return { ...interaction, customer, seller };
+
+    const results = limit ? await query.limit(limit) : await query;
+
+    // Map the results to the expected format
+    return results.map(({ interaction, customer, seller }) => ({
+      ...interaction,
+      customer: customer || undefined,
+      seller: seller || undefined
     }));
-    
-    return interactionsWithDetails;
   }
 
   async createCustomerInteraction(interaction: InsertCustomerInteraction): Promise<CustomerInteraction> {
@@ -691,39 +867,242 @@ export class DatabaseStorage implements IStorage {
         break;
     }
 
-    const tenantUsersList = await db.select().from(tenantUsers)
-      .where(and(eq(tenantUsers.tenantId, tenantId), eq(tenantUsers.role, 'seller')));
+    // Fetch all sellers with their user data in one query using JOIN
+    const sellersWithUsers = await db.select({
+      userId: tenantUsers.userId,
+      userName: users.name
+    })
+      .from(tenantUsers)
+      .innerJoin(users, eq(tenantUsers.userId, users.id))
+      .where(and(
+        eq(tenantUsers.tenantId, tenantId),
+        eq(tenantUsers.role, 'seller')
+      ));
 
-    const ranking = await Promise.all(tenantUsersList.map(async (tu) => {
-      const user = await db.select().from(users).where(eq(users.id, tu.userId));
-      if (!user[0]) return null;
+    // Batch fetch all completed tasks for the period
+    const allCompletedTasks = await db.select({
+      sellerId: sellerTasks.sellerId
+    })
+      .from(sellerTasks)
+      .where(and(
+        eq(sellerTasks.tenantId, tenantId),
+        eq(sellerTasks.status, 'completed'),
+        gte(sellerTasks.completedAt, startDate)
+      ));
 
-      const completedTasksResult = await db.select().from(sellerTasks)
-        .where(and(
-          eq(sellerTasks.tenantId, tenantId),
-          eq(sellerTasks.sellerId, tu.userId),
-          eq(sellerTasks.status, 'completed'),
-          gte(sellerTasks.completedAt, startDate)
-        ));
+    // Batch fetch all interactions for the period
+    const allInteractions = await db.select({
+      sellerId: customerInteractions.sellerId
+    })
+      .from(customerInteractions)
+      .where(and(
+        eq(customerInteractions.tenantId, tenantId),
+        gte(customerInteractions.createdAt, startDate)
+      ));
 
-      const interactionsResult = await db.select().from(customerInteractions)
-        .where(and(
-          eq(customerInteractions.tenantId, tenantId),
-          eq(customerInteractions.sellerId, tu.userId),
-          gte(customerInteractions.createdAt, startDate)
-        ));
+    // Build maps for O(1) lookups
+    const taskCountMap = new Map<string, number>();
+    allCompletedTasks.forEach(task => {
+      if (task.sellerId) {
+        taskCountMap.set(task.sellerId, (taskCountMap.get(task.sellerId) || 0) + 1);
+      }
+    });
 
-      return {
-        sellerId: tu.userId,
-        sellerName: user[0].name,
-        completedTasks: completedTasksResult.length,
-        totalInteractions: interactionsResult.length
-      };
+    const interactionCountMap = new Map<string, number>();
+    allInteractions.forEach(interaction => {
+      if (interaction.sellerId) {
+        interactionCountMap.set(interaction.sellerId, (interactionCountMap.get(interaction.sellerId) || 0) + 1);
+      }
+    });
+
+    // Combine all data in JavaScript
+    const ranking = sellersWithUsers.map(({ userId, userName }) => ({
+      sellerId: userId,
+      sellerName: userName,
+      completedTasks: taskCountMap.get(userId) || 0,
+      totalInteractions: interactionCountMap.get(userId) || 0
     }));
 
-    return ranking
-      .filter((r): r is NonNullable<typeof r> => r !== null)
-      .sort((a, b) => b.completedTasks - a.completedTasks);
+    return ranking.sort((a, b) => b.completedTasks - a.completedTasks);
+  }
+
+  // ==================== NOTIFICATIONS ====================
+  async getNotifications(tenantId: number, userId?: string, limit: number = 50): Promise<Notification[]> {
+    const conditions = [eq(notifications.tenantId, tenantId)];
+    if (userId) {
+      conditions.push(eq(notifications.userId, userId));
+    }
+
+    return await db.select()
+      .from(notifications)
+      .where(and(...conditions))
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit);
+  }
+
+  async createNotification(notification: InsertNotification): Promise<Notification> {
+    const [created] = await db.insert(notifications).values(notification).returning();
+    return created;
+  }
+
+  async updateNotificationStatus(id: number, status: string): Promise<Notification | undefined> {
+    const [updated] = await db.update(notifications)
+      .set({ status })
+      .where(eq(notifications.id, id))
+      .returning();
+    return updated;
+  }
+
+  // ==================== DASHBOARD STATS ====================
+  async getDashboardStats(tenantId: number): Promise<{
+    totalCustomers: number;
+    totalRevenue: number;
+    totalOrders: number;
+    averageTicket: number;
+    revenueGrowth: number;
+    newCustomers: number;
+    activeCustomers: number;
+  }> {
+    const allCustomers = await db.select().from(customers).where(eq(customers.tenantId, tenantId));
+    const allOrders = await db.select().from(orders).where(eq(orders.tenantId, tenantId));
+
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+    const totalCustomers = allCustomers.length;
+    const totalRevenue = allOrders.reduce((sum, order) => sum + order.total, 0);
+    const totalOrders = allOrders.length;
+    const averageTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+    // Calculate revenue growth (last 30 days vs previous 30 days)
+    const last30DaysRevenue = allOrders
+      .filter(o => new Date(o.createdAt!) >= thirtyDaysAgo)
+      .reduce((sum, order) => sum + order.total, 0);
+    const previous30DaysRevenue = allOrders
+      .filter(o => new Date(o.createdAt!) >= sixtyDaysAgo && new Date(o.createdAt!) < thirtyDaysAgo)
+      .reduce((sum, order) => sum + order.total, 0);
+
+    const revenueGrowth = previous30DaysRevenue > 0
+      ? ((last30DaysRevenue - previous30DaysRevenue) / previous30DaysRevenue) * 100
+      : 0;
+
+    const newCustomers = allCustomers.filter(c => new Date(c.createdAt!) >= thirtyDaysAgo).length;
+    const activeCustomers = allCustomers.filter(c => c.lastPurchase && new Date(c.lastPurchase) >= thirtyDaysAgo).length;
+
+    return {
+      totalCustomers,
+      totalRevenue,
+      totalOrders,
+      averageTicket,
+      revenueGrowth,
+      newCustomers,
+      activeCustomers,
+    };
+  }
+
+  async getDashboardCharts(tenantId: number): Promise<{
+    revenueByMonth: { month: string; revenue: number }[];
+    ordersByStatus: { status: string; count: number }[];
+    customersBySegment: { segment: string; count: number }[];
+    topProducts: { name: string; revenue: number; quantity: number }[];
+  }> {
+    const allOrders = await db.select().from(orders).where(eq(orders.tenantId, tenantId));
+    const allCustomers = await db.select().from(customers).where(eq(customers.tenantId, tenantId));
+
+    // Revenue by month (last 12 months)
+    const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const revenueByMonthMap = new Map<string, number>();
+
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${monthNames[date.getMonth()]}/${date.getFullYear().toString().slice(2)}`;
+      revenueByMonthMap.set(key, 0);
+    }
+
+    allOrders.forEach(order => {
+      const orderDate = new Date(order.orderDate!);
+      const key = `${monthNames[orderDate.getMonth()]}/${orderDate.getFullYear().toString().slice(2)}`;
+      if (revenueByMonthMap.has(key)) {
+        revenueByMonthMap.set(key, (revenueByMonthMap.get(key) || 0) + order.total);
+      }
+    });
+
+    const revenueByMonth = Array.from(revenueByMonthMap.entries()).map(([month, revenue]) => ({
+      month,
+      revenue
+    }));
+
+    // Orders by status
+    const statusMap = new Map<string, number>();
+    allOrders.forEach(order => {
+      statusMap.set(order.status, (statusMap.get(order.status) || 0) + 1);
+    });
+    const ordersByStatus = Array.from(statusMap.entries()).map(([status, count]) => ({
+      status,
+      count
+    }));
+
+    // Customers by segment
+    const segmentMap = new Map<string, number>();
+    allCustomers.forEach(customer => {
+      segmentMap.set(customer.segment, (segmentMap.get(customer.segment) || 0) + 1);
+    });
+    const customersBySegment = Array.from(segmentMap.entries()).map(([segment, count]) => ({
+      segment,
+      count
+    }));
+
+    // Top products (mock data for now - would need order_items table for real data)
+    const topProducts: { name: string; revenue: number; quantity: number }[] = [];
+
+    return {
+      revenueByMonth,
+      ordersByStatus,
+      customersBySegment,
+      topProducts,
+    };
+  }
+
+  // ==================== CUSTOMER 360 VIEW ====================
+  async getCustomer360(tenantId: number, customerId: number): Promise<{
+    customer: Customer;
+    totalOrders: number;
+    totalSpent: number;
+    averageOrderValue: number;
+    lastOrder?: Order;
+    cashbackBalance: number;
+    interactions: CustomerInteraction[];
+  } | undefined> {
+    const customer = await this.getCustomer(tenantId, customerId);
+    if (!customer) return undefined;
+
+    const customerOrders = await db.select()
+      .from(orders)
+      .where(and(
+        eq(orders.tenantId, tenantId),
+        eq(orders.customerId, customerId)
+      ))
+      .orderBy(desc(orders.orderDate));
+
+    const totalOrders = customerOrders.length;
+    const totalSpent = customerOrders.reduce((sum, order) => sum + order.total, 0);
+    const averageOrderValue = totalOrders > 0 ? totalSpent / totalOrders : 0;
+    const lastOrder = customerOrders[0];
+
+    const cashbackBalance = await this.getCustomerCashbackBalance(tenantId, customerId);
+    const interactions = await this.getCustomerInteractions(tenantId, customerId, undefined, 10);
+
+    return {
+      customer,
+      totalOrders,
+      totalSpent,
+      averageOrderValue,
+      lastOrder,
+      cashbackBalance,
+      interactions,
+    };
   }
 
   // ==================== HEALTH CHECK ====================

@@ -15,6 +15,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/hooks/use-theme";
+import { useState } from "react";
+import zippiLogo from "@assets/generated_images/zippi_crm_modern_logo.png";
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -25,6 +27,7 @@ export function Header({ onMenuClick }: HeaderProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { theme, toggleTheme } = useTheme();
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
 
   const handleLogout = async () => {
     try {
@@ -46,68 +49,121 @@ export function Header({ onMenuClick }: HeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 lg:px-6">
+    <header className="sticky top-0 z-30 flex h-14 sm:h-16 items-center gap-2 sm:gap-4 border-b border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-3 sm:px-4 lg:px-6">
       {onMenuClick && (
         <Button
           variant="ghost"
           size="icon"
-          className="lg:hidden"
+          className="lg:hidden h-8 w-8 sm:h-9 sm:w-9 shrink-0"
           onClick={onMenuClick}
           data-testid="button-menu"
         >
-          <Menu className="h-5 w-5" />
+          <Menu className="h-4 w-4 sm:h-5 sm:w-5" />
         </Button>
       )}
-      
-      <div className="hidden sm:block w-full max-w-md">
+
+      {/* Logo - visible on mobile only */}
+      <div className="lg:hidden shrink-0">
+        <img
+          src={zippiLogo}
+          alt="Zippi CRM"
+          className="h-7 sm:h-8 w-auto object-contain"
+          data-testid="header-logo"
+        />
+      </div>
+
+      {/* Desktop search */}
+      <div className="hidden md:block w-full max-w-md">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             type="search"
             placeholder="Buscar clientes, campanhas..."
-            className="w-full bg-muted/50 border-0 pl-10 focus-visible:ring-cyan-500"
+            className="w-full bg-muted/50 border-0 pl-10 focus-visible:ring-primary"
             data-testid="input-search"
           />
         </div>
       </div>
-      
-      <div className="ml-auto flex items-center gap-2 sm:gap-4">
+
+      {/* Mobile search - expandable */}
+      {showMobileSearch ? (
+        <div className="md:hidden flex-1 flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Buscar..."
+              className="w-full bg-muted/50 border-0 pl-10 pr-3 h-8 text-sm focus-visible:ring-primary"
+              data-testid="input-search-mobile"
+              autoFocus
+              onBlur={() => setShowMobileSearch(false)}
+            />
+          </div>
+        </div>
+      ) : (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted"
+          onClick={() => setShowMobileSearch(true)}
+          data-testid="button-search-mobile"
+        >
+          <Search className="h-4 w-4" />
+          <span className="sr-only">Buscar</span>
+        </Button>
+      )}
+
+      <div className="ml-auto flex items-center gap-1 sm:gap-2 shrink-0">
         {isSuperAdmin && (
-          <Badge className="hidden sm:flex items-center gap-1 bg-gradient-to-r from-cyan-500 to-blue-600 text-white border-0" data-testid="badge-super-admin">
+          <Badge className="hidden lg:flex items-center gap-1 bg-gradient-to-r from-purple-500 to-cyan-500 text-white border-0 text-xs px-2 py-0.5" data-testid="badge-super-admin">
             <Crown className="w-3 h-3" />
             Super Admin
           </Badge>
         )}
-        
-        <Button 
-          variant="ghost" 
-          size="icon" 
+
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={toggleTheme}
-          className="text-muted-foreground hover:text-foreground hover:bg-muted"
+          className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted"
           data-testid="button-theme-toggle"
         >
-          {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          {theme === 'dark' ? <Sun className="h-4 w-4 sm:h-5 sm:w-5" /> : <Moon className="h-4 w-4 sm:h-5 sm:w-5" />}
           <span className="sr-only">Alternar tema</span>
         </Button>
-        
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          className="text-muted-foreground hover:text-foreground hover:bg-muted relative"
-          data-testid="button-notifications"
-        >
-          <Bell className="h-5 w-5" />
-          <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 text-[10px] font-bold text-white flex items-center justify-center">
-            3
-          </span>
-          <span className="sr-only">Notificações</span>
-        </Button>
-        
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-9 w-9 rounded-full" data-testid="button-user-menu">
-              <Avatar className="h-9 w-9 border-2 border-cyan-500/30">
-                <AvatarFallback className="bg-gradient-to-br from-cyan-500 to-blue-600 text-white text-sm font-medium">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted relative"
+              data-testid="button-notifications"
+            >
+              <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span className="sr-only">Notificações</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-72 sm:w-80">
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-sm">Notificações</span>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <div className="py-6 text-center text-sm text-muted-foreground">
+              <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>Nenhuma notificação</p>
+              <p className="text-xs mt-1">Você está em dia!</p>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="relative h-8 w-8 sm:h-9 sm:w-9 shrink-0 rounded-full" data-testid="button-user-menu">
+              <Avatar className="h-8 w-8 sm:h-9 sm:w-9 border-2 border-primary/30">
+                <AvatarFallback className="bg-gradient-to-br from-purple-500 to-cyan-500 text-white text-xs sm:text-sm font-medium">
                   {user?.name ? getInitials(user.name) : "U"}
                 </AvatarFallback>
               </Avatar>
@@ -116,14 +172,14 @@ export function Header({ onMenuClick }: HeaderProps) {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium" data-testid="text-user-name">{user?.name}</p>
-                <p className="text-xs text-muted-foreground" data-testid="text-user-email">{user?.email}</p>
+                <p className="text-sm font-medium truncate" data-testid="text-user-name">{user?.name}</p>
+                <p className="text-xs text-muted-foreground truncate" data-testid="text-user-email">{user?.email}</p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {isSuperAdmin && (
               <DropdownMenuItem onClick={() => setLocation("/admin")} data-testid="menu-item-admin">
-                <Crown className="w-4 h-4 mr-2 text-cyan-500" />
+                <Crown className="w-4 h-4 mr-2 text-primary" />
                 Painel Admin
               </DropdownMenuItem>
             )}
@@ -132,8 +188,8 @@ export function Header({ onMenuClick }: HeaderProps) {
               Configurações
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
-              onClick={handleLogout} 
+            <DropdownMenuItem
+              onClick={handleLogout}
               disabled={isLoggingOut}
               className="text-destructive focus:text-destructive"
               data-testid="menu-item-logout"

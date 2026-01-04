@@ -194,7 +194,7 @@ export default function Reports() {
                     }
                   }}
                   locale={ptBR}
-                  numberOfMonths={2}
+                  numberOfMonths={typeof window !== 'undefined' && window.innerWidth < 640 ? 1 : 2}
                 />
               </PopoverContent>
             </Popover>
@@ -258,29 +258,30 @@ export default function Reports() {
         </div>
 
         <Tabs defaultValue="sales" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="sales" data-testid="tab-sales">Vendas</TabsTrigger>
-            <TabsTrigger value="customers" data-testid="tab-customers">Clientes</TabsTrigger>
-            <TabsTrigger value="campaigns" data-testid="tab-campaigns">Campanhas</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
+            <TabsTrigger value="sales" data-testid="tab-sales" className="text-xs sm:text-sm">Vendas</TabsTrigger>
+            <TabsTrigger value="customers" data-testid="tab-customers" className="text-xs sm:text-sm">Clientes</TabsTrigger>
+            <TabsTrigger value="campaigns" data-testid="tab-campaigns" className="text-xs sm:text-sm">Campanhas</TabsTrigger>
+            <TabsTrigger value="cashback" data-testid="tab-cashback" className="text-xs sm:text-sm">Cashback</TabsTrigger>
           </TabsList>
           
           <TabsContent value="sales" className="space-y-4">
             <div className="grid gap-6 md:grid-cols-2">
               <Card>
                 <CardHeader>
-                  <CardTitle>Vendas por Mês</CardTitle>
-                  <CardDescription>Evolução de vendas no período selecionado.</CardDescription>
+                  <CardTitle className="text-base sm:text-lg">Vendas por Mês</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Evolução de vendas no período selecionado.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[300px]">
+                  <div className="w-full min-h-[250px] sm:min-h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={reports?.salesByMonth || []}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
-                        <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `R$${v}`} />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: "hsl(var(--popover))", 
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={11} />
+                        <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `R$${v}`} fontSize={11} />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--popover))",
                             borderColor: "hsl(var(--border))",
                             borderRadius: "var(--radius)",
                           }}
@@ -295,31 +296,32 @@ export default function Reports() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Vendas por Categoria</CardTitle>
-                  <CardDescription>Distribuição de receita por tipo de produto.</CardDescription>
+                  <CardTitle className="text-base sm:text-lg">Vendas por Categoria</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Distribuição de receita por tipo de produto.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[300px]">
+                  <div className="w-full min-h-[250px] sm:min-h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
                           data={reports?.salesByCategory || []}
                           cx="50%"
                           cy="50%"
-                          innerRadius={50}
-                          outerRadius={80}
+                          innerRadius={40}
+                          outerRadius={70}
                           fill="#8884d8"
                           paddingAngle={5}
                           dataKey="value"
-                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          label={false}
                         >
                           {(reports?.salesByCategory || []).map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip 
+                        <Tooltip
                           formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR')}`, 'Valor']}
                         />
+                        <Legend wrapperStyle={{ fontSize: '12px' }} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -328,36 +330,36 @@ export default function Reports() {
             </div>
 
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <CardTitle>Últimos Pedidos</CardTitle>
-                  <CardDescription>Lista de vendas no período selecionado.</CardDescription>
+                  <CardTitle className="text-base sm:text-lg">Últimos Pedidos</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Lista de vendas no período selecionado.</CardDescription>
                 </div>
-                <Button variant="outline" size="sm" onClick={exportSalesReport} data-testid="button-export-orders">
+                <Button variant="outline" size="sm" onClick={exportSalesReport} data-testid="button-export-orders" className="w-fit text-xs sm:text-sm">
                   <Download className="h-4 w-4 mr-2" />
                   Exportar
                 </Button>
               </CardHeader>
-              <CardContent>
+              <CardContent className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead className="hidden sm:table-cell">Produto</TableHead>
-                      <TableHead>Data</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="hidden sm:table-cell">Status</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Cliente</TableHead>
+                      <TableHead className="hidden sm:table-cell text-xs sm:text-sm">Produto</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Data</TableHead>
+                      <TableHead className="text-right text-xs sm:text-sm">Total</TableHead>
+                      <TableHead className="hidden sm:table-cell text-xs sm:text-sm">Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(reports?.orders || []).slice(0, 10).map((order) => (
                       <TableRow key={order.id} data-testid={`row-order-${order.id}`}>
-                        <TableCell className="font-medium">{order.customer}</TableCell>
-                        <TableCell className="hidden sm:table-cell">{order.product}</TableCell>
-                        <TableCell>{order.date}</TableCell>
-                        <TableCell className="text-right">{order.total}</TableCell>
+                        <TableCell className="font-medium text-xs sm:text-sm">{order.customer}</TableCell>
+                        <TableCell className="hidden sm:table-cell text-xs sm:text-sm">{order.product}</TableCell>
+                        <TableCell className="text-xs sm:text-sm">{order.date}</TableCell>
+                        <TableCell className="text-right text-xs sm:text-sm">{order.total}</TableCell>
                         <TableCell className="hidden sm:table-cell">
-                          <Badge variant={order.status === "Entregue" ? "default" : "secondary"}>
+                          <Badge variant={order.status === "Entregue" ? "default" : "secondary"} className="text-xs">
                             {order.status}
                           </Badge>
                         </TableCell>
@@ -365,7 +367,7 @@ export default function Reports() {
                     ))}
                     {(!reports?.orders || reports.orders.length === 0) && (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8 text-xs sm:text-sm">
                           Nenhum pedido encontrado no período.
                         </TableCell>
                       </TableRow>
@@ -380,31 +382,31 @@ export default function Reports() {
             <div className="grid gap-6 md:grid-cols-2">
               <Card>
                 <CardHeader>
-                  <CardTitle>Clientes por Segmento</CardTitle>
-                  <CardDescription>Distribuição da base de clientes.</CardDescription>
+                  <CardTitle className="text-base sm:text-lg">Clientes por Segmento</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Distribuição da base de clientes.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[300px]">
+                  <div className="w-full min-h-[250px] sm:min-h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
                           data={reports?.customersBySegment || []}
                           cx="50%"
                           cy="50%"
-                          outerRadius={80}
+                          outerRadius={70}
                           fill="#8884d8"
                           dataKey="count"
-                          label={({ name, count }) => `${name}: ${count}`}
+                          label={false}
                         >
                           {(reports?.customersBySegment || []).map((entry, index) => (
-                            <Cell 
-                              key={`cell-${index}`} 
-                              fill={SEGMENT_COLORS[entry.name] || COLORS[index % COLORS.length]} 
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={SEGMENT_COLORS[entry.name] || COLORS[index % COLORS.length]}
                             />
                           ))}
                         </Pie>
                         <Tooltip />
-                        <Legend />
+                        <Legend wrapperStyle={{ fontSize: '12px' }} />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -413,16 +415,16 @@ export default function Reports() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Segmentos</CardTitle>
-                  <CardDescription>Quantidade de clientes por segmento.</CardDescription>
+                  <CardTitle className="text-base sm:text-lg">Segmentos</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Quantidade de clientes por segmento.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[300px]">
+                  <div className="w-full min-h-[250px] sm:min-h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={reports?.customersBySegment || []} layout="vertical">
                         <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                        <XAxis type="number" axisLine={false} tickLine={false} />
-                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={80} />
+                        <XAxis type="number" axisLine={false} tickLine={false} fontSize={11} />
+                        <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={70} fontSize={10} />
                         <Tooltip />
                         <Bar dataKey="count" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
                       </BarChart>
@@ -433,47 +435,48 @@ export default function Reports() {
             </div>
 
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <CardTitle>Top Clientes por LTV</CardTitle>
-                  <CardDescription>Clientes com maior valor ao longo do tempo.</CardDescription>
+                  <CardTitle className="text-base sm:text-lg">Top Clientes por LTV</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Clientes com maior valor ao longo do tempo.</CardDescription>
                 </div>
-                <Button variant="outline" size="sm" onClick={exportCustomersReport} data-testid="button-export-customers">
+                <Button variant="outline" size="sm" onClick={exportCustomersReport} data-testid="button-export-customers" className="w-fit text-xs sm:text-sm">
                   <Download className="h-4 w-4 mr-2" />
                   Exportar
                 </Button>
               </CardHeader>
-              <CardContent>
+              <CardContent className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead className="hidden sm:table-cell">Email</TableHead>
-                      <TableHead>Segmento</TableHead>
-                      <TableHead className="text-right">LTV</TableHead>
-                      <TableHead className="text-right hidden sm:table-cell">Pedidos</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Cliente</TableHead>
+                      <TableHead className="hidden sm:table-cell text-xs sm:text-sm">Email</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Segmento</TableHead>
+                      <TableHead className="text-right text-xs sm:text-sm">LTV</TableHead>
+                      <TableHead className="text-right hidden sm:table-cell text-xs sm:text-sm">Pedidos</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(reports?.topCustomers || []).map((customer) => (
                       <TableRow key={customer.id} data-testid={`row-customer-${customer.id}`}>
-                        <TableCell className="font-medium">{customer.name}</TableCell>
-                        <TableCell className="hidden sm:table-cell">{customer.email}</TableCell>
+                        <TableCell className="font-medium text-xs sm:text-sm">{customer.name}</TableCell>
+                        <TableCell className="hidden sm:table-cell text-xs sm:text-sm">{customer.email}</TableCell>
                         <TableCell>
-                          <Badge 
+                          <Badge
                             variant="outline"
+                            className="text-xs"
                             style={{ borderColor: SEGMENT_COLORS[customer.segment] || COLORS[0] }}
                           >
                             {customer.segment}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">{customer.ltv}</TableCell>
-                        <TableCell className="text-right hidden sm:table-cell">{customer.orderCount}</TableCell>
+                        <TableCell className="text-right text-xs sm:text-sm">{customer.ltv}</TableCell>
+                        <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">{customer.orderCount}</TableCell>
                       </TableRow>
                     ))}
                     {(!reports?.topCustomers || reports.topCustomers.length === 0) && (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8 text-xs sm:text-sm">
                           Nenhum cliente encontrado.
                         </TableCell>
                       </TableRow>
@@ -487,37 +490,38 @@ export default function Reports() {
           <TabsContent value="campaigns" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Performance das Campanhas</CardTitle>
-                <CardDescription>Métricas de suas campanhas de marketing.</CardDescription>
+                <CardTitle className="text-base sm:text-lg">Performance das Campanhas</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">Métricas de suas campanhas de marketing.</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Campanha</TableHead>
-                      <TableHead>Canal</TableHead>
-                      <TableHead className="hidden sm:table-cell">Enviados</TableHead>
-                      <TableHead className="hidden md:table-cell">Taxa Abertura</TableHead>
-                      <TableHead className="hidden md:table-cell">Conversão</TableHead>
-                      <TableHead className="text-right">Receita</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Campanha</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Canal</TableHead>
+                      <TableHead className="hidden sm:table-cell text-xs sm:text-sm">Enviados</TableHead>
+                      <TableHead className="hidden md:table-cell text-xs sm:text-sm">Taxa Abertura</TableHead>
+                      <TableHead className="hidden md:table-cell text-xs sm:text-sm">Conversão</TableHead>
+                      <TableHead className="text-right text-xs sm:text-sm">Receita</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {(reports?.campaignStats || []).map((campaign) => (
                       <TableRow key={campaign.id} data-testid={`row-campaign-${campaign.id}`}>
-                        <TableCell className="font-medium">{campaign.name}</TableCell>
+                        <TableCell className="font-medium text-xs sm:text-sm">{campaign.name}</TableCell>
                         <TableCell>
-                          <Badge variant="outline">{campaign.channel}</Badge>
+                          <Badge variant="outline" className="text-xs">{campaign.channel}</Badge>
                         </TableCell>
-                        <TableCell className="hidden sm:table-cell">{campaign.sent}</TableCell>
-                        <TableCell className="hidden md:table-cell">{campaign.openRate}</TableCell>
-                        <TableCell className="hidden md:table-cell">{campaign.conversion}</TableCell>
-                        <TableCell className="text-right">{campaign.revenue}</TableCell>
+                        <TableCell className="hidden sm:table-cell text-xs sm:text-sm">{campaign.sent}</TableCell>
+                        <TableCell className="hidden md:table-cell text-xs sm:text-sm">{campaign.openRate}</TableCell>
+                        <TableCell className="hidden md:table-cell text-xs sm:text-sm">{campaign.conversion}</TableCell>
+                        <TableCell className="text-right text-xs sm:text-sm">{campaign.revenue}</TableCell>
                         <TableCell>
-                          <Badge 
+                          <Badge
+                            className="text-xs"
                             variant={
-                              campaign.status === "Ativa" ? "default" : 
+                              campaign.status === "Ativa" ? "default" :
                               campaign.status === "Concluída" ? "secondary" : "outline"
                             }
                           >
@@ -528,7 +532,7 @@ export default function Reports() {
                     ))}
                     {(!reports?.campaignStats || reports.campaignStats.length === 0) && (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8 text-xs sm:text-sm">
                           Nenhuma campanha encontrada.
                         </TableCell>
                       </TableRow>
@@ -537,6 +541,326 @@ export default function Reports() {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="cashback" className="space-y-4">
+            {/* KPIs de Cashback */}
+            <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+              <Card data-testid="card-cashback-granted">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Concedido</CardTitle>
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-lg sm:text-2xl font-bold" data-testid="text-cashback-granted">
+                    R$ 184.200
+                  </div>
+                  <p className="text-xs text-muted-foreground">No período selecionado</p>
+                </CardContent>
+              </Card>
+
+              <Card data-testid="card-cashback-redeemed">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Resgatado</CardTitle>
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-lg sm:text-2xl font-bold" data-testid="text-cashback-redeemed">
+                    R$ 45.680
+                  </div>
+                  <p className="text-xs text-emerald-600">24.8% de resgate</p>
+                </CardContent>
+              </Card>
+
+              <Card data-testid="card-cashback-pending">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Passivo Total</CardTitle>
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-lg sm:text-2xl font-bold" data-testid="text-cashback-pending">
+                    R$ 142.300
+                  </div>
+                  <p className="text-xs text-orange-600">Saldo não resgatado</p>
+                </CardContent>
+              </Card>
+
+              <Card data-testid="card-redemption-rate">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Taxa de Resgate</CardTitle>
+                  <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-lg sm:text-2xl font-bold" data-testid="text-redemption-rate">
+                    24.8%
+                  </div>
+                  <p className="text-xs text-emerald-600">+2.1% vs mês anterior</p>
+                </CardContent>
+              </Card>
+
+              <Card data-testid="card-cashback-roi">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">ROI do Cashback</CardTitle>
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-lg sm:text-2xl font-bold" data-testid="text-cashback-roi">
+                    12.0x
+                  </div>
+                  <p className="text-xs text-emerald-600">Retorno sobre investimento</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Gráficos de Cashback */}
+            <div className="grid gap-6 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base sm:text-lg">Cashback Concedido vs Resgatado</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Evolução mensal dos últimos 6 meses</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="w-full min-h-[250px] sm:min-h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={[
+                        { month: 'Jul', concedido: 28000, resgatado: 7200 },
+                        { month: 'Ago', concedido: 32000, resgatado: 8100 },
+                        { month: 'Set', concedido: 29500, resgatado: 7850 },
+                        { month: 'Out', concedido: 35000, resgatado: 8900 },
+                        { month: 'Nov', concedido: 31200, resgatado: 7450 },
+                        { month: 'Dez', concedido: 28500, resgatado: 7180 },
+                      ]}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={11} />
+                        <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `R$${v}`} fontSize={11} />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--popover))",
+                            borderColor: "hsl(var(--border))",
+                            borderRadius: "var(--radius)",
+                          }}
+                          formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR')}`, '']}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '12px' }} />
+                        <Bar dataKey="concedido" fill="#9333ea" radius={[4, 4, 0, 0]} name="Concedido" />
+                        <Bar dataKey="resgatado" fill="#00C49F" radius={[4, 4, 0, 0]} name="Resgatado" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base sm:text-lg">Distribuição de Saldos</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Clientes por faixa de saldo de cashback</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="w-full min-h-[250px] sm:min-h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: '< R$ 10', value: 387, color: '#8884d8' },
+                            { name: 'R$ 10-50', value: 512, color: '#00C49F' },
+                            { name: 'R$ 50-100', value: 245, color: '#FFBB28' },
+                            { name: '> R$ 100', value: 148, color: '#9333ea' },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={70}
+                          dataKey="value"
+                          label={false}
+                        >
+                          {[
+                            { name: '< R$ 10', value: 387, color: '#8884d8' },
+                            { name: 'R$ 10-50', value: 512, color: '#00C49F' },
+                            { name: 'R$ 50-100', value: 245, color: '#FFBB28' },
+                            { name: '> R$ 100', value: 148, color: '#9333ea' },
+                          ].map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend wrapperStyle={{ fontSize: '12px' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Performance por Regra de Cashback */}
+            <Card>
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-base sm:text-lg">Performance por Regra de Cashback</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Análise detalhada do desempenho de cada regra</CardDescription>
+                </div>
+                <Button variant="outline" size="sm" data-testid="button-export-cashback" className="w-fit text-xs sm:text-sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  Exportar
+                </Button>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs sm:text-sm">Regra</TableHead>
+                      <TableHead className="text-center text-xs sm:text-sm">Clientes</TableHead>
+                      <TableHead className="text-right text-xs sm:text-sm">Concedido</TableHead>
+                      <TableHead className="text-right text-xs sm:text-sm">Resgatado</TableHead>
+                      <TableHead className="text-right hidden md:table-cell text-xs sm:text-sm">Taxa Resgate</TableHead>
+                      <TableHead className="text-right text-xs sm:text-sm">ROI</TableHead>
+                      <TableHead className="hidden sm:table-cell text-xs sm:text-sm">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow data-testid="row-rule-1">
+                      <TableCell className="font-medium text-xs sm:text-sm">Cashback Primeira Compra</TableCell>
+                      <TableCell className="text-center text-xs sm:text-sm">387</TableCell>
+                      <TableCell className="text-right text-xs sm:text-sm">R$ 38.700</TableCell>
+                      <TableCell className="text-right text-xs sm:text-sm">R$ 12.450</TableCell>
+                      <TableCell className="text-right hidden md:table-cell text-xs sm:text-sm">32.2%</TableCell>
+                      <TableCell className="text-right text-emerald-600 font-semibold text-xs sm:text-sm">15.2x</TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <Badge variant="default" className="text-xs">Ativa</Badge>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow data-testid="row-rule-2">
+                      <TableCell className="font-medium text-xs sm:text-sm">Cashback Compra Acima R$ 200</TableCell>
+                      <TableCell className="text-center text-xs sm:text-sm">512</TableCell>
+                      <TableCell className="text-right text-xs sm:text-sm">R$ 76.800</TableCell>
+                      <TableCell className="text-right text-xs sm:text-sm">R$ 18.240</TableCell>
+                      <TableCell className="text-right hidden md:table-cell text-xs sm:text-sm">23.8%</TableCell>
+                      <TableCell className="text-right text-emerald-600 font-semibold text-xs sm:text-sm">11.4x</TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <Badge variant="default" className="text-xs">Ativa</Badge>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow data-testid="row-rule-3">
+                      <TableCell className="font-medium text-xs sm:text-sm">Cashback Aniversário</TableCell>
+                      <TableCell className="text-center text-xs sm:text-sm">245</TableCell>
+                      <TableCell className="text-right text-xs sm:text-sm">R$ 36.750</TableCell>
+                      <TableCell className="text-right text-xs sm:text-sm">R$ 8.820</TableCell>
+                      <TableCell className="text-right hidden md:table-cell text-xs sm:text-sm">24.0%</TableCell>
+                      <TableCell className="text-right text-emerald-600 font-semibold text-xs sm:text-sm">9.8x</TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <Badge variant="default" className="text-xs">Ativa</Badge>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow data-testid="row-rule-4">
+                      <TableCell className="font-medium text-xs sm:text-sm">Cashback VIP (3%)</TableCell>
+                      <TableCell className="text-center text-xs sm:text-sm">148</TableCell>
+                      <TableCell className="text-right text-xs sm:text-sm">R$ 22.200</TableCell>
+                      <TableCell className="text-right text-xs sm:text-sm">R$ 4.440</TableCell>
+                      <TableCell className="text-right hidden md:table-cell text-xs sm:text-sm">20.0%</TableCell>
+                      <TableCell className="text-right text-emerald-600 font-semibold text-xs sm:text-sm">13.5x</TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <Badge variant="default" className="text-xs">Ativa</Badge>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow data-testid="row-rule-5">
+                      <TableCell className="font-medium text-xs sm:text-sm">Cashback Indicação</TableCell>
+                      <TableCell className="text-center text-xs sm:text-sm">89</TableCell>
+                      <TableCell className="text-right text-xs sm:text-sm">R$ 9.750</TableCell>
+                      <TableCell className="text-right text-xs sm:text-sm">R$ 1.730</TableCell>
+                      <TableCell className="text-right hidden md:table-cell text-xs sm:text-sm">17.7%</TableCell>
+                      <TableCell className="text-right text-orange-600 font-semibold text-xs sm:text-sm">7.2x</TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <Badge variant="secondary" className="text-xs">Pausada</Badge>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            {/* Análise Adicional */}
+            <div className="grid gap-6 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base sm:text-lg">Taxa de Resgate por Mês</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Evolução da taxa de resgate ao longo do tempo</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="w-full min-h-[200px] sm:min-h-[250px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={[
+                        { month: 'Jul', taxa: 22.5 },
+                        { month: 'Ago', taxa: 23.1 },
+                        { month: 'Set', taxa: 24.2 },
+                        { month: 'Out', taxa: 23.8 },
+                        { month: 'Nov', taxa: 24.5 },
+                        { month: 'Dez', taxa: 24.8 },
+                      ]}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="month" axisLine={false} tickLine={false} fontSize={11} />
+                        <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} fontSize={11} />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--popover))",
+                            borderColor: "hsl(var(--border))",
+                            borderRadius: "var(--radius)",
+                          }}
+                          formatter={(value: number) => [`${value}%`, 'Taxa de Resgate']}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="taxa"
+                          stroke="hsl(var(--primary))"
+                          strokeWidth={2}
+                          dot={{ fill: 'hsl(var(--primary))', r: 4 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base sm:text-lg">Resumo Executivo</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Principais métricas e insights</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3 sm:space-y-4">
+                    <div className="flex items-center justify-between p-2 sm:p-3 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                      <div>
+                        <p className="font-medium text-xs sm:text-sm">Retenção com Cashback</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Clientes que usaram cashback</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-emerald-600 text-base sm:text-lg">42%</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">de recompra</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2 sm:p-3 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                      <div>
+                        <p className="font-medium text-xs sm:text-sm">Cashback Expirando</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Próximos 7 dias</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-orange-600 text-base sm:text-lg">R$ 8.450</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">47 clientes</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2 sm:p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div>
+                        <p className="font-medium text-xs sm:text-sm">Ticket Médio com Cashback</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">Vs sem cashback</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-blue-600 text-base sm:text-lg">+28%</p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">R$ 185 vs R$ 145</p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

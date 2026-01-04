@@ -2,6 +2,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import rateLimit from "express-rate-limit";
+import { setupCsrf } from "./csrf";
 
 const app = express();
 const httpServer = createServer(app);
@@ -21,6 +23,35 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Rate limiting configuration
+const generalLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 100, // Limit each IP to 100 requests per minute
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  message: {
+    error: "Muitas requisições. Por favor, tente novamente em alguns instantes.",
+  },
+  skip: (req) => {
+    // Skip rate limiting for health check endpoint
+    return req.path === "/api/health";
+  },
+});
+
+export const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 login attempts per 15 minutes
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Don't count successful requests
+  message: {
+    error: "Muitas tentativas de login. Por favor, tente novamente em 15 minutos.",
+  },
+});
+
+// Apply general rate limiting to all API routes
+app.use("/api/", generalLimiter);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -62,12 +93,36 @@ app.use((req, res, next) => {
 (async () => {
   await registerRoutes(httpServer, app);
 
+  // Setup CSRF protection after routes are registered
+  // This must come after session setup (which happens in registerRoutes)
+  setupCsrf(app);
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
-    throw err;
+    // Standardized error response format
+    const errorResponse: { error: string; code?: string; details?: any } = {
+      error: message
+    };
+
+    // Add error code if available
+    if (err.code) {
+      errorResponse.code = err.code;
+    }
+
+    // Add additional details in development mode
+    if (process.env.NODE_ENV === "development" && err.stack) {
+      errorResponse.details = {
+        stack: err.stack,
+        ...err.details
+      };
+    } else if (err.details) {
+      errorResponse.details = err.details;
+    }
+
+    res.status(status).json(errorResponse);
+    // Don't throw after sending response - it causes "Cannot set headers after they are sent" error
   });
 
   // importantly only setup vite in development and after

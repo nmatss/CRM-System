@@ -119,7 +119,7 @@ export default function Products() {
   const { data: products = [], isLoading } = useQuery<Product[]>({
     queryKey: ["products"],
     queryFn: async () => {
-      const response = await fetch("/api/products");
+      const response = await fetch("/api/v1/products");
       if (!response.ok) throw new Error("Erro ao carregar produtos");
       return response.json();
     },
@@ -127,7 +127,7 @@ export default function Products() {
 
   const createMutation = useMutation({
     mutationFn: async (data: ProductFormData) => {
-      const response = await apiRequest("POST", "/api/products", data);
+      const response = await apiRequest("POST", "/products", data);
       return response.json();
     },
     onSuccess: () => {
@@ -142,7 +142,7 @@ export default function Products() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: ProductFormData }) => {
-      const response = await apiRequest("PUT", `/api/products/${id}`, data);
+      const response = await apiRequest("PUT", `/products/${id}`, data);
       return response.json();
     },
     onSuccess: () => {
@@ -157,7 +157,7 @@ export default function Products() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await apiRequest("DELETE", `/api/products/${id}`);
+      const response = await apiRequest("DELETE", `/products/${id}`);
       return response.json();
     },
     onSuccess: () => {
@@ -192,7 +192,7 @@ export default function Products() {
     if (importData.length === 0) return;
     setIsImporting(true);
     try {
-      const response = await apiRequest("POST", "/api/import/products", { products: importData });
+      const response = await apiRequest("POST", "/import/products", { products: importData });
       const result = await response.json();
       queryClient.invalidateQueries({ queryKey: ["products"] });
       toast({ 
@@ -210,7 +210,7 @@ export default function Products() {
 
   const handleExport = async () => {
     try {
-      const response = await fetch("/api/export/products");
+      const response = await fetch("/api/v1/export/products");
       if (!response.ok) throw new Error("Export failed");
       const data = await response.json();
       
@@ -243,7 +243,7 @@ export default function Products() {
     setFormData({
       name: product.name,
       category: product.category,
-      price: `R$ ${(product.price || 0).toFixed(2).replace('.', ',')}`,
+      price: `R$ ${product.price ?? 0}`,
       stock: product.stock,
       status: product.status,
       image: product.image || "",
@@ -349,7 +349,7 @@ export default function Products() {
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
             {[...Array(8)].map((_, i) => (
               <Card key={i} className="overflow-hidden">
                 <Skeleton className="aspect-square w-full" />
@@ -374,18 +374,18 @@ export default function Products() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
             {filteredProducts.map((product) => (
               <Card key={product.id} className="overflow-hidden group" data-testid={`card-product-${product.id}`}>
                 <div className="aspect-square w-full overflow-hidden bg-muted relative">
                   {product.image ? (
-                    <img 
-                      src={product.image} 
+                    <img
+                      src={product.image}
                       alt={product.name}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      className="w-full aspect-square object-cover rounded-t-lg transition-transform duration-300 group-hover:scale-105"
                     />
                   ) : (
-                    <div className="h-full w-full flex items-center justify-center bg-muted">
+                    <div className="w-full aspect-square flex items-center justify-center bg-muted rounded-t-lg">
                       <Package className="h-16 w-16 text-muted-foreground" />
                     </div>
                   )}
@@ -423,12 +423,12 @@ export default function Products() {
                   )}
                 </div>
                 <CardContent className="p-4">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <h3 className="font-semibold truncate pr-2" title={product.name} data-testid={`text-product-name-${product.id}`}>{product.name}</h3>
-                      <p className="text-sm text-muted-foreground" data-testid={`text-category-${product.id}`}>{product.category}</p>
+                  <div className="flex justify-between items-start mb-2 gap-2">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold truncate" title={product.name} data-testid={`text-product-name-${product.id}`}>{product.name}</h3>
+                      <p className="text-sm text-muted-foreground truncate" data-testid={`text-category-${product.id}`}>{product.category}</p>
                     </div>
-                    <p className="font-semibold" data-testid={`text-price-${product.id}`}>{product.price}</p>
+                    <p className="text-lg sm:text-xl font-semibold whitespace-nowrap" data-testid={`text-price-${product.id}`}>{product.price}</p>
                   </div>
                   <div className="flex items-center justify-between mt-4 text-sm">
                     <div className="flex items-center gap-2">
@@ -457,12 +457,12 @@ export default function Products() {
       </div>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-[500px]" data-testid="product-modal">
+        <DialogContent className="max-w-full sm:max-w-[500px] max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto" data-testid="product-modal">
           <DialogHeader>
             <DialogTitle>{editingProduct ? "Editar Produto" : "Novo Produto"}</DialogTitle>
             <DialogDescription>
-              {editingProduct 
-                ? "Atualize as informações do produto abaixo." 
+              {editingProduct
+                ? "Atualize as informações do produto abaixo."
                 : "Preencha os dados do novo produto."}
             </DialogDescription>
           </DialogHeader>
@@ -478,7 +478,7 @@ export default function Products() {
                 data-testid="input-product-name"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="category">Categoria *</Label>
                 <Input
@@ -502,7 +502,7 @@ export default function Products() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="stock">Estoque *</Label>
                 <Input
@@ -542,11 +542,11 @@ export default function Products() {
                 data-testid="input-product-image"
               />
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={closeModal} data-testid="button-cancel">
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button type="button" variant="outline" onClick={closeModal} className="w-full sm:w-auto" data-testid="button-cancel">
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isMutating} data-testid="button-save-product">
+              <Button type="submit" disabled={isMutating} className="w-full sm:w-auto" data-testid="button-save-product">
                 {isMutating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {editingProduct ? "Salvar" : "Adicionar"}
               </Button>
@@ -556,18 +556,18 @@ export default function Products() {
       </Dialog>
 
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent data-testid="delete-dialog">
+        <AlertDialogContent className="max-w-full sm:max-w-md" data-testid="delete-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir produto?</AlertDialogTitle>
             <AlertDialogDescription>
               Esta ação não pode ser desfeita. O produto "{productToDelete?.name}" será removido permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete">Cancelar</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDelete} 
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel className="w-full sm:w-auto mt-0" data-testid="button-cancel-delete">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="w-full sm:w-auto bg-destructive text-destructive-foreground hover:bg-destructive/90"
               data-testid="button-confirm-delete"
             >
               {deleteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -578,7 +578,7 @@ export default function Products() {
       </AlertDialog>
 
       <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]" data-testid="import-dialog">
+        <DialogContent className="max-w-full sm:max-w-[600px] max-h-[100dvh] sm:max-h-[90vh]" data-testid="import-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5" />
@@ -589,47 +589,51 @@ export default function Products() {
             </DialogDescription>
           </DialogHeader>
           {importData.length > 0 ? (
-            <ScrollArea className="max-h-[300px] border rounded-md">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Categoria</TableHead>
-                    <TableHead>Preço</TableHead>
-                    <TableHead>Estoque</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {importData.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{item.name}</TableCell>
-                      <TableCell>{item.category}</TableCell>
-                      <TableCell>{item.price}</TableCell>
-                      <TableCell>{item.stock}</TableCell>
+            <div className="overflow-x-auto border rounded-md">
+              <ScrollArea className="max-h-[300px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="whitespace-nowrap">Nome</TableHead>
+                      <TableHead className="whitespace-nowrap">Categoria</TableHead>
+                      <TableHead className="whitespace-nowrap">Preço</TableHead>
+                      <TableHead className="whitespace-nowrap">Estoque</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollArea>
+                  </TableHeader>
+                  <TableBody>
+                    {importData.map((item, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="whitespace-nowrap">{item.name}</TableCell>
+                        <TableCell className="whitespace-nowrap">{item.category}</TableCell>
+                        <TableCell className="whitespace-nowrap">{item.price}</TableCell>
+                        <TableCell className="whitespace-nowrap">{item.stock}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </div>
           ) : (
             <p className="text-muted-foreground text-center py-8">
               Nenhum dado válido encontrado no arquivo.
             </p>
           )}
-          <DialogFooter>
-            <Button 
-              variant="outline" 
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
               onClick={() => {
                 setIsImportDialogOpen(false);
                 setImportData([]);
               }}
+              className="w-full sm:w-auto"
               data-testid="button-cancel-import"
             >
               Cancelar
             </Button>
-            <Button 
-              onClick={handleImport} 
+            <Button
+              onClick={handleImport}
               disabled={importData.length === 0 || isImporting}
+              className="w-full sm:w-auto"
               data-testid="button-confirm-import"
             >
               {isImporting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

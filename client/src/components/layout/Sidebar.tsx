@@ -67,25 +67,25 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       )}
       
       <div className={cn(
-        "fixed lg:static inset-y-0 left-0 z-50 flex h-screen w-64 flex-col bg-[#050A1A] text-white transition-transform duration-300 lg:translate-x-0",
+        "fixed lg:static inset-y-0 left-0 z-50 flex h-screen w-full max-w-xs sm:w-64 flex-col bg-[#050A1A] text-white transition-transform duration-300 lg:translate-x-0",
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="flex h-16 items-center justify-between border-b border-white/10 px-4">
+        <div className="flex h-14 sm:h-16 items-center justify-between border-b border-white/10 px-3 sm:px-4">
           <div className="flex items-center gap-2">
-            <img 
-              src={zippiLogo} 
-              alt="Zippi CRM" 
-              className="h-10 w-auto object-contain"
+            <img
+              src={zippiLogo}
+              alt="Zippi CRM"
+              className="h-7 sm:h-9 lg:h-10 w-auto object-contain"
               data-testid="sidebar-logo"
             />
           </div>
           {onClose && (
             <button
               onClick={onClose}
-              className="lg:hidden p-2 rounded-lg hover:bg-white/10 transition-colors"
+              className="lg:hidden p-1.5 sm:p-2 rounded-lg hover:bg-white/10 transition-colors"
               data-testid="button-close-sidebar"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4 sm:h-5 sm:w-5" />
             </button>
           )}
         </div>

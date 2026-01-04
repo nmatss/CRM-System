@@ -1,22 +1,23 @@
 import { Layout } from "@/components/layout/Layout";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuLabel, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
@@ -46,7 +47,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MoreHorizontal, Plus, Filter, Tag, Search, UserPlus, Loader2, Upload, Download, FileSpreadsheet } from "lucide-react";
+import { CustomerDetail } from "@/components/customers/CustomerDetail";
+import { MoreHorizontal, Plus, Filter, Tag, Search, UserPlus, Loader2, Upload, Download, FileSpreadsheet, Eye } from "lucide-react";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -119,21 +121,23 @@ export default function Customers() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [formData, setFormData] = useState<CustomerFormData>(initialFormData);
   const [searchTerm, setSearchTerm] = useState("");
   const [importData, setImportData] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: customers = [], isLoading } = useQuery<Customer[]>({
     queryKey: ["customers"],
     queryFn: async () => {
-      const response = await fetch("/api/customers");
+      const response = await fetch("/api/v1/customers");
       if (!response.ok) throw new Error("Erro ao carregar clientes");
       return response.json();
     },
@@ -141,7 +145,7 @@ export default function Customers() {
 
   const createMutation = useMutation({
     mutationFn: async (data: CustomerFormData) => {
-      const response = await apiRequest("POST", "/api/customers", data);
+      const response = await apiRequest("POST", "/customers", data);
       return response.json();
     },
     onSuccess: () => {
@@ -156,7 +160,7 @@ export default function Customers() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: CustomerFormData }) => {
-      const response = await apiRequest("PUT", `/api/customers/${id}`, data);
+      const response = await apiRequest("PUT", `/customers/${id}`, data);
       return response.json();
     },
     onSuccess: () => {
@@ -171,7 +175,7 @@ export default function Customers() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await apiRequest("DELETE", `/api/customers/${id}`);
+      const response = await apiRequest("DELETE", `/customers/${id}`);
       return response.json();
     },
     onSuccess: () => {
@@ -206,7 +210,7 @@ export default function Customers() {
     if (importData.length === 0) return;
     setIsImporting(true);
     try {
-      const response = await apiRequest("POST", "/api/import/customers", { customers: importData });
+      const response = await apiRequest("POST", "/import/customers", { customers: importData });
       const result = await response.json();
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       toast({ 
@@ -224,7 +228,7 @@ export default function Customers() {
 
   const handleExport = async () => {
     try {
-      const response = await fetch("/api/export/customers");
+      const response = await fetch("/api/v1/export/customers");
       if (!response.ok) throw new Error("Export failed");
       const data = await response.json();
       
@@ -259,7 +263,7 @@ export default function Customers() {
       email: customer.email,
       phone: customer.phone || "",
       segment: customer.segment,
-      ltv: `R$ ${(customer.ltv || 0).toFixed(2).replace('.', ',')}`,
+      ltv: `R$ ${customer.ltv ?? 0}`,
       lastPurchase: formatDateForInput(customer.lastPurchase),
       favoriteCategory: customer.favoriteCategory || "",
     });
@@ -292,11 +296,16 @@ export default function Customers() {
     }
   };
 
+  const openDetailView = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setIsDetailOpen(true);
+  };
+
   const filteredCustomers = customers.filter(
     (customer) =>
       customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       customer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (customer.favoriteCategory?.toLowerCase().includes(searchTerm.toLowerCase()))
+      (customer.favoriteCategory || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const isMutating = createMutation.isPending || updateMutation.isPending;
@@ -304,9 +313,9 @@ export default function Customers() {
   return (
     <Layout>
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Clienteling</h1>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <input
               type="file"
               accept=".csv"
@@ -315,25 +324,25 @@ export default function Customers() {
               className="hidden"
               data-testid="input-import-file"
             />
-            <Button 
-              variant="outline" 
-              className="gap-2" 
+            <Button
+              variant="outline"
+              className="gap-2 w-full sm:w-auto"
               onClick={() => fileInputRef.current?.click()}
               data-testid="button-import-customers"
             >
               <Upload className="h-4 w-4" />
               Importar
             </Button>
-            <Button 
-              variant="outline" 
-              className="gap-2" 
+            <Button
+              variant="outline"
+              className="gap-2 w-full sm:w-auto"
               onClick={handleExport}
               data-testid="button-export-customers"
             >
               <Download className="h-4 w-4" />
               Exportar
             </Button>
-            <Button className="gap-2" onClick={openCreateModal} data-testid="button-add-customer">
+            <Button className="gap-2 w-full sm:w-auto" onClick={openCreateModal} data-testid="button-add-customer">
               <Plus className="h-4 w-4" />
               Adicionar Cliente
             </Button>
@@ -402,7 +411,12 @@ export default function Customers() {
                     </TableHeader>
                     <TableBody>
                       {filteredCustomers.map((customer) => (
-                        <TableRow key={customer.id} data-testid={`row-customer-${customer.id}`}>
+                        <TableRow
+                          key={customer.id}
+                          data-testid={`row-customer-${customer.id}`}
+                          className="cursor-pointer hover:bg-accent/50"
+                          onClick={() => openDetailView(customer)}
+                        >
                           <TableCell>
                             <div className="flex items-center gap-3">
                               <Avatar className="h-9 w-9">
@@ -436,7 +450,7 @@ export default function Customers() {
                           </TableCell>
                           <TableCell className="font-medium" data-testid={`text-ltv-${customer.id}`}>{customer.ltv}</TableCell>
                           <TableCell className="text-muted-foreground text-sm" data-testid={`text-last-purchase-${customer.id}`}>{formatDate(customer.lastPurchase)}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" className="h-8 w-8 p-0" data-testid={`button-actions-${customer.id}`}>
@@ -446,14 +460,19 @@ export default function Customers() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                                <DropdownMenuItem onClick={() => openDetailView(customer)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  Visão 360°
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={() => openEditModal(customer)} data-testid={`button-edit-${customer.id}`}>
                                   Editar Cliente
                                 </DropdownMenuItem>
                                 <DropdownMenuItem>Criar Pedido</DropdownMenuItem>
                                 <DropdownMenuItem>Registrar Interação</DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem 
-                                  className="text-destructive" 
+                                <DropdownMenuItem
+                                  className="text-destructive"
                                   onClick={() => openDeleteDialog(customer)}
                                   data-testid={`button-delete-${customer.id}`}
                                 >
@@ -468,9 +487,14 @@ export default function Customers() {
                   </Table>
                 </div>
                 
-                <div className="md:hidden space-y-4 p-4">
+                <div className="md:hidden space-y-4">
                   {filteredCustomers.map((customer) => (
-                    <div key={customer.id} className="border rounded-lg p-4 space-y-3" data-testid={`card-customer-${customer.id}`}>
+                    <div
+                      key={customer.id}
+                      className="border rounded-lg p-4 space-y-3 cursor-pointer hover:bg-accent/50 transition-colors"
+                      data-testid={`card-customer-${customer.id}`}
+                      onClick={() => openDetailView(customer)}
+                    >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-10 w-10">
@@ -483,13 +507,18 @@ export default function Customers() {
                           </div>
                         </div>
                         <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                             <Button variant="ghost" className="h-8 w-8 p-0">
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                            <DropdownMenuItem onClick={() => openDetailView(customer)}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Visão 360°
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => openEditModal(customer)}>Editar Cliente</DropdownMenuItem>
                             <DropdownMenuItem>Criar Pedido</DropdownMenuItem>
                             <DropdownMenuItem>Registrar Interação</DropdownMenuItem>
@@ -538,17 +567,17 @@ export default function Customers() {
       </div>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-[500px]" data-testid="customer-modal">
+        <DialogContent className="w-full max-w-[95vw] sm:max-w-[500px] max-h-[90vh] overflow-y-auto" data-testid="customer-modal">
           <DialogHeader>
             <DialogTitle>{editingCustomer ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
             <DialogDescription>
-              {editingCustomer 
-                ? "Atualize as informações do cliente abaixo." 
+              {editingCustomer
+                ? "Atualize as informações do cliente abaixo."
                 : "Preencha os dados do novo cliente."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Nome *</Label>
                 <Input
@@ -573,7 +602,7 @@ export default function Customers() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="phone">Telefone</Label>
                 <Input
@@ -603,7 +632,7 @@ export default function Customers() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="ltv">LTV</Label>
                 <Input
@@ -635,11 +664,11 @@ export default function Customers() {
                 data-testid="input-customer-category"
               />
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={closeModal} data-testid="button-cancel">
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button type="button" variant="outline" onClick={closeModal} className="w-full sm:w-auto" data-testid="button-cancel">
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isMutating} data-testid="button-save-customer">
+              <Button type="submit" disabled={isMutating} className="w-full sm:w-auto" data-testid="button-save-customer">
                 {isMutating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {editingCustomer ? "Salvar" : "Adicionar"}
               </Button>
@@ -649,18 +678,18 @@ export default function Customers() {
       </Dialog>
 
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent data-testid="delete-dialog">
+        <AlertDialogContent className="w-full max-w-[95vw] sm:max-w-lg" data-testid="delete-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir cliente?</AlertDialogTitle>
             <AlertDialogDescription>
               Esta ação não pode ser desfeita. O cliente "{customerToDelete?.name}" será removido permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete">Cancelar</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDelete} 
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel className="w-full sm:w-auto" data-testid="button-cancel-delete">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="w-full sm:w-auto bg-destructive text-destructive-foreground hover:bg-destructive/90"
               data-testid="button-confirm-delete"
             >
               {deleteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -671,7 +700,7 @@ export default function Customers() {
       </AlertDialog>
 
       <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]" data-testid="import-dialog">
+        <DialogContent className="w-full max-w-[95vw] sm:max-w-[600px] max-h-[90vh] overflow-y-auto" data-testid="import-dialog">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5" />
@@ -682,34 +711,37 @@ export default function Customers() {
             </DialogDescription>
           </DialogHeader>
           {importData.length > 0 ? (
-            <ScrollArea className="max-h-[300px] border rounded-md">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Segmento</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {importData.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{item.name}</TableCell>
-                      <TableCell>{item.email}</TableCell>
-                      <TableCell>{item.segment}</TableCell>
+            <div className="overflow-x-auto -mx-6 sm:mx-0">
+              <ScrollArea className="max-h-[300px] border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[150px]">Nome</TableHead>
+                      <TableHead className="min-w-[200px]">Email</TableHead>
+                      <TableHead className="min-w-[100px]">Segmento</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollArea>
+                  </TableHeader>
+                  <TableBody>
+                    {importData.map((item, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="min-w-[150px]">{item.name}</TableCell>
+                        <TableCell className="min-w-[200px]">{item.email}</TableCell>
+                        <TableCell className="min-w-[100px]">{item.segment}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </div>
           ) : (
             <p className="text-muted-foreground text-center py-8">
               Nenhum dado válido encontrado no arquivo.
             </p>
           )}
-          <DialogFooter>
-            <Button 
-              variant="outline" 
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
               onClick={() => {
                 setIsImportDialogOpen(false);
                 setImportData([]);
@@ -718,9 +750,10 @@ export default function Customers() {
             >
               Cancelar
             </Button>
-            <Button 
-              onClick={handleImport} 
+            <Button
+              onClick={handleImport}
               disabled={importData.length === 0 || isImporting}
+              className="w-full sm:w-auto"
               data-testid="button-confirm-import"
             >
               {isImporting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -729,6 +762,12 @@ export default function Customers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CustomerDetail
+        customer={selectedCustomer}
+        open={isDetailOpen}
+        onOpenChange={setIsDetailOpen}
+      />
     </Layout>
   );
 }
