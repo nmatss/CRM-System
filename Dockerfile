@@ -18,6 +18,12 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# `.dockerignore` excludes .git, so the build cannot read the commit itself.
+# Pass it in so the running image can identify its own artifact:
+#   docker build --build-arg BUILD_COMMIT=$(git rev-parse --short HEAD) .
+ARG BUILD_COMMIT=unknown
+ENV BUILD_COMMIT=${BUILD_COMMIT}
+
 # Build the application
 RUN npm run build
 
