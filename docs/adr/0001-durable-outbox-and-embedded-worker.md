@@ -1,6 +1,6 @@
 # ADR 0001 — Outbox durável e worker embutido
 
-- **Status:** aceito para a primeira versão operacional
+- **Status:** aceito e implementado na migration 0008 (campanhas e automações). Providers reais continuam pendentes de decisão.
 - **Data:** 2026-08-29
 - **Escopo:** campanhas, notificações e automações
 
@@ -83,6 +83,27 @@ A troca futura preservará o contrato de job, chave idempotente e estados. Ela n
 - nenhum endpoint retorna sucesso de entrega sem resultado persistido do adapter;
 - métricas e UI distinguem `agendado`, `processando`, `entregue`, `falhou` e `não configurado`;
 - runbook documenta pausar worker, inspecionar backlog e reprocessar com segurança.
+
+## Estado da implementação
+
+Implementado e coberto por teste automatizado:
+
+- `outbox_jobs` com chave idempotente por tenant, lease recuperável, backoff
+  com jitter, dead-letter e cancelamento apenas antes do processamento;
+- enfileiramento na mesma transação SQLite da mutação de negócio, provado por
+  teste de rollback;
+- `campaign_executions` e `campaign_recipients` com status por destinatário e
+  consentimento avaliado na materialização e novamente antes da entrega;
+- `automation_executions` com definição versionada, gatilhos e ações em
+  allowlist, execução idempotente por evento e histórico real na UI;
+- adapters que falham fechados sem provedor configurado, sem inventar ID de
+  entrega e sem registrar destinatário ou conteúdo;
+- worker embutido que inicia com o servidor, para de reivindicar no shutdown e
+  pode ser desligado por `OUTBOX_WORKER_ENABLED=false`;
+- runbook com backlog, pausa do worker, job preso e reprocessamento seguro.
+
+Ainda não implementado: webhooks de provider, agendamento futuro de campanha,
+supressão global por lista e métricas de atribuição.
 
 ## Decisões ainda necessárias
 

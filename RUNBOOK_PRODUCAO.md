@@ -66,6 +66,72 @@ Verificar:
 - Recarregar a pagina para renovar token.
 - Cliente usa `apiRequest` para POST/PUT/PATCH/DELETE.
 
+## Outbox E Worker Embutido
+
+O processo da aplicacao executa o worker da outbox (ADR 0001). Campanhas e
+automacoes so mudam de estado a partir do resultado persistido de um adapter.
+
+### Inspecionar Backlog
+
+```bash
+curl -f -H "Cookie: <sessao-superadmin>" https://<host>/api/v1/admin/diagnostics/outbox
+```
+
+Resposta:
+
+```json
+{
+  "backlog": {
+    "pending": 0,
+    "processing": 0,
+    "retryWait": 0,
+    "deadLetter": 0,
+    "oldestPendingAt": null
+  },
+  "configuredChannels": []
+}
+```
+
+`configuredChannels` vazio significa que nenhum provedor esta configurado: as
+execucoes terminam como `not_configured` e nada e enviado. Isso e o
+comportamento correto, nao um incidente.
+
+### Pausar O Worker
+
+Definir `OUTBOX_WORKER_ENABLED=false` e reiniciar o processo. A API continua
+aceitando pedidos de envio: os jobs ficam persistidos e serao processados
+quando o worker voltar. Nenhum job e perdido.
+
+### Job Preso Em `processing`
+
+O lease expira em 60 segundos. Depois disso qualquer worker reivindica o job
+novamente, inclusive apos queda do processo. Nao editar a tabela manualmente
+para "destravar" um job.
+
+### Fila Crescendo
+
+Verificar, nesta ordem:
+
+- `configuredChannels` do diagnostico;
+- `deadLetter` maior que zero, que indica falha permanente ou tentativas
+  esgotadas;
+- latencia do provedor externo;
+- se um unico tenant esta gerando a maior parte do backlog.
+
+### Reprocessar Com Seguranca
+
+Nao reenfileirar manualmente o mesmo `idempotency_key`: a chave existente
+retorna o job atual e um payload divergente e recusado como conflito. Para
+reprocessar uma campanha, edite a definicao da campanha, o que gera uma nova
+execucao com destinatarios proprios, ou trate o `dead_letter` como incidente e
+registre a causa.
+
+### Canais De Entrega
+
+`EMAIL_PROVIDER`, `SMS_PROVIDER` e `WHATSAPP_PROVIDER` habilitam cada canal.
+Credenciais ficam apenas em variaveis de ambiente ou secret store: nunca no
+SQLite, no payload do job, no log ou na resposta HTTP.
+
 ## Rollback
 
 1. Confirmar backup valido do banco atual.

@@ -202,6 +202,51 @@ Response: 201 Created
 }
 ```
 
+### Campaigns and delivery
+
+| Method | Endpoint                                                | Auth | Role    | Description                                       |
+| ------ | ------------------------------------------------------- | ---- | ------- | ------------------------------------------------- |
+| GET    | `/api/v1/campaigns`                                     | Yes  | Any     | List campaigns                                    |
+| POST   | `/api/v1/campaigns`                                     | Yes  | Manager | Create a draft                                    |
+| PUT    | `/api/v1/campaigns/{id}`                                | Yes  | Manager | Update the definition                             |
+| DELETE | `/api/v1/campaigns/{id}`                                | Yes  | Manager | Delete                                            |
+| POST   | `/api/v1/campaigns/{id}/send`                           | Yes  | Manager | Request a dispatch (202); never confirms delivery |
+| GET    | `/api/v1/campaigns/executions`                          | Yes  | Any     | Persisted executions                              |
+| GET    | `/api/v1/campaigns/executions/{executionId}/recipients` | Yes  | Any     | Per-recipient delivery status                     |
+| GET    | `/api/v1/campaigns/stats`                               | Yes  | Any     | Counters and delivery statistics                  |
+| GET    | `/api/v1/campaigns/templates`                           | Yes  | Any     | Templates the dispatcher can execute              |
+
+`POST /campaigns/{id}/send` is idempotent per campaign definition: repeating it
+without editing the campaign returns the existing execution with status 200
+instead of scheduling a second one.
+
+### Automations
+
+| Method | Endpoint                           | Auth | Role    | Description                          |
+| ------ | ---------------------------------- | ---- | ------- | ------------------------------------ |
+| GET    | `/api/v1/automations`              | Yes  | Any     | List automations                     |
+| POST   | `/api/v1/automations`              | Yes  | Manager | Create (allowlisted trigger/action)  |
+| PUT    | `/api/v1/automations/{id}`         | Yes  | Manager | Update; bumps the version            |
+| DELETE | `/api/v1/automations/{id}`         | Yes  | Manager | Delete                               |
+| PATCH  | `/api/v1/automations/{id}/toggle`  | Yes  | Manager | Activate or pause                    |
+| GET    | `/api/v1/automations/history`      | Yes  | Any     | Real execution history               |
+| GET    | `/api/v1/automations/capabilities` | Yes  | Any     | Executable triggers/actions/channels |
+
+---
+
+## Delivery states
+
+A recipient or automation execution never reports a delivery that a provider
+did not acknowledge.
+
+| State             | Meaning                                                     |
+| ----------------- | ----------------------------------------------------------- |
+| `pending`         | Queued; the worker has not finished this recipient yet      |
+| `delivered`       | A provider returned an acknowledgement with a message ID    |
+| `failed`          | The provider refused or the attempts were exhausted         |
+| `skipped_opt_out` | The recipient opted out of marketing                        |
+| `not_configured`  | No provider is configured for the channel; nothing was sent |
+
 ---
 
 ## User Roles & Permissions

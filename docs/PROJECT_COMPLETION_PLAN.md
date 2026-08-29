@@ -1,8 +1,11 @@
 # Plano mestre de conclusao do CRM-System
 
-**Status:** auditoria concluida; implementacao ainda nao iniciada
+**Status:** Fases 0 a 6 concluidas; Fases 7 a 10 parciais. Nenhum P0 de seguranca ou de integridade permanece aberto.
 
-**Checkpoint:** 2026-08-29
+**Checkpoint:** 2026-08-29 (revisado apos a implementacao das Fases 0-6)
+
+> A secao 2 preserva a auditoria original de 2026-08-29 09:42 como registro
+> historico. O estado atual verificado esta na secao 2.1.
 
 **Fonte de verdade analisada:** worktree local atual, incluindo alteracoes ainda nao commitadas
 **Diretorio:** `/home/nic20/ProjetosWeb/Meus_Projetos/02-crm-system`
@@ -59,59 +62,102 @@ O build e os testes aprovados provam apenas que o snapshot compila e que os 63 t
 
 As contagens sao do snapshot auditado e devem ganhar uma verificacao automatica na Fase 2 para evitar nova divergencia.
 
+## 2.1 Estado atual verificado
+
+Gates executados no runtime fixado (Node 20.19.0, npm 10.8.2):
+
+| Gate                                      | Resultado | Evidencia                                                                       |
+| ----------------------------------------- | --------- | ------------------------------------------------------------------------------- |
+| `npm run check`                           | passou    | TypeScript sem erros                                                            |
+| `npm run lint`                            | passou    | `eslint . --max-warnings=0`                                                     |
+| `npm run format:check`                    | passou    | Prettier limpo em todo o repositorio                                            |
+| `npm run docs:check`                      | passou    | 69 links validados                                                              |
+| `npm test -- --run`                       | passou    | 32 arquivos, 195 testes                                                         |
+| `npm run test:coverage -- --run`          | passou    | 27,04% statements; thresholds em 26/21/19/26                                    |
+| `npm run build`                           | passou    | cliente e servidor gerados                                                      |
+| `npm audit --omit=dev --audit-level=high` | passou    | 0 vulnerabilidades                                                              |
+| smoke de producao com banco descartavel   | passou    | health, ready, 401, 404 JSON, headers CSP/HSTS, shutdown gracioso               |
+| guard de bootstrap com banco vazio        | passou    | processo recusa iniciar sem `ALLOW_EMPTY_DATABASE_BOOTSTRAP=true`               |
+| backup + restore descartavel              | passou    | integridade `ok`, 0 FKs invalidas, app sobe a partir do backup                  |
+| `docker build --check` e build da imagem  | passou    | imagem `zippcrm:<sha>` de 513 MB                                                |
+| ciclo de container                        | passou    | primeiro boot com flag, stop gracioso, restart com flag `false` no mesmo volume |
+| migration 0008 em copia descartavel       | passou    | upgrade aditivo, guards cross-tenant e caminho de contencao                     |
+
+Inventario atual:
+
+- 82 paths e 100% das operacoes publicadas documentadas em `docs/openapi.yaml`,
+  com teste de paridade bidirecional na CI;
+- 28 tabelas no schema SQLite, migrations 0004 a 0008 aplicadas;
+- `server/routes.ts` continua acima do tamanho sustentavel e a divisao por
+  dominio permanece pendente.
+
 ## 3. Estado do produto por modulo
 
-| Modulo                     | Estado atual                | O que existe                                                                      | O que falta para conclusao                                                                                          |
-| -------------------------- | --------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Landing e captacao         | parcial                     | landing, contato e demo persistidos                                               | antispam, consentimento/privacidade, workflow de lead, links legais reais e alegacoes de marketing verificadas      |
-| Autenticacao               | avancado, com bloqueadores  | login CPF/email, sessao persistente, CSRF, rate limit, troca obrigatoria de senha | corrigir takeover por reset, politica unica de senha, email unico/normalizado, testes E2E e auditoria de eventos    |
-| Multi-tenancy              | parcial critico             | memberships N:N e filtros `tenantId` na maior parte do storage                    | contexto tenant revalidado por request, bloquear mass assignment, validar FKs cross-tenant e testar revogacao       |
-| Super Admin                | parcial                     | CRUD de tenants, usuarios, memberships, contatos e demos                          | audit log, operacoes transacionais, validacao forte, soft-delete/retencao decididos e E2E de permissoes             |
-| Equipe/configuracoes       | parcial                     | settings da loja e gestao de equipe                                               | separar perfil global/tenant, corrigir reset de senha, persistir perfil/preferencias e remover `window.prompt`      |
-| Clientes                   | parcial                     | CRUD, import/export e busca local                                                 | paginacao/busca server-side, 360 real, deduplicacao, validacoes e testes de tenant                                  |
-| Produtos                   | parcial                     | CRUD e import/export                                                              | paginacao, filtros/ordenacao, permissoes na UI, itens de pedido, estoque transacional e metricas reais              |
-| Pedidos                    | parcial                     | CRUD basico                                                                       | `order_items`, ID server-side, transacao de estoque, vendedor, cashback, cancelamento/reversao e exportacao pela UI |
-| Cashback                   | parcial critico             | regras e consultas de transacoes                                                  | ledger em centavos, credito/debito idempotentes, atomicidade, expiracao, resgate, reconciliacao e UI sem mocks      |
-| Campanhas                  | prototipo funcional de CRUD | CRUD, audiencia em memoria e templates                                            | consentimento, provedor real, agendamento, job idempotente, retry, status por destinatario, tracking e UI de envio  |
-| Automacoes                 | prototipo                   | CRUD/toggle e sugestoes                                                           | modelo trigger-condicao-acao, scheduler/worker, executions, retry, dead-letter, historico real e versionamento      |
-| Notificacoes               | stub                        | tabela, storage e servico que retorna sucesso simulado                            | providers, outbox/fila, estados reais, redaction, preferencias e inbox no frontend                                  |
-| Agenda do vendedor         | parcial                     | tarefas, metas, interacoes, ranking e links WhatsApp                              | validar relacionamentos tenant, acoes rapidas reais, calendario/email aprovados e E2E por papel                     |
-| Dashboard                  | parcial                     | KPIs e graficos reais em parte                                                    | remover metricas sem base, corrigir series temporais, exportacao e performance com volume                           |
-| Relatorios                 | parcial                     | agregacoes e exportacao CSV parcial                                               | modelo de itens, calculos corretos, timezone, filtros server-side, cashback real e testes de reconciliacao          |
-| Cliente 360                | mock apresentado como real  | componente visual completo                                                        | consumir `/360`, `/history` e `/cashback`; remover constantes e testar clientes distintos                           |
-| AITOPIA                    | stub visual                 | drawer responsivo                                                                 | integrar API com politica de dados e guardrails ou retirar/rotular como demonstracao                                |
-| Busca/notificacoes globais | ausente/parcial             | campos e popovers visuais                                                         | busca real, autorizacao, paginacao, notificacoes por usuario e estados de leitura                                   |
-| Observabilidade            | inicial                     | request ID, logger com redaction e healthcheck                                    | logs HTTP correlacionados, error tracking, metricas, alertas, SLOs e shutdown gracioso                              |
-| Deploy/operacao            | parcial                     | Docker/PaaS, runbooks e backup manual                                             | CI/CD com gates, rollback imutavel, flag de bootstrap segura, backup offsite e restore drill periodico              |
+Estado revisado apos a implementacao das Fases 0 a 6.
+
+| Modulo                     | Estado atual                | O que existe                                                                                          | O que falta para conclusao                                                 |
+| -------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Landing e captacao         | parcial                     | landing, contato e demo persistidos                                                                   | antispam, consentimento/privacidade, workflow de lead e links legais reais |
+| Autenticacao               | concluida                   | login CPF/email, sessao persistente, CSRF, rate limit, senha 12+, email normalizado unico, audit log  | E2E por papel                                                              |
+| Multi-tenancy              | concluida                   | contexto revalidado por request, allowlist de update, guards cross-tenant no banco                    | E2E de revogacao no navegador                                              |
+| Super Admin                | avancado                    | CRUD transacional, audit log, diagnosticos de banco e outbox                                          | soft-delete/retencao decididos e E2E de permissoes                         |
+| Equipe/configuracoes       | avancado                    | settings, gestao de equipe e reset seguro                                                             | perfil/preferencias persistidos                                            |
+| Clientes                   | concluida                   | CRUD, import/export, busca e paginacao server-side, consentimento de marketing                        | deduplicacao no import                                                     |
+| Produtos                   | concluida                   | CRUD, import/export, paginacao e filtros server-side, precos em centavos                              | dry-run de importacao                                                      |
+| Pedidos                    | concluida                   | itens com snapshot, ID server-side, estoque transacional, cancelamento idempotente                    | associacao de vendedor em todos os fluxos                                  |
+| Cashback                   | concluida                   | ledger FIFO em centavos, credito/debito idempotentes, expiracao, reversao e reconciliacao             | resgate pela UI do vendedor                                                |
+| Campanhas                  | concluida na infraestrutura | execucoes e destinatarios persistidos, consentimento, outbox idempotente, retry e dead-letter         | provider real, agendamento futuro, webhooks e atribuicao                   |
+| Automacoes                 | concluida                   | definicao versionada, gatilhos e acoes em allowlist, execucoes idempotentes, historico real           | mais gatilhos e acoes conforme a demanda                                   |
+| Notificacoes               | infraestrutura pronta       | adapters fail-closed sem PII em log, entrega registrada por destinatario                              | providers, preferencias por usuario e inbox no frontend                    |
+| Agenda do vendedor         | parcial                     | tarefas, metas, interacoes, ranking e links WhatsApp                                                  | acoes rapidas reais e E2E por papel                                        |
+| Dashboard                  | avancado                    | KPIs e series derivados de pedidos reais em centavos                                                  | exportacao e performance com volume                                        |
+| Relatorios                 | concluida                   | agregacao por itens reais, timezone UTC explicito, filtros server-side                                | exportacao completa pela UI                                                |
+| Cliente 360                | concluida                   | consome `/360`, `/history` e `/cashback` reais                                                        | —                                                                          |
+| AITOPIA                    | removido                    | —                                                                                                     | reintroduzir apenas com politica de dados e guardrails aprovados           |
+| Busca/notificacoes globais | parcial                     | leitura de notificacoes por tenant                                                                    | busca global real e estados de leitura por usuario                         |
+| Observabilidade            | parcial                     | request ID, logs JSON com redaction, health/ready separados, shutdown gracioso, diagnostico de outbox | error tracking, metricas, alertas e SLOs                                   |
+| Deploy/operacao            | parcial                     | CI com gates, imagem com tag do commit, backup/restore ensaiado, runbook da outbox                    | backup offsite, restore drill periodico e ensaio de rollback em staging    |
 
 ## 4. Bloqueadores imediatos
 
-### P0 de seguranca
+Todos os P0 listados na auditoria original foram encerrados com evidencia. A
+lista abaixo preserva cada item e registra como foi fechado.
 
-1. Reset de senha por gerente altera uma identidade global compartilhada e permite takeover de memberships externas.
-2. Rotas de leitura usam apenas `requireAuth`; membership removida ou tenant inativo pode conservar acesso enquanto a sessao estiver valida.
-3. Updates de clientes, produtos, pedidos e automacoes aceitam `tenantId` no corpo e podem mover registros entre empresas.
-4. Relacionamentos como pedido-cliente, tarefa-cliente/vendedor e interacao-cliente/tarefa nao garantem que ambos os lados pertencam ao mesmo tenant.
+### P0 de seguranca — encerrados
 
-Detalhes e evidencias estao em `security_best_practices_report.md`.
+| #   | Achado original                                                   | Encerramento                                                                                                                                              |
+| --- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Reset de senha por gerente permite takeover de membership externa | `POST /team/:userId/reset-password` recusa identidade compartilhada com outro tenant; regressao em `routes.test.ts`                                       |
+| 2   | Leituras usam apenas `requireAuth` e mantem acesso apos revogacao | `requireTenantContext` aplicado por prefixo a toda rota tenant-scoped, inclusive leitura e exportacao; teste prova 403 na requisicao seguinte a revogacao |
+| 3   | Updates aceitam `tenantId` no corpo                               | Schemas de update removem `tenantId` e o storage ignora a coluna; teste dedicado                                                                          |
+| 4   | Relacionamentos cross-tenant nao validados                        | Validacao na rota e triggers `tenant mismatch` no banco para pedidos, itens, cashback, execucoes e destinatarios                                          |
 
-### P0 de integridade do produto
+### P0 de integridade do produto — encerrados
 
-1. Cliente 360, cashback, campanhas e automacoes misturam mocks com dados reais sem aviso.
-2. `POST /campaigns/:id/send` nao envia mensagens; apenas altera status e contador.
-3. notificacoes retornam sucesso ficticio e podem registrar conteudo de mensagem em console.
-4. nao existe `order_items`; metricas de produto/categoria nao representam vendas reais.
-5. clientes, produtos e pedidos exibem somente a primeira pagina de ate 50 itens sem informar o usuario.
+| #   | Achado original                                                           | Encerramento                                                                                                                        |
+| --- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Cliente 360, cashback, campanhas e automacoes misturam mock com dado real | Nenhum mock permanece no servidor nem no cliente; `CustomerDetail` consome `/360`, `/history` e `/cashback`                         |
+| 2   | `POST /campaigns/:id/send` nao envia                                      | Passa a materializar destinatarios, respeitar opt-out e enfileirar job na mesma transacao; `sent` conta apenas entregas confirmadas |
+| 3   | Notificacoes retornam sucesso ficticio e logam conteudo                   | Adapters falham fechados, nunca inventam ID de entrega e nao registram destinatario nem conteudo                                    |
+| 4   | Nao existe `order_items`                                                  | Migration 0004 cria itens com snapshot de preco; metricas por produto/categoria vem dos itens reais                                 |
+| 5   | Listas exibem apenas a primeira pagina sem avisar                         | Paginacao, busca, filtros e ordenacao server-side com envelope de paginacao                                                         |
 
-### P0 operacional
+### P0 operacional — encerrados
 
-1. nao existe CI em `.github/workflows`;
-2. Render possui auto-deploy sem executar testes ou audit;
-3. cobertura global e 8,29% e nao ha thresholds;
-4. OpenAPI cobre apenas uma fracao das operacoes reais;
-5. o procedimento Docker mantem `ALLOW_EMPTY_DATABASE_BOOTSTRAP=true` no container ja criado;
-6. rollback depende de imagem local anterior, sem artefato imutavel ou ensaio;
-7. ha uma vulnerabilidade alta de runtime ainda nao triada/corrigida.
+| #   | Achado original                                     | Encerramento                                                                                            |
+| --- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 1   | Nao existe CI                                       | `.github/workflows/ci.yml` roda runtime fixado, format, lint, docs, typecheck, cobertura, build e audit |
+| 2   | Render com auto-deploy sem gates                    | CI obrigatoria em PR e main antes do deploy                                                             |
+| 3   | Cobertura 8,29% sem thresholds                      | 27,04% com thresholds em 26/21/19/26                                                                    |
+| 4   | OpenAPI cobre fracao das rotas                      | 100% das operacoes publicadas, com teste de paridade bidirecional                                       |
+| 5   | Docker mantem `ALLOW_EMPTY_DATABASE_BOOTSTRAP=true` | Compose usa `false` por padrao; ciclo de container validado com a flag desligada                        |
+| 6   | Rollback depende de imagem local                    | Imagem publicada com tag do commit; rollback documentado por `APP_VERSION`                              |
+| 7   | Vulnerabilidade alta de runtime                     | `npm audit --omit=dev --audit-level=high` retorna 0 vulnerabilidades                                    |
+
+### Defeito encontrado durante a validacao desta sessao
+
+`GET /api/<qualquer>` inexistente caia no fallback da SPA e respondia 200 com
+HTML. Corrigido para 404 JSON com codigo `ROUTE_NOT_FOUND`, com regressao.
 
 ## 5. Arquitetura-alvo incremental
 
@@ -456,39 +502,74 @@ Gate final:
 
 ## 10. Checkpoint de retomada
 
+**Checkpoint:** 2026-08-29, sessao de implementacao das Fases 0 a 6
+**Branch:** `feat/completion-program` (a partir de `main`, commit base `6fe93a0`)
+**Runtime:** Node 20.19.0, npm 10.8.2 (o shell padrao da maquina e Node 24; use
+`fnm use 20.19.0` antes de qualquer gate, senao `better-sqlite3` falha por ABI)
+
+### Situacao por fase
+
+| Fase                          | Estado                      | Observacao                                                                                                                                           |
+| ----------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F0 baseline                   | concluida                   | runtime fixado, CI, lint/format, baseline commitada em 9 unidades                                                                                    |
+| F1 tenant e autenticacao      | concluida                   | todos os P0 de seguranca fechados com regressao                                                                                                      |
+| F2 contratos e banco          | concluida no contrato       | OpenAPI 100% com gate de paridade; **divisao de `routes.ts`/`storage.ts` por dominio continua pendente**                                             |
+| F3 pedidos e estoque          | concluida                   | itens, estoque transacional, cancelamento idempotente, listagem server-side                                                                          |
+| F4 cliente 360 e cashback     | concluida                   | ledger em centavos com reconciliacao; UI sem mock                                                                                                    |
+| F5 notificacoes e campanhas   | concluida na infraestrutura | outbox, destinatarios, consentimento e adapters fail-closed; **providers reais, webhooks e agendamento futuro pendentes**                            |
+| F6 automacoes                 | concluida                   | definicao versionada, execucoes idempotentes, historico real                                                                                         |
+| F7 frontend e acessibilidade  | parcial                     | UI sem mock e sem acao sem efeito; **sem E2E, axe ou regressao visual**                                                                              |
+| F8 QA e performance           | parcial                     | 195 testes e thresholds ativos; **sem E2E e sem teste de carga**                                                                                     |
+| F9 observabilidade e operacao | parcial                     | health/ready, logs correlacionados, shutdown gracioso, backup/restore e runbook da outbox ensaiados; **sem error tracking, metricas, alertas e SLO** |
+| F10 go-live                   | nao iniciada                | release candidate construida e validada localmente; deploy remoto nao executado                                                                      |
+
 ### Concluido nesta sessao
 
-- instrucoes, arquitetura, docs, worktree e stack inspecionados;
-- frontend, backend/dados e QA/DevOps auditados em trilhas independentes;
-- inventario de modulos e rotas consolidado;
-- riscos de seguranca classificados;
-- typecheck, testes Node 20, cobertura, build, smoke e configuracao Docker validados;
-- audit de dependencias executado;
-- plano mestre e relatorio de seguranca criados.
+- baseline do worktree commitada em unidades coerentes na branch de trabalho;
+- `format:check` corrigido, deixando todos os gates da CI verdes;
+- migration 0008 com outbox, execucoes de campanha e automacao, consentimento
+  de marketing e definicao versionada de automacao;
+- `server/outbox.ts`, `services/delivery.ts`, `services/campaignDispatch.ts` e
+  `services/automationEngine.ts`;
+- eventos de dominio `customer.created` e `order.created` emitidos dentro da
+  transacao da mutacao;
+- paginas de Campanhas e Automacoes reescritas para o contrato real;
+- `server/routeInventory.ts` e teste de paridade com o OpenAPI;
+- OpenAPI de 24 para 82 paths;
+- thresholds de cobertura de 8/5/3/8 para 26/21/19/26;
+- correcao do 404 de API e do grupo do usuario do container;
+- runbook, ADR 0001, `.env.example` e este plano atualizados.
 
 ### Nao concluido
 
-- nenhuma correcao de codigo foi implementada;
-- nenhuma migration, deploy ou operacao remota foi executada;
-- nenhum E2E/browser, Lighthouse ou axe foi executado;
-- riscos criticos/altos continuam abertos;
-- o worktree preexistente continua sem uma baseline commitada nesta sessao.
+- deploy remoto: nenhuma operacao em producao, push ou migracao remota foi
+  executada nesta sessao;
+- divisao de `server/routes.ts` e `server/storage.ts` por dominio;
+- E2E (Playwright), axe, Lighthouse e regressao visual;
+- error tracking, metricas, alertas e SLO;
+- providers reais de email/SMS/WhatsApp, webhooks e supressao global;
+- metricas de atribuicao de campanha.
 
 ### Proximo passo seguro
 
-Iniciar a Fase 0 com um checkpoint do worktree e, em seguida, executar a Fase 1 nesta ordem:
-
-1. criar testes que reproduzam reset cross-tenant, membership revogada e mass assignment;
-2. corrigir um achado por vez;
-3. repetir check, testes, cobertura, build e smoke a cada ciclo;
-4. somente depois iniciar `order_items`, cashback, campanhas ou automacoes.
+1. Abrir PR de `feat/completion-program` para `main` e confirmar a CI verde no
+   commit da release.
+2. Executar a Fase 7 comecando por E2E de `seller`, `manager` e `super_admin`,
+   porque e a evidencia que falta para afirmar que os fluxos funcionam ponta a
+   ponta no navegador.
+3. So depois dividir `routes.ts`/`storage.ts` por dominio, com os E2E ja
+   protegendo contra regressao.
+4. Decidir providers de mensagem antes de habilitar qualquer canal em
+   producao; enquanto `EMAIL_PROVIDER`, `SMS_PROVIDER` e `WHATSAPP_PROVIDER`
+   estiverem vazios, o sistema registra `not_configured` e nao envia nada, que
+   e o comportamento correto.
 
 ### Bloqueios que exigem decisao de produto/arquitetura
 
 - usuarios podem pertencer a varios tenants com a mesma identidade?
 - cadastro publico e criacao automatica de tenant devem continuar habilitados?
-- quais canais de mensagem e providers fazem parte do MVP?
-- AITOPIA entra no MVP ou deve ser removido/rotulado como demonstracao?
+- quais providers de mensagem entram no MVP e com qual texto de consentimento?
 - quais RPO/RTO, volume, concorrencia, retencao e requisitos LGPD se aplicam?
+- qual regra de atribuicao libera abertura, conversao e receita de campanha?
 
-Essas decisoes nao impedem a correcao dos P0 de seguranca.
+Essas decisoes nao bloqueiam nenhum item ja implementado.
