@@ -3,30 +3,37 @@
 ## Date: 2024-12-15
 
 ## Objective
+
 Add CHECK constraints to the SQLite database to ensure data integrity and validation for critical fields across multiple tables.
 
 ## Changes Made
 
 ### 1. Database Migration File
+
 Created `/home/nic20/ProjetosWeb/ZippiCRM/migrations/0002_add_constraints.sql`
 
 This migration adds the following CHECK constraints:
 
 #### Products Table
+
 - **price >= 0**: Ensures product prices are never negative
 - **stock >= 0**: Ensures stock quantities are never negative
 
-#### Orders Table  
+#### Orders Table
+
 - **total >= 0**: Ensures order totals are never negative
 
 #### Customers Table
+
 - **ltv >= 0**: Ensures customer lifetime value is never negative
 
 #### Campaigns Table
+
 - **open_rate >= 0 AND open_rate <= 100**: Ensures open rates are valid percentages (0-100%)
 - **conversion >= 0 AND conversion <= 100**: Ensures conversion rates are valid percentages (0-100%)
 
 ### 2. Schema Definition Updates
+
 Updated `/home/nic20/ProjetosWeb/ZippiCRM/shared/schema.ts`
 
 Added CHECK constraints to the Drizzle ORM schema definitions using the `check()` function:
@@ -36,9 +43,11 @@ Added CHECK constraints to the Drizzle ORM schema definitions using the `check()
 - Ensures future table creations automatically include these constraints
 
 ### 3. Migration Application Script
+
 Created `/home/nic20/ProjetosWeb/ZippiCRM/scripts/apply-constraints.js`
 
 A Node.js script that:
+
 - Reads the migration SQL file
 - Applies the migration to the SQLite database
 - Validates that constraints were successfully applied
@@ -47,9 +56,11 @@ A Node.js script that:
 Added npm script: `npm run db:migrate:constraints`
 
 ### 4. Documentation
+
 Created `/home/nic20/ProjetosWeb/ZippiCRM/migrations/README.md`
 
 Comprehensive documentation covering:
+
 - Overview of all migrations
 - Detailed constraint specifications
 - How to run migrations
@@ -61,6 +72,7 @@ Comprehensive documentation covering:
 ## Technical Implementation Details
 
 ### SQLite Constraint Limitations
+
 SQLite does not support adding CHECK constraints to existing tables via `ALTER TABLE`. The migration handles this by:
 
 1. Creating new tables with `_new` suffix including CHECK constraints
@@ -72,7 +84,9 @@ SQLite does not support adding CHECK constraints to existing tables via `ALTER T
 5. Recreating all indexes and maintaining foreign key relationships
 
 ### Data Migration Safety
+
 The migration includes logic to:
+
 - Only execute if tables exist (using `WHERE EXISTS` clauses)
 - Preserve all existing data during table recreation
 - Maintain referential integrity through proper foreign key handling
@@ -81,16 +95,19 @@ The migration includes logic to:
 ## How to Apply
 
 ### Option 1: Using npm script (Recommended)
+
 ```bash
 npm run db:migrate:constraints
 ```
 
 ### Option 2: Using tsx directly
+
 ```bash
 tsx scripts/apply-constraints.js
 ```
 
 ### Option 3: Manual SQL execution (Advanced)
+
 ```bash
 # Backup your database first!
 sqlite3 data/zippcrm.db < migrations/0002_add_constraints.sql
@@ -104,7 +121,7 @@ After applying the migration, verify constraints are in place:
 SELECT sql FROM sqlite_master WHERE type='table' AND name='products';
 -- Should show: CHECK(price >= 0) and CHECK(stock >= 0)
 
-SELECT sql FROM sqlite_master WHERE type='table' AND name='campaigns';  
+SELECT sql FROM sqlite_master WHERE type='table' AND name='campaigns';
 -- Should show: CHECK(open_rate >= 0 AND open_rate <= 100) and CHECK(conversion >= 0 AND conversion <= 100)
 ```
 
@@ -127,16 +144,19 @@ VALUES (1, 'Test', 'email', 'all', 150);
 ## Impact Assessment
 
 ### Performance
+
 - **Minimal impact**: CHECK constraints are evaluated during INSERT/UPDATE operations only
 - Constraints use simple comparison operators which are very fast
 - No impact on SELECT queries
 
 ### Data Integrity
+
 - **High value**: Prevents invalid data at the database level
 - Complements application-level validation
 - Provides defense-in-depth security model
 
 ### Application Compatibility
+
 - **Fully compatible**: Existing application code continues to work
 - Invalid data insertion attempts will fail with clear error messages
 - Drizzle ORM will enforce constraints automatically
@@ -144,6 +164,7 @@ VALUES (1, 'Test', 'email', 'all', 150);
 ## Rollback Plan
 
 If needed, tables can be recreated without constraints by:
+
 1. Creating tables using old schema definition
 2. Copying data from constrained tables
 3. Dropping constrained tables and renaming new ones
@@ -162,6 +183,7 @@ If needed, tables can be recreated without constraints by:
 ## Build Verification
 
 Project build tested and confirmed successful:
+
 ```bash
 npm run build
 # ✅ Client build: successful

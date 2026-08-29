@@ -1,5 +1,6 @@
--- ZippiCRM Database Initialization
--- This script runs automatically when the PostgreSQL container starts
+-- ZippiCRM PostgreSQL Initialization (LEGACY / FUTURE MIGRATION ONLY)
+-- The current runtime database is SQLite. This file is not used by the app,
+-- Docker Compose, Render or Railway in the current deployment model.
 
 -- Enable UUID extension (used for user IDs)
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
