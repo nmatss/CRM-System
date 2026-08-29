@@ -15,6 +15,9 @@ import {
   loginSchema,
   registerSchema,
   normalizeEmail,
+  SUPPORTED_AUTOMATION_ACTIONS,
+  SUPPORTED_AUTOMATION_TRIGGERS,
+  SUPPORTED_DELIVERY_CHANNELS,
 } from "@shared/schema";
 import {
   setupSession,
@@ -37,6 +40,17 @@ import {
   passwordResetLimiter,
 } from "./rateLimit";
 import { checkAndSeed } from "./seed";
+import { OutboxConflictError, getOutboxBacklog } from "./outbox";
+import {
+  CampaignDispatchError,
+  getCampaignDeliveryStats,
+  listCampaignExecutions,
+  listCampaignRecipients,
+  requestCampaignDispatch,
+  supportedAudiences,
+} from "./services/campaignDispatch";
+import { getAutomationHistory } from "./services/automationEngine";
+import { configuredChannels } from "./services/delivery";
 
 // ==================== ERROR HANDLING UTILITIES ====================
 interface ErrorResponse {
@@ -284,7 +298,27 @@ const transactionalOrderCreateSchema = z.object({
     .min(1)
     .max(100),
 });
-const updateAutomationSchema = insertAutomationSchema.partial().omit({ tenantId: true });
+const automationDefinitionShape = {
+  triggerType: z.enum(SUPPORTED_AUTOMATION_TRIGGERS),
+  actionType: z.enum(SUPPORTED_AUTOMATION_ACTIONS),
+  actionChannel: z.enum(SUPPORTED_DELIVERY_CHANNELS),
+};
+// Only triggers, actions and channels the engine can execute may be persisted.
+const createAutomationSchema = insertAutomationSchema.extend(automationDefinitionShape);
+const updateAutomationSchema = insertAutomationSchema
+  .extend(automationDefinitionShape)
+  .partial()
+  .omit({ tenantId: true });
+const paginationQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+const executionListQuerySchema = paginationQuerySchema.extend({
+  campaignId: z.coerce.number().int().positive().optional(),
+});
+const automationHistoryQuerySchema = paginationQuerySchema.extend({
+  automationId: z.coerce.number().int().positive().optional(),
+});
 const listQueryShape = {
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -415,12 +449,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/ready", async (_req: Request, res: Response) => {
     const ready = await storage.healthCheck();
-    res
-      .status(ready ? 200 : 503)
-      .json({
-        status: ready ? "ready" : "not_ready",
-        database: ready ? "connected" : "disconnected",
-      });
+    res.status(ready ? 200 : 503).json({
+      status: ready ? "ready" : "not_ready",
+      database: ready ? "connected" : "disconnected",
+    });
+  });
+
+  v1Router.get("/admin/diagnostics/outbox", requireSuperAdmin, (_req, res) => {
+    // Backlog snapshot used by the production runbook.
+    res.json({ backlog: getOutboxBacklog(), configuredChannels: configuredChannels() });
   });
 
   v1Router.get("/admin/diagnostics/database", requireSuperAdmin, async (_req, res) => {
@@ -2469,54 +2506,113 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         if (isNaN(id)) {
           return sendError(res, 400, "ID inválido", "INVALID_ID");
         }
-        const campaign = await storage.getCampaign(tenantId, id);
-        if (!campaign) {
-          return res.status(404).json({ error: "Campanha não encontrada" });
-        }
 
-        const customersResult = await storage.getCustomers(tenantId);
-        const customers = customersResult.data;
-        let targetCustomers = customers;
-
-        switch (campaign.audience) {
-          case "Clientes VIP":
-            targetCustomers = customers.filter((c) => c.segment === "VIP");
-            break;
-          case "Novos clientes":
-            targetCustomers = customers.filter((c) => c.segment === "Novo");
-            break;
-          case "Clientes inativos":
-            targetCustomers = customers.filter(
-              (c) => c.segment === "Inativo" || c.segment === "Em Risco",
-            );
-            break;
-          case "Aniversariantes do mês": {
-            const currentMonth = new Date().getMonth() + 1;
-            targetCustomers = customers.filter((c) => {
-              if (!c.birthDate) return false;
-              // Parse ISO format YYYY-MM-DD from database
-              const date = new Date(c.birthDate);
-              // Check if date is valid
-              if (isNaN(date.getTime())) return false;
-              const month = date.getMonth() + 1;
-              return month === currentMonth;
-            });
-            break;
-          }
-        }
-
-        const updated = await storage.updateCampaign(tenantId, id, {
-          status: "Ativo",
-          sent: targetCustomers.length,
+        // Materializes recipients and enqueues the job in one transaction. The
+        // response is an accepted dispatch, never a delivery confirmation.
+        const { execution, created } = requestCampaignDispatch({
+          tenantId,
+          campaignId: id,
+          actorUserId: req.session.user?.id ?? null,
         });
 
+        res.status(created ? 202 : 200).json({
+          message: created
+            ? "Envio agendado. O status por destinatário fica disponível na execução."
+            : "Envio já agendado para esta versão da campanha.",
+          execution,
+        });
+      } catch (error) {
+        if (error instanceof CampaignDispatchError) {
+          const status = error.code === "NOT_FOUND" ? 404 : 400;
+          return sendError(res, status, error.message, error.code);
+        }
+        if (error instanceof OutboxConflictError) {
+          return sendError(res, 409, "Envio conflitante já registrado", "OUTBOX_CONFLICT");
+        }
+        logger.error("Campaign dispatch request failed", {
+          requestId: (req as Request & { requestId?: string }).requestId,
+          endpoint: "/api/v1/campaigns/:id/send",
+          tenantId: getTenantId(req),
+          error: error instanceof Error ? error.message : String(error),
+        });
+        res.status(500).json({ error: "Erro ao agendar envio da campanha" });
+      }
+    },
+  );
+
+  /**
+   * @description Lists persisted campaign executions for the active tenant
+   * @route GET /api/v1/campaigns/executions
+   * @access authenticated
+   */
+  v1Router.get("/campaigns/executions", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getTenantId(req);
+      if (!tenantId) {
+        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+      }
+      const query = executionListQuerySchema.parse(req.query);
+      const result = listCampaignExecutions(tenantId, {
+        limit: query.limit,
+        offset: (query.page - 1) * query.limit,
+        campaignId: query.campaignId,
+      });
+      res.json({
+        data: result.data,
+        pagination: {
+          page: query.page,
+          limit: query.limit,
+          total: result.total,
+          totalPages: Math.ceil(result.total / query.limit),
+        },
+      });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const parsed = handleZodError(error);
+        return sendError(res, 400, parsed.message, "VALIDATION_ERROR", parsed.details);
+      }
+      res.status(500).json({ error: "Erro ao buscar execuções de campanha" });
+    }
+  });
+
+  /**
+   * @description Lists the per-recipient delivery status of one execution
+   * @route GET /api/v1/campaigns/executions/:executionId/recipients
+   * @access authenticated
+   */
+  v1Router.get(
+    "/campaigns/executions/:executionId/recipients",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const executionId = parseInt(req.params.executionId);
+        if (isNaN(executionId)) {
+          return sendError(res, 400, "ID inválido", "INVALID_ID");
+        }
+        const query = paginationQuerySchema.parse(req.query);
+        const result = listCampaignRecipients(tenantId, executionId, {
+          limit: query.limit,
+          offset: (query.page - 1) * query.limit,
+        });
         res.json({
-          message: "Campanha enviada com sucesso",
-          sentTo: targetCustomers.length,
-          campaign: updated,
+          data: result.data,
+          pagination: {
+            page: query.page,
+            limit: query.limit,
+            total: result.total,
+            totalPages: Math.ceil(result.total / query.limit),
+          },
         });
-      } catch {
-        res.status(500).json({ error: "Erro ao enviar campanha" });
+      } catch (error) {
+        if (error instanceof ZodError) {
+          const parsed = handleZodError(error);
+          return sendError(res, 400, parsed.message, "VALIDATION_ERROR", parsed.details);
+        }
+        res.status(500).json({ error: "Erro ao buscar destinatários da execução" });
       }
     },
   );
@@ -2544,7 +2640,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         if (!tenantId) {
           return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
         }
-        const validatedData = insertAutomationSchema.parse({ ...req.body, tenantId });
+        const validatedData = createAutomationSchema.parse({ ...req.body, tenantId });
         const automation = await storage.createAutomation(validatedData);
         res.status(201).json(automation);
       } catch {
@@ -3691,6 +3787,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ==================== CAMPAIGN STATS ROUTES ====================
+  /**
+   * @description Campaign counters plus delivery statistics derived from
+   *              persisted recipients. Attribution metrics (open rate,
+   *              conversion, revenue) stay null until real attribution events
+   *              exist, per ADR 0002.
+   * @route GET /api/v1/campaigns/stats
+   * @access authenticated
+   */
   v1Router.get("/campaigns/stats", requireAuth, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
@@ -3699,28 +3803,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       const campaigns = await storage.getCampaigns(tenantId);
+      const delivery = getCampaignDeliveryStats(tenantId);
 
-      const stats = {
+      res.json({
         total: campaigns.length,
-        active: campaigns.filter((c) => c.status === "sent").length,
+        sent: campaigns.filter((c) => c.status === "sent").length,
         draft: campaigns.filter((c) => c.status === "draft").length,
         scheduled: campaigns.filter((c) => c.status === "scheduled").length,
-        totalSent: campaigns.reduce((sum, c) => sum + c.sent, 0),
-        avgOpenRate:
-          campaigns.length > 0
-            ? campaigns.reduce((sum, c) => sum + c.openRate, 0) / campaigns.length
-            : 0,
-        avgConversion:
-          campaigns.length > 0
-            ? campaigns.reduce((sum, c) => sum + c.conversion, 0) / campaigns.length
-            : 0,
-        totalRevenue: campaigns.reduce((sum, c) => sum + c.revenue, 0),
-      };
-
-      res.json(stats);
+        failed: campaigns.filter((c) => c.status === "failed").length,
+        delivery,
+        // Explicitly unavailable rather than a zero that reads as a real metric.
+        attribution: {
+          available: false,
+          reason: "Attribution events are not collected yet",
+          openRate: null,
+          conversion: null,
+          revenue: null,
+        },
+      });
     } catch (error) {
       logger.error("Campaign stats fetch failed", {
-        requestId: (req as any).requestId,
+        requestId: (req as Request & { requestId?: string }).requestId,
         endpoint: "/api/v1/campaigns/stats",
         userId: req.session.user?.id,
         tenantId: getTenantId(req),
@@ -3730,57 +3833,57 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
-  v1Router.get("/campaigns/templates", requireAuth, async (req: Request, res: Response) => {
-    try {
-      // Return predefined campaign templates
-      const templates = [
-        {
-          id: 1,
-          name: "Boas-vindas",
-          channel: "Email",
-          audience: "Novos clientes",
-          message: "Bem-vindo à nossa loja! Aproveite 10% de desconto na sua primeira compra.",
-        },
-        {
-          id: 2,
-          name: "Cashback Expirando",
-          channel: "WhatsApp",
-          audience: "Clientes com cashback",
-          message: "Seu cashback está expirando em breve! Use agora e aproveite.",
-        },
-        {
-          id: 3,
-          name: "Recuperação de Carrinho",
-          channel: "Email",
-          audience: "Carrinho abandonado",
-          message: "Você deixou produtos no carrinho. Complete sua compra agora!",
-        },
-        {
-          id: 4,
-          name: "Aniversário",
-          channel: "WhatsApp",
-          audience: "Aniversariantes do mês",
-          message: "Feliz aniversário! Ganhe um presente especial de R$ 50.",
-        },
-        {
-          id: 5,
-          name: "Reativação",
-          channel: "SMS",
-          audience: "Clientes inativos",
-          message: "Sentimos sua falta! Volte e ganhe 15% de desconto.",
-        },
-      ];
+  /**
+   * @description Campaign templates restricted to audiences and channels the
+   *              dispatcher can actually resolve, so a template never promises
+   *              a segment the server cannot build.
+   * @route GET /api/v1/campaigns/templates
+   * @access authenticated
+   */
+  v1Router.get("/campaigns/templates", requireAuth, (_req: Request, res: Response) => {
+    const catalog = [
+      {
+        id: 1,
+        name: "Boas-vindas",
+        channel: "email",
+        audience: "Novos clientes",
+        message: "Bem-vindo à nossa loja! Aproveite 10% de desconto na sua primeira compra.",
+      },
+      {
+        id: 2,
+        name: "Aniversário",
+        channel: "whatsapp",
+        audience: "Aniversariantes do mês",
+        message: "Feliz aniversário! Ganhe um presente especial na sua próxima compra.",
+      },
+      {
+        id: 3,
+        name: "Reativação",
+        channel: "sms",
+        audience: "Clientes inativos",
+        message: "Sentimos sua falta! Volte e ganhe 15% de desconto.",
+      },
+      {
+        id: 4,
+        name: "Relacionamento VIP",
+        channel: "email",
+        audience: "Clientes VIP",
+        message: "Condição exclusiva para nossos clientes VIP.",
+      },
+    ];
 
-      res.json(templates);
-    } catch (error) {
-      logger.error("Campaign templates fetch failed", {
-        requestId: (req as any).requestId,
-        endpoint: "/api/v1/campaigns/templates",
-        userId: req.session.user?.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      res.status(500).json({ error: "Erro ao buscar templates de campanhas" });
-    }
+    const audiences = new Set(supportedAudiences());
+    const available = new Set<string>(configuredChannels());
+
+    res.json(
+      catalog
+        .filter((template) => audiences.has(template.audience))
+        .map((template) => ({
+          ...template,
+          // The UI must be able to distinguish "supported" from "ready to send".
+          channelConfigured: available.has(template.channel),
+        })),
+    );
   });
 
   // ==================== AUTOMATION ROUTES ====================
@@ -3843,42 +3946,39 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  /**
+   * @description Real automation execution history for the active tenant
+   * @route GET /api/v1/automations/history
+   * @access authenticated
+   */
   v1Router.get("/automations/history", requireAuth, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
       if (!tenantId) {
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
-
-      // Mock automation execution history
-      // In a real system, this would query an automation_executions table
-      const history = [
-        {
-          id: 1,
-          automationId: 1,
-          automationName: "Boas-vindas Novos Clientes",
-          executedAt: new Date().toISOString(),
-          status: "success",
-          recipientsCount: 15,
-          successCount: 14,
-          failedCount: 1,
+      const query = automationHistoryQuerySchema.parse(req.query);
+      const result = getAutomationHistory(tenantId, {
+        limit: query.limit,
+        offset: (query.page - 1) * query.limit,
+        automationId: query.automationId,
+      });
+      res.json({
+        data: result.data,
+        pagination: {
+          page: query.page,
+          limit: query.limit,
+          total: result.total,
+          totalPages: Math.ceil(result.total / query.limit),
         },
-        {
-          id: 2,
-          automationId: 2,
-          automationName: "Cashback Expirando",
-          executedAt: new Date(Date.now() - 3600000).toISOString(),
-          status: "success",
-          recipientsCount: 23,
-          successCount: 23,
-          failedCount: 0,
-        },
-      ];
-
-      res.json(history);
+      });
     } catch (error) {
+      if (error instanceof ZodError) {
+        const parsed = handleZodError(error);
+        return sendError(res, 400, parsed.message, "VALIDATION_ERROR", parsed.details);
+      }
       logger.error("Automation history fetch failed", {
-        requestId: (req as any).requestId,
+        requestId: (req as Request & { requestId?: string }).requestId,
         endpoint: "/api/v1/automations/history",
         userId: req.session.user?.id,
         tenantId: getTenantId(req),
@@ -3886,6 +3986,23 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
       res.status(500).json({ error: "Erro ao buscar histórico de automações" });
     }
+  });
+
+  /**
+   * @description Declares which delivery channels, triggers and audiences the
+   *              server can actually execute, so the UI never offers a
+   *              capability that would fail closed.
+   * @route GET /api/v1/automations/capabilities
+   * @access authenticated
+   */
+  v1Router.get("/automations/capabilities", requireAuth, (_req: Request, res: Response) => {
+    res.json({
+      triggers: SUPPORTED_AUTOMATION_TRIGGERS,
+      actions: SUPPORTED_AUTOMATION_ACTIONS,
+      channels: SUPPORTED_DELIVERY_CHANNELS,
+      configuredChannels: configuredChannels(),
+      audiences: supportedAudiences(),
+    });
   });
 
   // Mount v1 API routes

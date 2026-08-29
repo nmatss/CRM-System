@@ -8,6 +8,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Send,
   Smartphone,
   Trash2,
 } from "lucide-react";
@@ -43,19 +44,53 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { actionErrorDescription } from "@/lib/actionErrors";
 import { capabilities, hasCapability } from "@/lib/capabilities";
-import { campaignStatusLabel, formatMetric } from "@/lib/marketingPresentation";
+import {
+  campaignStatusLabel,
+  executionStatusLabel,
+  formatOptionalMetric,
+} from "@/lib/marketingPresentation";
 import { apiRequest } from "@/lib/queryClient";
 import type { Campaign } from "@shared/schema";
 
+interface CampaignDeliveryStats {
+  executions: number;
+  totalRecipients: number;
+  delivered: number;
+  failed: number;
+  skipped: number;
+  pending: number;
+}
 interface CampaignStats {
   total: number;
-  active: number;
+  sent: number;
   draft: number;
   scheduled: number;
-  totalSent: number;
-  avgOpenRate: number;
-  avgConversion: number;
-  totalRevenue: number;
+  failed: number;
+  delivery: CampaignDeliveryStats;
+  attribution: {
+    available: boolean;
+    reason: string;
+    openRate: number | null;
+    conversion: number | null;
+    revenue: number | null;
+  };
+}
+interface CampaignExecution {
+  id: number;
+  campaignId: number;
+  status: string;
+  channel: string;
+  audience: string;
+  totalRecipients: number;
+  deliveredCount: number;
+  failedCount: number;
+  skippedCount: number;
+  createdAt: string;
+  finishedAt: string | null;
+}
+interface Paginated<T> {
+  data: T[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
 }
 interface CampaignTemplate {
   id: number;
@@ -63,6 +98,7 @@ interface CampaignTemplate {
   channel: string;
   audience: string;
   message: string;
+  channelConfigured: boolean;
 }
 interface CampaignFormData {
   name: string;
@@ -77,13 +113,13 @@ const initialFormData: CampaignFormData = {
   audience: "Todos os clientes",
   message: "",
 };
+// Mirrors the audiences the dispatcher can resolve on the server.
 const audienceOptions = [
   "Todos os clientes",
   "Clientes VIP",
   "Novos clientes",
   "Clientes inativos",
   "Aniversariantes do mês",
-  "Clientes com cashback",
 ];
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -118,6 +154,31 @@ export default function Campaigns() {
   const templatesQuery = useQuery<CampaignTemplate[]>({
     queryKey: ["campaigns", "templates"],
     queryFn: () => fetchJson("/api/v1/campaigns/templates"),
+  });
+  const executionsQuery = useQuery<Paginated<CampaignExecution>>({
+    queryKey: ["campaigns", "executions"],
+    queryFn: () => fetchJson("/api/v1/campaigns/executions?limit=10"),
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: async (id: number) =>
+      (await apiRequest("POST", `/campaigns/${id}/send`, {})).json() as Promise<{
+        message: string;
+        execution: CampaignExecution;
+      }>,
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      toast({
+        title: "Envio agendado",
+        description: `${result.execution.totalRecipients} destinatário(s) registrados. Acompanhe o status por destinatário na execução.`,
+      });
+    },
+    onError: (error) =>
+      toast({
+        title: "Erro",
+        description: actionErrorDescription(error, "Não foi possível agendar o envio."),
+        variant: "destructive",
+      }),
   });
 
   const saveMutation = useMutation({
@@ -217,8 +278,8 @@ export default function Campaigns() {
           <div>
             <h1 className="text-2xl font-bold">Campanhas de Marketing</h1>
             <p className="text-sm text-muted-foreground">
-              Configure rascunhos e consulte métricas registradas. O envio ainda não possui outbox
-              ou provedor integrado.
+              Configure rascunhos e dispare envios pela outbox durável. Cada destinatário tem status
+              próprio e nada é contado como entregue sem confirmação do provedor.
             </p>
           </div>
           {canManage && (
@@ -241,22 +302,26 @@ export default function Campaigns() {
               <Metric
                 title="Campanhas"
                 value={String(statsQuery.data.total)}
-                subtitle={`${statsQuery.data.draft} rascunhos`}
+                subtitle={`${statsQuery.data.draft} rascunho(s) · ${statsQuery.data.scheduled} agendada(s)`}
               />
               <Metric
-                title="Envios registrados"
-                value={String(statsQuery.data.totalSent)}
-                subtitle="Contador persistido pela API"
+                title="Entregas confirmadas"
+                value={String(statsQuery.data.delivery.delivered)}
+                subtitle={`de ${statsQuery.data.delivery.totalRecipients} destinatário(s) processados`}
               />
               <Metric
-                title="Taxa média de abertura"
-                value={formatMetric(statsQuery.data.avgOpenRate, "%")}
-                subtitle="Valor registrado"
+                title="Falhas e canais sem provedor"
+                value={String(statsQuery.data.delivery.failed)}
+                subtitle={`${statsQuery.data.delivery.skipped} ignorado(s) por opt-out`}
               />
               <Metric
-                title="Conversão média"
-                value={formatMetric(statsQuery.data.avgConversion, "%")}
-                subtitle="Valor registrado"
+                title="Taxa de abertura"
+                value={formatOptionalMetric(statsQuery.data.attribution.openRate, "%")}
+                subtitle={
+                  statsQuery.data.attribution.available
+                    ? "Baseada em eventos de atribuição"
+                    : "Sem eventos de atribuição coletados"
+                }
               />
             </div>
           )
@@ -313,9 +378,8 @@ export default function Campaigns() {
                         Audiência configurada: {campaign.audience}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Enviadas registradas: {campaign.sent} · Abertura:{" "}
-                        {formatMetric(campaign.openRate, "%")} · Conversão:{" "}
-                        {formatMetric(campaign.conversion, "%")}
+                        Entregas confirmadas: {campaign.sent} · Abertura e conversão: indisponíveis
+                        até existir evento de atribuição
                       </p>
                     </div>
                     {canManage && (
@@ -332,6 +396,13 @@ export default function Campaigns() {
                             Editar configuração
                           </DropdownMenuItem>
                           <DropdownMenuItem
+                            disabled={sendMutation.isPending}
+                            onClick={() => sendMutation.mutate(campaign.id)}
+                          >
+                            <Send className="mr-2 h-4 w-4" />
+                            Agendar envio
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
                             className="text-destructive"
                             onClick={() => deleteMutation.mutate(campaign.id)}
                           >
@@ -341,6 +412,50 @@ export default function Campaigns() {
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Execuções recentes</CardTitle>
+            <CardDescription>
+              Cada execução guarda o status individual de cada destinatário.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {executionsQuery.isLoading ? (
+              <Loading />
+            ) : executionsQuery.isError ? (
+              <ErrorState
+                text="Não foi possível carregar as execuções."
+                retry={() => executionsQuery.refetch()}
+              />
+            ) : !executionsQuery.data?.data.length ? (
+              <Empty text="Nenhum envio foi disparado ainda." />
+            ) : (
+              <div className="space-y-3">
+                {executionsQuery.data.data.map((execution) => (
+                  <div
+                    key={execution.id}
+                    className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">Execução #{execution.id}</p>
+                        <Badge variant="secondary">{executionStatusLabel(execution.status)}</Badge>
+                        <Badge variant="outline">{execution.channel}</Badge>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {execution.audience} · {execution.totalRecipients} destinatário(s)
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {execution.deliveredCount} entregue(s) · {execution.failedCount} falha(s) ·{" "}
+                      {execution.skippedCount} ignorado(s)
+                    </p>
                   </div>
                 ))}
               </div>
@@ -372,6 +487,7 @@ export default function Campaigns() {
                       <CardTitle className="text-base">{template.name}</CardTitle>
                       <CardDescription>
                         {template.channel} · {template.audience}
+                        {template.channelConfigured ? "" : " · canal sem provedor configurado"}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>

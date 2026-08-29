@@ -7,9 +7,17 @@ import { generalLimiter } from "./rateLimit";
 import { logger, requestIdMiddleware } from "./logger";
 import { sqlite } from "./db";
 import { sessionSqlite, usingSeparateSessionDatabase } from "./sessionDb";
+import { outboxWorker } from "./outbox";
+import { AUTOMATION_JOB_TYPE, handleAutomationJob } from "./services/automationEngine";
+import { CAMPAIGN_JOB_TYPE, handleCampaignDispatchJob } from "./services/campaignDispatch";
 
 const app = express();
 const httpServer = createServer(app);
+
+// Embedded outbox worker (ADR 0001): campaigns and automations execute here.
+outboxWorker
+  .register(CAMPAIGN_JOB_TYPE, handleCampaignDispatchJob)
+  .register(AUTOMATION_JOB_TYPE, handleAutomationJob);
 
 const trustProxy = process.env.TRUST_PROXY?.trim();
 if (trustProxy) {
@@ -132,6 +140,8 @@ function shutdown(signal: string, exitCode = 0) {
   shutdownStarted = true;
 
   logger.info("Application shutdown started", { signal });
+  // Stop claiming new jobs immediately; only the in-flight job is awaited.
+  void outboxWorker.stop();
   const forceTimer = setTimeout(() => {
     logger.error("Application shutdown timed out", { signal });
     process.exit(1);
@@ -230,6 +240,9 @@ async function startApplication() {
     () => {
       log(`serving on port ${port}`);
       logger.info("Application started", { port });
+      if (process.env.OUTBOX_WORKER_ENABLED !== "false") {
+        outboxWorker.start();
+      }
     },
   );
 }

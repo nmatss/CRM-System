@@ -52,6 +52,7 @@ import {
   normalizeEmail,
 } from "@shared/schema";
 import { db, sqlite } from "./db";
+import { enqueueAutomationJobsForEvent } from "./services/automationEngine";
 import { sessionSqlite, usingSeparateSessionDatabase } from "./sessionDb";
 import { eq, and, asc, desc, gte, lte, ne, or, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
@@ -1189,15 +1190,27 @@ export class DatabaseStorage implements IStorage {
 
   async createCustomer(customer: InsertCustomer): Promise<Customer> {
     const ltv = customer.ltv ?? 0;
-    const result = await db
-      .insert(customers)
-      .values({
-        ...customer,
-        ltv,
-        ltvCents: moneyToCents(ltv, "customer.ltv"),
-      })
-      .returning();
-    return result[0];
+    // The insert and the automation jobs it triggers share one transaction so an
+    // automation can never fire for a customer that was rolled back (ADR 0001).
+    return sqlite.transaction(() => {
+      const created = db
+        .insert(customers)
+        .values({
+          ...customer,
+          ltv,
+          ltvCents: moneyToCents(ltv, "customer.ltv"),
+        })
+        .returning()
+        .all()[0];
+
+      enqueueAutomationJobsForEvent({
+        tenantId: created.tenantId,
+        triggerType: "customer.created",
+        referenceId: created.id,
+      });
+
+      return created;
+    })();
   }
 
   async updateCustomer(
@@ -1508,6 +1521,13 @@ export class DatabaseStorage implements IStorage {
           snapshot.unitPriceCents * snapshot.quantity,
         );
       }
+
+      // Same transaction as the order and the stock movement (ADR 0001).
+      enqueueAutomationJobsForEvent({
+        tenantId: input.tenantId,
+        triggerType: "order.created",
+        referenceId: orderPk,
+      });
 
       return orderPk;
     })();
@@ -2263,9 +2283,19 @@ export class DatabaseStorage implements IStorage {
     data: Partial<InsertAutomation>,
   ): Promise<Automation | undefined> {
     const { tenantId: _ignoredTenantId, ...safeData } = data;
+    const current = await this.getAutomation(tenantId, id);
+    if (!current) return undefined;
+
+    // Changing the definition bumps the version so jobs enqueued against the
+    // previous definition are skipped instead of running with new semantics.
+    const definitionChanged =
+      (safeData.triggerType !== undefined && safeData.triggerType !== current.triggerType) ||
+      (safeData.actionType !== undefined && safeData.actionType !== current.actionType) ||
+      (safeData.actionChannel !== undefined && safeData.actionChannel !== current.actionChannel);
+
     const result = await db
       .update(automations)
-      .set(safeData)
+      .set(definitionChanged ? { ...safeData, version: current.version + 1 } : safeData)
       .where(and(eq(automations.tenantId, tenantId), eq(automations.id, id)))
       .returning();
     return result[0];

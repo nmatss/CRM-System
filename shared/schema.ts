@@ -200,11 +200,15 @@ export const customers = sqliteTable(
     favoriteCategory: text("favorite_category"),
     image: text("image"),
     birthDate: text("birth_date"),
+    // Consent is evaluated when recipients are materialized and again before delivery.
+    marketingOptOut: integer("marketing_opt_out", { mode: "boolean" }).notNull().default(false),
+    marketingConsentAt: text("marketing_consent_at"),
     createdAt: text("created_at").default(sql`(datetime('now'))`),
     updatedAt: text("updated_at").default(sql`(datetime('now'))`),
   },
   (table) => [
     index("customers_tenant_id_idx").on(table.tenantId),
+    index("customers_tenant_opt_out_idx").on(table.tenantId, table.marketingOptOut),
     index("customers_email_idx").on(table.email),
     index("customers_segment_idx").on(table.segment),
     index("customers_created_at_idx").on(table.createdAt),
@@ -585,17 +589,39 @@ export const automations = sqliteTable(
     icon: text("icon").notNull(),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
     stats: text("stats"),
+    // Versioned definition. Only allowlisted triggers/actions can be activated.
+    version: integer("version").notNull().default(1),
+    triggerType: text("trigger_type").notNull().default("customer.created"),
+    actionType: text("action_type").notNull().default("notify_customer"),
+    actionChannel: text("action_channel").notNull().default("email"),
     createdAt: text("created_at").default(sql`(datetime('now'))`),
     updatedAt: text("updated_at").default(sql`(datetime('now'))`),
   },
   (table) => [
     index("automations_tenant_id_idx").on(table.tenantId),
     index("automations_is_active_idx").on(table.isActive),
+    index("automations_tenant_trigger_active_idx").on(
+      table.tenantId,
+      table.triggerType,
+      table.isActive,
+    ),
+    check("automations_version_check", sql`${table.version} > 0`),
+    check(
+      "automations_trigger_check",
+      sql`${table.triggerType} IN ('customer.created', 'order.created')`,
+    ),
+    check("automations_action_check", sql`${table.actionType} IN ('notify_customer')`),
+    check(
+      "automations_action_channel_check",
+      sql`${table.actionChannel} IN ('email', 'sms', 'whatsapp')`,
+    ),
   ],
 );
 
 export const insertAutomationSchema = createInsertSchema(automations).omit({
   id: true,
+  // The definition version is owned by the server and bumped on every change.
+  version: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -825,6 +851,205 @@ export const sessions = sqliteTable(
 );
 
 export type Session = typeof sessions.$inferSelect;
+
+// ==================== DURABLE OUTBOX (ADR 0001) ====================
+/**
+ * Every asynchronous side effect is enqueued in the same SQLite transaction as
+ * the business mutation that requested it. The embedded worker claims jobs with
+ * a lease so a crashed process can recover them, and no adapter may report a
+ * delivery that was not persisted here.
+ */
+export const outboxJobs = sqliteTable(
+  "outbox_jobs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tenantId: integer("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    payloadVersion: integer("payload_version").notNull().default(1),
+    payloadJson: text("payload_json").notNull().default("{}"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    availableAt: text("available_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: text("lease_expires_at"),
+    lastError: text("last_error"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    completedAt: text("completed_at"),
+  },
+  (table) => [
+    uniqueIndex("outbox_jobs_tenant_idempotency_unique").on(table.tenantId, table.idempotencyKey),
+    index("outbox_jobs_claim_idx").on(table.status, table.availableAt),
+    index("outbox_jobs_tenant_status_idx").on(table.tenantId, table.status),
+    index("outbox_jobs_lease_idx").on(table.leaseExpiresAt),
+    check(
+      "outbox_jobs_status_check",
+      sql`${table.status} IN ('pending', 'processing', 'retry_wait', 'succeeded', 'dead_letter', 'cancelled')`,
+    ),
+    check("outbox_jobs_attempts_check", sql`${table.attempts} >= 0`),
+    check("outbox_jobs_max_attempts_check", sql`${table.maxAttempts} > 0`),
+  ],
+);
+
+export type OutboxJob = typeof outboxJobs.$inferSelect;
+
+export const OUTBOX_JOB_STATUSES = [
+  "pending",
+  "processing",
+  "retry_wait",
+  "succeeded",
+  "dead_letter",
+  "cancelled",
+] as const;
+export type OutboxJobStatus = (typeof OUTBOX_JOB_STATUSES)[number];
+
+// ==================== CAMPAIGN EXECUTIONS ====================
+export const campaignExecutions = sqliteTable(
+  "campaign_executions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tenantId: integer("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    campaignId: integer("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    channel: text("channel").notNull(),
+    audience: text("audience").notNull(),
+    status: text("status").notNull().default("scheduled"),
+    requestedBy: text("requested_by").references(() => users.id, { onDelete: "set null" }),
+    totalRecipients: integer("total_recipients").notNull().default(0),
+    deliveredCount: integer("delivered_count").notNull().default(0),
+    failedCount: integer("failed_count").notNull().default(0),
+    skippedCount: integer("skipped_count").notNull().default(0),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+    finishedAt: text("finished_at"),
+  },
+  (table) => [
+    uniqueIndex("campaign_executions_tenant_idempotency_unique").on(
+      table.tenantId,
+      table.idempotencyKey,
+    ),
+    index("campaign_executions_tenant_campaign_idx").on(table.tenantId, table.campaignId),
+    index("campaign_executions_tenant_created_idx").on(table.tenantId, table.createdAt),
+    check(
+      "campaign_executions_status_check",
+      sql`${table.status} IN ('scheduled', 'processing', 'completed', 'failed', 'cancelled')`,
+    ),
+    check("campaign_executions_total_check", sql`${table.totalRecipients} >= 0`),
+  ],
+);
+
+export type CampaignExecution = typeof campaignExecutions.$inferSelect;
+
+export const campaignRecipients = sqliteTable(
+  "campaign_recipients",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tenantId: integer("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    executionId: integer("execution_id")
+      .notNull()
+      .references(() => campaignExecutions.id, { onDelete: "cascade" }),
+    campaignId: integer("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    customerId: integer("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(),
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    providerMessageId: text("provider_message_id"),
+    failureReason: text("failure_reason"),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    uniqueIndex("campaign_recipients_execution_customer_unique").on(
+      table.executionId,
+      table.customerId,
+    ),
+    index("campaign_recipients_tenant_status_idx").on(table.tenantId, table.status),
+    index("campaign_recipients_execution_status_idx").on(table.executionId, table.status),
+    check(
+      "campaign_recipients_status_check",
+      sql`${table.status} IN ('pending', 'delivered', 'failed', 'skipped_opt_out', 'not_configured')`,
+    ),
+  ],
+);
+
+export type CampaignRecipient = typeof campaignRecipients.$inferSelect;
+
+// ==================== AUTOMATION EXECUTIONS ====================
+export const automationExecutions = sqliteTable(
+  "automation_executions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tenantId: integer("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    automationId: integer("automation_id")
+      .notNull()
+      .references(() => automations.id, { onDelete: "cascade" }),
+    automationVersion: integer("automation_version").notNull().default(1),
+    triggerType: text("trigger_type").notNull(),
+    triggerReference: text("trigger_reference"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error"),
+    startedAt: text("started_at"),
+    finishedAt: text("finished_at"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+  (table) => [
+    uniqueIndex("automation_executions_tenant_idempotency_unique").on(
+      table.tenantId,
+      table.idempotencyKey,
+    ),
+    index("automation_executions_tenant_created_idx").on(table.tenantId, table.createdAt),
+    index("automation_executions_automation_idx").on(table.automationId, table.createdAt),
+    check(
+      "automation_executions_status_check",
+      sql`${table.status} IN ('pending', 'processing', 'succeeded', 'failed', 'skipped')`,
+    ),
+  ],
+);
+
+export type AutomationExecution = typeof automationExecutions.$inferSelect;
+
+/** Triggers the engine can actually observe. Anything else cannot be activated. */
+export const SUPPORTED_AUTOMATION_TRIGGERS = ["customer.created", "order.created"] as const;
+export type AutomationTrigger = (typeof SUPPORTED_AUTOMATION_TRIGGERS)[number];
+
+/** Actions the engine can actually perform. */
+export const SUPPORTED_AUTOMATION_ACTIONS = ["notify_customer"] as const;
+export type AutomationAction = (typeof SUPPORTED_AUTOMATION_ACTIONS)[number];
+
+export const SUPPORTED_DELIVERY_CHANNELS = ["email", "sms", "whatsapp"] as const;
+export type DeliveryChannel = (typeof SUPPORTED_DELIVERY_CHANNELS)[number];
 
 // ==================== AUTH SCHEMAS ====================
 export const loginSchema = z.object({
