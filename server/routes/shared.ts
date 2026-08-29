@@ -26,6 +26,9 @@ import {
   SUPPORTED_AUTOMATION_ACTIONS,
   SUPPORTED_AUTOMATION_TRIGGERS,
   SUPPORTED_DELIVERY_CHANNELS,
+  PRIVACY_POLICY_VERSION,
+  publicContactSchema,
+  publicDemoSchema,
 } from "@shared/schema";
 import {
   setupSession,
@@ -46,6 +49,7 @@ import {
   authIpLimiter,
   registerLimiter,
   passwordResetLimiter,
+  publicLeadLimiter,
 } from "../rateLimit";
 import { checkAndSeed } from "../seed";
 import { OutboxConflictError, getOutboxBacklog } from "../outbox";
@@ -520,6 +524,10 @@ export {
   loginSchema,
   normalizeEmail,
   passwordResetLimiter,
+  PRIVACY_POLICY_VERSION,
+  publicContactSchema,
+  publicDemoSchema,
+  publicLeadLimiter,
   registerLimiter,
   registerSchema,
   renderMetrics,

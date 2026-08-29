@@ -639,6 +639,11 @@ export const contactRequests = sqliteTable(
     phone: text("phone"),
     message: text("message").notNull(),
     status: text("status").notNull().default("pending"),
+    // LGPD: the lawful basis for holding this personal data is the consent the
+    // visitor gave, so when it was given and against which policy version is
+    // part of the record, not an assumption.
+    consentAcceptedAt: text("consent_accepted_at"),
+    consentPolicyVersion: text("consent_policy_version"),
     createdAt: text("created_at").default(sql`(datetime('now'))`),
     updatedAt: text("updated_at").default(sql`(datetime('now'))`),
   },
@@ -670,6 +675,9 @@ export const demoRequests = sqliteTable(
     preferredDate: text("preferred_date"),
     message: text("message"),
     status: text("status").notNull().default("pending"),
+    // See the note on contact_requests: consent is recorded, never assumed.
+    consentAcceptedAt: text("consent_accepted_at"),
+    consentPolicyVersion: text("consent_policy_version"),
     createdAt: text("created_at").default(sql`(datetime('now'))`),
     updatedAt: text("updated_at").default(sql`(datetime('now'))`),
   },
@@ -1099,6 +1107,53 @@ export type CpfLoginInput = z.infer<typeof cpfLoginSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
+
+/**
+ * Public lead capture (landing page).
+ *
+ * These endpoints are unauthenticated and persist personal data, so the payload
+ * is closed and bounded: unknown fields are refused (a client must not be able
+ * to set `status`), every string has a cap, consent is mandatory and a hidden
+ * honeypot field must stay empty.
+ */
+export const PRIVACY_POLICY_VERSION = "2026-08-29";
+
+const leadName = z.string().trim().min(2).max(120);
+const leadEmail = z.string().trim().toLowerCase().email().max(254);
+const leadPhone = z.string().trim().max(30).optional();
+/** Filled only by a bot: a real visitor never sees this field. */
+const honeypot = z.string().max(0, "Requisição rejeitada").optional().or(z.literal("")).optional();
+const consentAccepted = z.literal(true, {
+  errorMap: () => ({ message: "É necessário aceitar a política de privacidade" }),
+});
+
+export const publicContactSchema = z
+  .object({
+    name: leadName,
+    email: leadEmail,
+    phone: leadPhone,
+    message: z.string().trim().min(5).max(2000),
+    consent: consentAccepted,
+    website: honeypot,
+  })
+  .strict();
+
+export const publicDemoSchema = z
+  .object({
+    name: leadName,
+    email: leadEmail,
+    phone: leadPhone,
+    company: z.string().trim().min(2).max(120),
+    storeCount: z.string().trim().max(40).optional(),
+    preferredDate: z.string().trim().max(40).optional(),
+    message: z.string().trim().max(2000).optional(),
+    consent: consentAccepted,
+    website: honeypot,
+  })
+  .strict();
+
+export type PublicContactInput = z.infer<typeof publicContactSchema>;
+export type PublicDemoInput = z.infer<typeof publicDemoSchema>;
 
 // ==================== ROLE TYPES ====================
 export type UserRole = "super_admin" | "manager" | "seller";

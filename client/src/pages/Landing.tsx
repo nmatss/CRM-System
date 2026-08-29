@@ -87,7 +87,15 @@ export default function Landing() {
   const [isDemoOpen, setIsDemoOpen] = useState(false);
   const contactTriggerRef = useRef<HTMLElement | null>(null);
   const demoTriggerRef = useRef<HTMLElement | null>(null);
-  const [contactForm, setContactForm] = useState({ name: "", email: "", phone: "", message: "" });
+  const [contactForm, setContactForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    message: "",
+    consent: false,
+    // Honeypot: invisible to people, irresistible to bots. Must stay empty.
+    website: "",
+  });
   const [demoForm, setDemoForm] = useState({
     name: "",
     email: "",
@@ -96,6 +104,9 @@ export default function Landing() {
     storeCount: "",
     preferredDate: "",
     message: "",
+    consent: false,
+    // Honeypot: see the contact form.
+    website: "",
   });
 
   const openDialogFromCurrentFocus = (
@@ -131,7 +142,14 @@ export default function Landing() {
     onSuccess: () => {
       toast({ title: "Mensagem enviada!", description: "Entraremos em contato em breve." });
       setIsContactOpen(false);
-      setContactForm({ name: "", email: "", phone: "", message: "" });
+      setContactForm({
+        name: "",
+        email: "",
+        phone: "",
+        message: "",
+        consent: false,
+        website: "",
+      });
     },
     onError: () => {
       toast({
@@ -163,6 +181,8 @@ export default function Landing() {
       });
       setIsDemoOpen(false);
       setDemoForm({
+        consent: false,
+        website: "",
         name: "",
         email: "",
         phone: "",
@@ -746,10 +766,37 @@ export default function Landing() {
                 data-testid="input-contact-message"
               />
             </div>
+            <div className="hidden" aria-hidden="true">
+              <label htmlFor="contact-website">Não preencha este campo</label>
+              <input
+                id="contact-website"
+                name="website"
+                type="text"
+                tabIndex={-1}
+                autoComplete="off"
+                value={contactForm.website}
+                onChange={(e) => setContactForm({ ...contactForm, website: e.target.value })}
+              />
+            </div>
+            <div className="flex items-start gap-2">
+              <input
+                id="contact-consent"
+                type="checkbox"
+                required
+                checked={contactForm.consent}
+                onChange={(e) => setContactForm({ ...contactForm, consent: e.target.checked })}
+                className="mt-1 h-4 w-4 accent-cyan-500"
+                data-testid="input-contact-consent"
+              />
+              <Label htmlFor="contact-consent" className="text-xs font-normal text-gray-300">
+                Autorizo o contato e o tratamento dos meus dados para esta finalidade, conforme a
+                política de privacidade.
+              </Label>
+            </div>
             <Button
               type="submit"
               className="w-full bg-gradient-to-r from-cyan-500 to-blue-600"
-              disabled={contactMutation.isPending}
+              disabled={contactMutation.isPending || !contactForm.consent}
               data-testid="button-submit-contact"
             >
               {contactMutation.isPending ? (
@@ -868,10 +915,37 @@ export default function Landing() {
                 data-testid="input-demo-message"
               />
             </div>
+            <div className="hidden" aria-hidden="true">
+              <label htmlFor="demo-website">Não preencha este campo</label>
+              <input
+                id="demo-website"
+                name="website"
+                type="text"
+                tabIndex={-1}
+                autoComplete="off"
+                value={demoForm.website}
+                onChange={(e) => setDemoForm({ ...demoForm, website: e.target.value })}
+              />
+            </div>
+            <div className="flex items-start gap-2">
+              <input
+                id="demo-consent"
+                type="checkbox"
+                required
+                checked={demoForm.consent}
+                onChange={(e) => setDemoForm({ ...demoForm, consent: e.target.checked })}
+                className="mt-1 h-4 w-4 accent-cyan-500"
+                data-testid="input-demo-consent"
+              />
+              <Label htmlFor="demo-consent" className="text-xs font-normal text-gray-300">
+                Autorizo o contato e o tratamento dos meus dados para esta finalidade, conforme a
+                política de privacidade.
+              </Label>
+            </div>
             <Button
               type="submit"
               className="w-full bg-gradient-to-r from-cyan-500 to-blue-600"
-              disabled={demoMutation.isPending}
+              disabled={demoMutation.isPending || !demoForm.consent}
               data-testid="button-submit-demo"
             >
               {demoMutation.isPending ? (

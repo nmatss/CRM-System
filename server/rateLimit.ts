@@ -108,6 +108,24 @@ export const registerLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for the public lead-capture endpoints.
+ *
+ * These are unauthenticated and persist personal data, so the general limiter
+ * is far too permissive: at 100 requests per minute a bot could store tens of
+ * thousands of leads a day. A human fills these forms once.
+ */
+export const publicLeadLimiter = rateLimit({
+  windowMs: boundedEnvNumber("PUBLIC_LEAD_RATE_LIMIT_WINDOW_MS", 3_600_000, 60_000, 86_400_000),
+  max: boundedEnvNumber("PUBLIC_LEAD_RATE_LIMIT_MAX", 5, 1, 100_000),
+  keyGenerator: ipKey,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: {
+    error: "Muitas solicitações. Por favor, tente novamente mais tarde.",
+  },
+});
+
+/**
  * Rate limiter for password reset endpoints
  * Limits: 3 password reset attempts per hour per IP
  */

@@ -3005,7 +3005,11 @@ paths:
   /api/v1/contact:
     post:
       summary: Register a public contact request
-      description: Public endpoint.
+      description: |
+        Public endpoint, rate limited to 5 requests per hour per IP. The payload
+        is closed: unknown fields are rejected, so a caller cannot set the triage
+        status. `consent` must be `true` and is recorded with the policy version.
+        A non-empty `website` is a honeypot and the submission is discarded.
       operationId: createContactRequest
       tags:
         - Public
@@ -3190,7 +3194,9 @@ paths:
   /api/v1/demo:
     post:
       summary: Register a public demo request
-      description: Public endpoint.
+      description: |
+        Public endpoint, rate limited to 5 requests per hour per IP. Same closed
+        payload, mandatory recorded consent and honeypot as `/contact`.
       operationId: createDemoRequest
       tags:
         - Public
@@ -3951,5 +3957,26 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/privacy-policy-version:
+    get:
+      summary: Privacy policy version the public forms consent against
+      description: Public endpoint. The landing page records this version together with the visitor's consent, so the lawful basis for holding the lead data is auditable.
+      operationId: getPrivacyPolicyVersion
+      tags:
+        - Public
+      responses:
+        "200":
+          description: Current policy version
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    example: "2026-08-29"
         "500":
           $ref: "#/components/responses/InternalError"
