@@ -384,7 +384,7 @@ export default function Orders() {
               : "default";
     const className =
       status === "Pago"
-        ? "bg-emerald-600 hover:bg-emerald-700"
+        ? "bg-emerald-700 hover:bg-emerald-800"
         : status === "Processando"
           ? "bg-amber-500 hover:bg-amber-600 border-transparent text-white"
           : "";

@@ -440,6 +440,7 @@ export default function Customers() {
                 }}
               >
                 <SelectTrigger
+                  aria-label="Filtrar por segmento"
                   className="h-8 w-full sm:w-[150px]"
                   data-testid="select-segment-filter"
                 >

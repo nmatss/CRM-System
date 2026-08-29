@@ -422,6 +422,7 @@ export default function Products() {
             }}
           >
             <SelectTrigger
+              aria-label="Filtrar por status"
               className="w-full sm:w-[150px]"
               data-testid="select-product-status-filter"
             >
@@ -524,6 +525,7 @@ export default function Products() {
                               data-testid={`button-menu-${product.id}`}
                             >
                               <MoreHorizontal className="h-4 w-4" />
+                              <span className="sr-only">Ações do produto {product.name}</span>
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
@@ -584,7 +586,7 @@ export default function Products() {
                         <span
                           className={
                             product.stock > 10
-                              ? "text-emerald-600"
+                              ? "text-emerald-700"
                               : product.stock > 0
                                 ? "text-amber-600"
                                 : "text-rose-600"

@@ -19,14 +19,14 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* Spacing Scale (consistent gaps, margins, paddings) */
-  --spacing-xs: 0.5rem; /* 8px */
-  --spacing-sm: 0.75rem; /* 12px */
-  --spacing-md: 1rem; /* 16px */
-  --spacing-lg: 1.5rem; /* 24px */
-  --spacing-xl: 2rem; /* 32px */
-  --spacing-2xl: 3rem; /* 48px */
-  --spacing-3xl: 4rem; /* 64px */
+  /*
+    Named spacing tokens are deliberately absent.
+    Tailwind v4 resolves `max-w-<name>` from the spacing namespace when a
+    matching `--spacing-<name>` exists, so declaring `--spacing-xs: 0.5rem`
+    silently turned every `max-w-xs` in the app into an 8px box. The named
+    utilities (`p-md`, `gap-lg`, ...) were never used; numeric spacing
+    (`p-4`, `gap-6`) stays available and is what the codebase uses.
+  */
 
   /* Typography Scale */
   --text-xs: 0.75rem; /* 12px */
@@ -131,11 +131,13 @@
   --primary: 271 91% 55%; /* Purple #7c3aed */
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 187 94% 43%; /* Cyan */
+  /* Darkened from 43% so white text reaches the 4.5:1 contrast minimum. */
+  --secondary: 187 94% 26%; /* Cyan */
   --secondary-foreground: 0 0% 100%;
 
   --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  /* Darkened from 46.9% so muted text also clears AA on tinted card surfaces. */
+  --muted-foreground: 215.4 16.3% 42%;
 
   --accent: 271 100% 96%;
   --accent-foreground: 271 91% 35%;
@@ -179,7 +181,8 @@
   --primary: 271 91% 55%; /* Purple #7c3aed */
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 187 94% 43%; /* Cyan */
+  /* Darkened from 43% so white text reaches the 4.5:1 contrast minimum. */
+  --secondary: 187 94% 26%; /* Cyan */
   --secondary-foreground: 0 0% 100%;
 
   --muted: 217.2 32.6% 17.5%;
@@ -305,21 +308,22 @@
     @apply bg-card rounded-lg border border-border shadow-sm hover:shadow-md transition-shadow;
   }
 
-  /* Spacing Utilities */
+  /* Named gap helpers. Literal values, because the matching theme tokens were
+     removed: they shadowed Tailwind's container scale used by `max-w-*`. */
   .spacing-xs {
-    gap: var(--spacing-xs);
+    gap: 0.5rem;
   }
   .spacing-sm {
-    gap: var(--spacing-sm);
+    gap: 0.75rem;
   }
   .spacing-md {
-    gap: var(--spacing-md);
+    gap: 1rem;
   }
   .spacing-lg {
-    gap: var(--spacing-lg);
+    gap: 1.5rem;
   }
   .spacing-xl {
-    gap: var(--spacing-xl);
+    gap: 2rem;
   }
 
   /* Mobile-friendly table wrapper */

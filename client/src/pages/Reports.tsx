@@ -722,7 +722,7 @@ export default function Reports() {
                   >
                     R$ 45.680
                   </div>
-                  <p className="text-xs text-emerald-600">24.8% de resgate</p>
+                  <p className="text-xs text-emerald-700">24.8% de resgate</p>
                 </CardContent>
               </Card>
 
@@ -751,7 +751,7 @@ export default function Reports() {
                   <div className="text-lg sm:text-2xl font-bold" data-testid="text-redemption-rate">
                     24.8%
                   </div>
-                  <p className="text-xs text-emerald-600">+2.1% vs mês anterior</p>
+                  <p className="text-xs text-emerald-700">+2.1% vs mês anterior</p>
                 </CardContent>
               </Card>
 
@@ -764,7 +764,7 @@ export default function Reports() {
                   <div className="text-lg sm:text-2xl font-bold" data-testid="text-cashback-roi">
                     12.0x
                   </div>
-                  <p className="text-xs text-emerald-600">Retorno sobre investimento</p>
+                  <p className="text-xs text-emerald-700">Retorno sobre investimento</p>
                 </CardContent>
               </Card>
             </div>
@@ -921,7 +921,7 @@ export default function Reports() {
                       <TableCell className="text-right hidden md:table-cell text-xs sm:text-sm">
                         32.2%
                       </TableCell>
-                      <TableCell className="text-right text-emerald-600 font-semibold text-xs sm:text-sm">
+                      <TableCell className="text-right text-emerald-700 font-semibold text-xs sm:text-sm">
                         15.2x
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">
@@ -940,7 +940,7 @@ export default function Reports() {
                       <TableCell className="text-right hidden md:table-cell text-xs sm:text-sm">
                         23.8%
                       </TableCell>
-                      <TableCell className="text-right text-emerald-600 font-semibold text-xs sm:text-sm">
+                      <TableCell className="text-right text-emerald-700 font-semibold text-xs sm:text-sm">
                         11.4x
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">
@@ -959,7 +959,7 @@ export default function Reports() {
                       <TableCell className="text-right hidden md:table-cell text-xs sm:text-sm">
                         24.0%
                       </TableCell>
-                      <TableCell className="text-right text-emerald-600 font-semibold text-xs sm:text-sm">
+                      <TableCell className="text-right text-emerald-700 font-semibold text-xs sm:text-sm">
                         9.8x
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">
@@ -978,7 +978,7 @@ export default function Reports() {
                       <TableCell className="text-right hidden md:table-cell text-xs sm:text-sm">
                         20.0%
                       </TableCell>
-                      <TableCell className="text-right text-emerald-600 font-semibold text-xs sm:text-sm">
+                      <TableCell className="text-right text-emerald-700 font-semibold text-xs sm:text-sm">
                         13.5x
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">
@@ -1079,7 +1079,7 @@ export default function Reports() {
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-emerald-600 text-base sm:text-lg">42%</p>
+                        <p className="font-bold text-emerald-700 text-base sm:text-lg">42%</p>
                         <p className="text-[10px] sm:text-xs text-muted-foreground">de recompra</p>
                       </div>
                     </div>

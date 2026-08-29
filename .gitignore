@@ -25,5 +25,6 @@ data/
 # Coverage
 coverage/
 
-# Local browser-validation artifacts
-output/playwright/
+# Local browser-validation artifacts (Playwright reports, traces, screenshots)
+output/
+test-results/

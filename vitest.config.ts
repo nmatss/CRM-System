@@ -7,6 +7,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
+    // Playwright owns everything under e2e/; vitest must never pick it up.
+    exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"],
     setupFiles: ["./vitest.setup.ts"],
     css: true,
     projects: [
