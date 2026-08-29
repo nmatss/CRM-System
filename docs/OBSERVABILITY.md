@@ -66,6 +66,26 @@ de 24 horas e o RTO medido no ensaio de restauracao foi inferior a 5 minutos
 (copiar o `.bak` para o volume e reiniciar o processo). Reduzir o RPO exige
 backup mais frequente, o que o mesmo script suporta apenas mudando o agendador.
 
+## Desempenho medido
+
+`server/__tests__/performance.test.ts` popula um tenant com 4.000 clientes,
+500 produtos, 4.000 pedidos e 4.000 itens e mede os caminhos de leitura. Valores
+observados em maquina de desenvolvimento (SQLite local, Node 20.19.0):
+
+| Caminho                             | Medido   | Orcamento no teste |
+| ----------------------------------- | -------- | ------------------ |
+| Listagem paginada de clientes       | 1,1 ms   | 400 ms             |
+| Pagina profunda (offset ~3.940)     | 3,1 ms   | 500 ms             |
+| Busca textual com filtro            | 3,0 ms   | 500 ms             |
+| Relatorio de vendas do mes inteiro  | 32,0 ms  | 1.500 ms           |
+| Composicao do dashboard             | 27,3 ms  | 1.500 ms           |
+| Claim na outbox com 2.000 pendentes | < 100 ms | 100 ms             |
+
+Os orcamentos sao folgados de proposito: o teste existe para detectar um full
+scan acidental ou um N+1 introduzido por regressao, nao para policiar variacao
+de milissegundos em runner compartilhado. Se a margem cair de forma sustentada,
+o gargalo deve ser investigado antes de afrouxar o orcamento.
+
 ## Regras de alerta
 
 ```yaml
