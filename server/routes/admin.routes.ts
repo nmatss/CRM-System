@@ -497,6 +497,7 @@ export function registerAdminRoutes(v1Router: Router): void {
       "/customer-interactions",
       "/seller-ranking",
       "/reports",
+      "/search",
       "/import",
       "/export",
       "/notifications",

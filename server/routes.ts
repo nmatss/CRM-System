@@ -25,6 +25,7 @@ import { registerPublicContactRoutes } from "./routes/public-contact.routes";
 import { registerAdminLeadRoutes } from "./routes/admin-leads.routes";
 import { registerSellerRoutes } from "./routes/seller.routes";
 import { registerReportRoutes } from "./routes/reports.routes";
+import { registerSearchRoutes } from "./routes/search.routes";
 import { registerImportExportRoutes } from "./routes/import-export.routes";
 import { registerNotificationRoutes } from "./routes/notifications.routes";
 import { registerDashboardChartRoutes } from "./routes/dashboard-charts.routes";
@@ -73,6 +74,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerAdminLeadRoutes(v1Router);
   registerSellerRoutes(v1Router);
   registerReportRoutes(v1Router);
+  registerSearchRoutes(v1Router);
   registerImportExportRoutes(v1Router);
   registerNotificationRoutes(v1Router);
   registerDashboardChartRoutes(v1Router);

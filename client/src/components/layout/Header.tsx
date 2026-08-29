@@ -36,6 +36,12 @@ import {
   parseNotificationsResponse,
   type HeaderNotification,
 } from "@/lib/notifications";
+import {
+  describeSearchResult,
+  isSearchable,
+  searchTypeLabel,
+  type SearchResult,
+} from "@/lib/globalSearch";
 import zippiLogo from "@assets/generated_images/zippi_crm_modern_logo.png";
 
 interface HeaderProps {
@@ -50,6 +56,36 @@ export function Header({ onMenuClick }: HeaderProps) {
   const [showMobileSearch, setShowMobileSearch] = useState(false);
   const mobileSearchButtonRef = useRef<HTMLButtonElement>(null);
   const shouldRestoreSearchFocusRef = useRef(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedTerm, setDebouncedTerm] = useState("");
+
+  // Debounced so typing does not fire one request per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedTerm(searchTerm.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const { data: searchResult, isFetching: isSearching } = useQuery<SearchResult>({
+    queryKey: ["search", user?.tenantId, debouncedTerm],
+    queryFn: async () => {
+      const response = await apiRequest(
+        "GET",
+        `/search?q=${encodeURIComponent(debouncedTerm)}&limit=5`,
+      );
+      return (await response.json()) as SearchResult;
+    },
+    enabled: Boolean(user?.tenantId) && isSearchable(debouncedTerm),
+    staleTime: 30_000,
+  });
+
+  const showSearchResults = isSearchable(searchTerm);
+
+  function goToResult(href: string) {
+    setSearchTerm("");
+    setDebouncedTerm("");
+    setShowMobileSearch(false);
+    setLocation(href);
+  }
   const {
     data: notifications = [],
     isLoading: areNotificationsLoading,
@@ -126,11 +162,60 @@ export function Header({ onMenuClick }: HeaderProps) {
           />
           <Input
             type="search"
-            aria-label="Buscar clientes e campanhas"
-            placeholder="Buscar clientes, campanhas..."
+            aria-label="Buscar clientes, produtos e pedidos"
+            placeholder="Buscar clientes, produtos, pedidos..."
             className="w-full bg-muted/50 border-0 pl-10 focus-visible:ring-primary"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
             data-testid="input-search"
           />
+          {showSearchResults && (
+            <div
+              className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-md border bg-popover shadow-lg"
+              role="region"
+              aria-label="Resultados da busca"
+            >
+              <p className="sr-only" aria-live="polite">
+                {isSearching ? "Buscando..." : describeSearchResult(searchResult)}
+              </p>
+              {isSearching && !searchResult ? (
+                <p className="px-3 py-3 text-sm text-muted-foreground">Buscando...</p>
+              ) : searchResult && searchResult.hits.length > 0 ? (
+                <>
+                  <ul className="max-h-80 overflow-y-auto py-1">
+                    {searchResult.hits.map((hit) => (
+                      <li key={`${hit.type}-${hit.id}`}>
+                        <button
+                          type="button"
+                          onClick={() => goToResult(hit.href)}
+                          className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-muted"
+                        >
+                          <span className="flex items-center gap-2 text-sm font-medium">
+                            {hit.title}
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                              {searchTypeLabel(hit.type)}
+                            </span>
+                          </span>
+                          {hit.subtitle && (
+                            <span className="text-xs text-muted-foreground">{hit.subtitle}</span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {searchResult.truncated && (
+                    <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+                      {describeSearchResult(searchResult)} Refine o termo para ver os demais.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="px-3 py-3 text-sm text-muted-foreground">
+                  Nenhum resultado encontrado.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -144,20 +229,55 @@ export function Header({ onMenuClick }: HeaderProps) {
             />
             <Input
               type="search"
-              aria-label="Buscar clientes e campanhas"
+              aria-label="Buscar clientes, produtos e pedidos"
               placeholder="Buscar..."
               className="w-full bg-muted/50 border-0 pl-10 pr-3 h-8 text-sm focus-visible:ring-primary"
               data-testid="input-search-mobile"
               autoFocus
-              onBlur={() => setShowMobileSearch(false)}
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.preventDefault();
                   shouldRestoreSearchFocusRef.current = true;
+                  setSearchTerm("");
                   setShowMobileSearch(false);
                 }
               }}
             />
+            {showSearchResults && (
+              <div
+                className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-md border bg-popover shadow-lg"
+                role="region"
+                aria-label="Resultados da busca"
+              >
+                {isSearching && !searchResult ? (
+                  <p className="px-3 py-3 text-sm text-muted-foreground">Buscando...</p>
+                ) : searchResult && searchResult.hits.length > 0 ? (
+                  <ul className="max-h-72 overflow-y-auto py-1">
+                    {searchResult.hits.map((hit) => (
+                      <li key={`${hit.type}-${hit.id}`}>
+                        <button
+                          type="button"
+                          onClick={() => goToResult(hit.href)}
+                          className="flex w-full flex-col items-start px-3 py-2 text-left hover:bg-muted"
+                        >
+                          <span className="text-sm font-medium">{hit.title}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {searchTypeLabel(hit.type)}
+                            {hit.subtitle ? ` · ${hit.subtitle}` : ""}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="px-3 py-3 text-sm text-muted-foreground">
+                    Nenhum resultado encontrado.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       ) : (
