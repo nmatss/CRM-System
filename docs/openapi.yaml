@@ -3307,7 +3307,13 @@ paths:
   /api/v1/import/customers:
     post:
       summary: Import customers from a parsed payload
-      description: Manager role required. Rows are validated individually and sanitized.
+      description: |
+        Manager role required. `mode` defaults to `dry-run`, which validates,
+        resolves duplicates and projects the result **without writing anything**;
+        `commit` applies it. Duplicates are matched by normalized email inside
+        the active tenant and inside the file itself, and `onDuplicate` chooses
+        between `skip`, `update` and `fail`. With `atomic: true` a single invalid
+        row refuses the whole import with 409 and nothing is written.
       operationId: importCustomers
       tags:
         - Import and export
@@ -3334,13 +3340,22 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Import refused by the caller's own rules (duplicates with `fail`, or an invalid row with `atomic`)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         "500":
           $ref: "#/components/responses/InternalError"
 
   /api/v1/import/products:
     post:
       summary: Import products from a parsed payload
-      description: Manager role required. Rows are validated individually and sanitized.
+      description: |
+        Manager role required. Same contract as `/import/customers`; duplicates
+        are matched by normalized product name inside the active tenant.
       operationId: importProducts
       tags:
         - Import and export
@@ -3367,6 +3382,13 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Import refused by the caller's own rules (duplicates with `fail`, or an invalid row with `atomic`)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         "500":
           $ref: "#/components/responses/InternalError"
 

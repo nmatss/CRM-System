@@ -63,6 +63,12 @@ import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import {
+  describeImportPlan,
+  describeImportResult,
+  isNoOpImport,
+  type ImportOutcome,
+} from "@/lib/importPreview";
 import { downloadJsonAsCsv } from "@/lib/csvExport";
 import { fetchPaginatedQuery } from "@/lib/paginatedQuery";
 import { DataPagination } from "@/components/ui/data-pagination";
@@ -118,15 +124,18 @@ function parseCSV(csvText: string): any[] {
     headers.forEach((header, index) => {
       row[header] = values[index] || "";
     });
-    if ((row.name || row.nome) && (row.email || row.e_mail)) {
+    // Every non-empty line is forwarded. Dropping rows here would hide them from
+    // the user; the server validates each one and reports it by line number.
+    if (values.some((value) => value !== "")) {
+      // Only what the file actually carries. Defaulting `lastPurchase` to today
+      // invented a purchase, and defaulting `ltv` to zero invented a value.
       data.push({
-        name: row.name || row.nome,
-        email: row.email || row.e_mail,
+        name: row.name || row.nome || "",
+        email: row.email || row.e_mail || "",
         phone: row.phone || row.telefone || "",
         segment: row.segment || row.segmento || "Novo",
-        ltv: row.ltv || "R$ 0,00",
-        lastPurchase:
-          row.lastpurchase || row.ultimacompra || new Date().toLocaleDateString("pt-BR"),
+        ltv: row.ltv || "",
+        lastPurchase: row.lastpurchase || row.ultimacompra || "",
         favoriteCategory: row.favoritecategory || row.categoriafavorita || "",
       });
     }
@@ -138,6 +147,8 @@ export default function Customers() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importPreview, setImportPreview] = useState<ImportOutcome | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
@@ -262,7 +273,9 @@ export default function Customers() {
         return;
       }
       setImportData(parsed);
+      setImportPreview(null);
       setIsImportDialogOpen(true);
+      void previewImport(parsed);
     };
     reader.readAsText(file);
     if (fileInputRef.current) {
@@ -270,19 +283,46 @@ export default function Customers() {
     }
   };
 
+  /** Asks the server what a commit would do, without writing anything. */
+  const previewImport = async (rows: Record<string, string>[]) => {
+    setIsPreviewing(true);
+    try {
+      const response = await apiRequest("POST", "/import/customers", {
+        rows,
+        mode: "dry-run",
+        onDuplicate: "skip",
+      });
+      setImportPreview((await response.json()) as ImportOutcome);
+    } catch {
+      setImportPreview(null);
+      toast({
+        title: "Erro",
+        description: "Não foi possível analisar o arquivo.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPreviewing(false);
+    }
+  };
+
   const handleImport = async () => {
     if (importData.length === 0) return;
     setIsImporting(true);
     try {
-      const response = await apiRequest("POST", "/import/customers", { customers: importData });
-      const result = await response.json();
+      const response = await apiRequest("POST", "/import/customers", {
+        rows: importData,
+        mode: "commit",
+        onDuplicate: "skip",
+      });
+      const result = (await response.json()) as ImportOutcome;
       queryClient.invalidateQueries({ queryKey: ["customers"] });
       toast({
-        title: "Sucesso!",
-        description: `${result.imported ?? result.success ?? importData.length} clientes importados.`,
+        title: "Importação concluída",
+        description: describeImportResult(result, "clientes"),
       });
       setIsImportDialogOpen(false);
       setImportData([]);
+      setImportPreview(null);
     } catch {
       toast({
         title: "Erro",
@@ -898,6 +938,45 @@ export default function Customers() {
             </DialogTitle>
             <DialogDescription>Revise os dados do arquivo CSV antes de importar.</DialogDescription>
           </DialogHeader>
+          <div
+            className="rounded-md border bg-muted/40 p-3 text-sm"
+            role="status"
+            data-testid="import-preview"
+          >
+            {isPreviewing ? (
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Analisando o arquivo...
+              </span>
+            ) : importPreview ? (
+              <>
+                <p className="font-medium">{describeImportPlan(importPreview, "clientes")}</p>
+                {importPreview.totals.duplicates > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Linhas já existentes são ignoradas: reimportar o mesmo arquivo não duplica a
+                    base.
+                  </p>
+                )}
+                {importPreview.issues.length > 0 && (
+                  <ul className="mt-2 space-y-0.5 text-xs text-destructive">
+                    {importPreview.issues.slice(0, 5).map((issue) => (
+                      <li key={`${issue.row}-${issue.field ?? ""}-${issue.message}`}>
+                        Linha {issue.row}
+                        {issue.field ? ` · ${issue.field}` : ""}: {issue.message}
+                      </li>
+                    ))}
+                    {importPreview.totalIssues > 5 && (
+                      <li>e mais {importPreview.totalIssues - 5} problema(s).</li>
+                    )}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <span className="text-muted-foreground">
+                Nenhuma análise disponível para este arquivo.
+              </span>
+            )}
+          </div>
           {importData.length > 0 ? (
             <div className="overflow-x-auto -mx-6 sm:mx-0">
               <ScrollArea className="max-h-[300px] border rounded-md">
@@ -933,6 +1012,7 @@ export default function Customers() {
               onClick={() => {
                 setIsImportDialogOpen(false);
                 setImportData([]);
+                setImportPreview(null);
               }}
               data-testid="button-cancel-import"
             >
@@ -940,12 +1020,19 @@ export default function Customers() {
             </Button>
             <Button
               onClick={handleImport}
-              disabled={importData.length === 0 || isImporting}
+              disabled={
+                importData.length === 0 ||
+                isImporting ||
+                isPreviewing ||
+                (importPreview !== null && isNoOpImport(importPreview))
+              }
               className="w-full sm:w-auto"
               data-testid="button-confirm-import"
             >
               {isImporting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Importar {importData.length} clientes
+              {importPreview
+                ? `Importar ${importPreview.totals.created + importPreview.totals.updated} clientes`
+                : `Importar ${importData.length} clientes`}
             </Button>
           </DialogFooter>
         </DialogContent>

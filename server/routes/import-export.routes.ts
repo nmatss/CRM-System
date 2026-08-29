@@ -1,17 +1,26 @@
 import type { Router } from "express";
 import {
-  MAX_IMPORT_ROWS,
   getAuditContext,
   getTenantId,
+  handleZodError,
   logger,
-  parseImportedNumber,
   requireAuth,
   requireRole,
   sanitizeExportRows,
-  sanitizeImportedText,
   sendError,
   storage,
+  z,
+  ZodError,
 } from "./shared";
+import {
+  DUPLICATE_STRATEGIES,
+  IMPORT_MODES,
+  ImportRefusedError,
+  MAX_IMPORT_ROWS,
+  importCustomers,
+  importProducts,
+  type ImportOutcome,
+} from "../services/bulkImport";
 import type { Request, Response } from "./shared";
 
 /**
@@ -19,6 +28,75 @@ import type { Request, Response } from "./shared";
  */
 export function registerImportExportRoutes(v1Router: Router): void {
   // ==================== IMPORT/EXPORT ROUTES ====================
+
+  /**
+   * Import requests are explicit about what they will do. `dry-run` is the
+   * default because committing a spreadsheet blind is how a catalogue gets
+   * duplicated, and the caller has to opt into writing.
+   */
+  const importRequestSchema = z
+    .object({
+      rows: z.array(z.unknown()).max(MAX_IMPORT_ROWS).optional(),
+      // Legacy field names kept so existing callers keep working.
+      data: z.array(z.unknown()).max(MAX_IMPORT_ROWS).optional(),
+      customers: z.array(z.unknown()).max(MAX_IMPORT_ROWS).optional(),
+      products: z.array(z.unknown()).max(MAX_IMPORT_ROWS).optional(),
+      mode: z.enum(IMPORT_MODES).default("dry-run"),
+      onDuplicate: z.enum(DUPLICATE_STRATEGIES).default("skip"),
+      atomic: z.boolean().default(false),
+    })
+    .strict();
+
+  function readImportRequest(req: Request) {
+    const parsed = importRequestSchema.parse(req.body ?? {});
+    const rows = parsed.rows ?? parsed.data ?? parsed.customers ?? parsed.products ?? [];
+    return { rows, mode: parsed.mode, onDuplicate: parsed.onDuplicate, atomic: parsed.atomic };
+  }
+
+  function handleImportError(req: Request, res: Response, error: unknown, entity: string) {
+    if (error instanceof ImportRefusedError) {
+      // Not a server failure: the caller asked to be stopped.
+      return res.status(409).json({ error: error.message, ...error.outcome });
+    }
+    if (error instanceof ZodError) {
+      const parsed = handleZodError(error);
+      return sendError(res, 400, parsed.message, "VALIDATION_ERROR", parsed.details);
+    }
+    logger.error(`${entity} import failed`, {
+      requestId: req.requestId,
+      endpoint: `/api/v1/import/${entity}`,
+      userId: req.session.user?.id,
+      tenantId: getTenantId(req),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return res
+      .status(500)
+      .json({ error: `Erro ao importar ${entity === "customers" ? "clientes" : "produtos"}` });
+  }
+
+  async function auditImport(
+    req: Request,
+    tenantId: number,
+    entity: string,
+    outcome: ImportOutcome,
+  ) {
+    if (outcome.mode !== "commit") return;
+    await storage.appendAuditEvent({
+      ...getAuditContext(req),
+      tenantId,
+      action: "data.imported",
+      targetType: entity,
+      outcome: "success",
+      metadata: {
+        entityType: entity,
+        rowCount: outcome.totals.received,
+        created: outcome.totals.created,
+        updated: outcome.totals.updated,
+        skipped: outcome.totals.skipped,
+      },
+    });
+  }
+
   v1Router.post(
     "/import/customers",
     requireAuth,
@@ -30,70 +108,16 @@ export function registerImportExportRoutes(v1Router: Router): void {
           return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
         }
 
-        const data = Array.isArray(req.body?.data)
-          ? req.body.data
-          : Array.isArray(req.body?.customers)
-            ? req.body.customers
-            : [];
-        if (!Array.isArray(data) || data.length === 0) {
-          return res.status(400).json({ error: "Dados inválidos. Envie um array de clientes." });
-        }
-        if (data.length > MAX_IMPORT_ROWS) {
-          return res
-            .status(413)
-            .json({ error: `Importação limitada a ${MAX_IMPORT_ROWS} clientes por envio.` });
+        const request = readImportRequest(req);
+        if (request.rows.length === 0) {
+          return sendError(res, 400, "Envie ao menos uma linha", "EMPTY_IMPORT");
         }
 
-        const results = { success: 0, errors: [] as string[] };
-
-        for (let index = 0; index < data.length; index++) {
-          const row = data[index];
-          try {
-            if (!row || typeof row !== "object" || Array.isArray(row)) {
-              results.errors.push(`Linha ${index + 1}: formato inválido`);
-              continue;
-            }
-            const customerData = {
-              tenantId,
-              name: sanitizeImportedText(row.name || row.nome),
-              email: sanitizeImportedText(row.email),
-              phone: sanitizeImportedText(row.phone || row.telefone),
-              segment: sanitizeImportedText(row.segment || row.segmento, "Novo"),
-              ltv: Math.max(0, parseImportedNumber(row.ltv ?? row.valor ?? row.valorTotal)),
-              lastPurchase: sanitizeImportedText(
-                row.lastPurchase || row.ultimaCompra || new Date().toLocaleDateString("pt-BR"),
-              ),
-              favoriteCategory: sanitizeImportedText(row.favoriteCategory || row.categoriaFavorita),
-            };
-
-            if (!customerData.name) {
-              results.errors.push(`Linha ${index + 1}: cliente sem nome`);
-              continue;
-            }
-
-            await storage.createCustomer(customerData);
-            results.success++;
-          } catch (err: any) {
-            results.errors.push(`Linha ${index + 1}: ${err.message}`);
-          }
-        }
-
-        res.json({
-          message: `Importação concluída: ${results.success} clientes importados.`,
-          success: results.success,
-          errors: results.errors.slice(0, 10),
-          totalErrors: results.errors.length,
-        });
+        const outcome = importCustomers({ tenantId, ...request });
+        await auditImport(req, tenantId, "customers", outcome);
+        res.json(outcome);
       } catch (error) {
-        logger.error("Customer import failed", {
-          requestId: (req as any).requestId,
-          endpoint: "/api/v1/import/customers",
-          userId: req.session.user?.id,
-          tenantId: getTenantId(req),
-          error: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-        });
-        res.status(500).json({ error: "Erro ao importar clientes" });
+        return handleImportError(req, res, error, "customers");
       }
     },
   );
@@ -109,67 +133,16 @@ export function registerImportExportRoutes(v1Router: Router): void {
           return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
         }
 
-        const data = Array.isArray(req.body?.data)
-          ? req.body.data
-          : Array.isArray(req.body?.products)
-            ? req.body.products
-            : [];
-        if (!Array.isArray(data) || data.length === 0) {
-          return res.status(400).json({ error: "Dados inválidos. Envie um array de produtos." });
-        }
-        if (data.length > MAX_IMPORT_ROWS) {
-          return res
-            .status(413)
-            .json({ error: `Importação limitada a ${MAX_IMPORT_ROWS} produtos por envio.` });
+        const request = readImportRequest(req);
+        if (request.rows.length === 0) {
+          return sendError(res, 400, "Envie ao menos uma linha", "EMPTY_IMPORT");
         }
 
-        const results = { success: 0, errors: [] as string[] };
-
-        for (let index = 0; index < data.length; index++) {
-          const row = data[index];
-          try {
-            if (!row || typeof row !== "object" || Array.isArray(row)) {
-              results.errors.push(`Linha ${index + 1}: formato inválido`);
-              continue;
-            }
-            const productData = {
-              tenantId,
-              name: sanitizeImportedText(row.name || row.nome),
-              category: sanitizeImportedText(row.category || row.categoria),
-              price: Math.max(0, parseImportedNumber(row.price ?? row.preco)),
-              stock: Math.max(0, Math.trunc(parseImportedNumber(row.stock ?? row.estoque))),
-              status: sanitizeImportedText(row.status, "Ativo"),
-              image: sanitizeImportedText(row.image || row.imagem),
-            };
-
-            if (!productData.name) {
-              results.errors.push(`Linha ${index + 1}: produto sem nome`);
-              continue;
-            }
-
-            await storage.createProduct(productData);
-            results.success++;
-          } catch (err: any) {
-            results.errors.push(`Linha ${index + 1}: ${err.message}`);
-          }
-        }
-
-        res.json({
-          message: `Importação concluída: ${results.success} produtos importados.`,
-          success: results.success,
-          errors: results.errors.slice(0, 10),
-          totalErrors: results.errors.length,
-        });
+        const outcome = importProducts({ tenantId, ...request });
+        await auditImport(req, tenantId, "products", outcome);
+        res.json(outcome);
       } catch (error) {
-        logger.error("Product import failed", {
-          requestId: (req as any).requestId,
-          endpoint: "/api/v1/import/products",
-          userId: req.session.user?.id,
-          tenantId: getTenantId(req),
-          error: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : undefined,
-        });
-        res.status(500).json({ error: "Erro ao importar produtos" });
+        return handleImportError(req, res, error, "products");
       }
     },
   );
