@@ -4,6 +4,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Lets /api/health and the metrics identify the exact artifact.
+        BUILD_COMMIT: ${APP_VERSION:-unknown}
     container_name: zippcrm-app
     restart: unless-stopped
     ports:

@@ -41,6 +41,8 @@ export ADMIN_EMAIL="admin@example.com"
 export ADMIN_PASSWORD="<senha-forte>"
 export ALLOW_EMPTY_DATABASE_BOOTSTRAP=true
 export APP_VERSION="$(git rev-parse --short HEAD)"
+# APP_VERSION vira a tag da imagem e tambem o BUILD_COMMIT embutido, entao
+# /api/health e as metricas identificam exatamente o artefato em execucao.
 docker compose up --build -d
 docker compose logs -f app
 curl -f http://localhost:6000/api/health
