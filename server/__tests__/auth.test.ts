@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { Request, Response, NextFunction } from 'express';
-import bcrypt from 'bcrypt';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { Request, Response, NextFunction } from "express";
+import bcrypt from "bcrypt";
 import {
   hashPassword,
   comparePassword,
@@ -9,35 +9,79 @@ import {
   requireTenantAccess,
   requireRole,
   createSuperAdminIfNotExists,
-} from '../auth';
-import { storage } from '../storage';
-import type { SessionUser } from '@shared/schema';
+} from "../auth";
+import { storage } from "../storage";
+import type { SessionUser } from "@shared/schema";
 
 // Mock the storage module
-vi.mock('../storage', () => ({
+vi.mock("../storage", () => ({
   storage: {
     getUserByEmail: vi.fn(),
+    getUser: vi.fn(),
+    getTenant: vi.fn(),
+    getTenantUser: vi.fn(),
     createUser: vi.fn(),
   },
 }));
 
 // Mock bcrypt
-vi.mock('bcrypt', () => ({
+vi.mock("bcrypt", () => ({
   default: {
     hash: vi.fn(),
     compare: vi.fn(),
   },
 }));
 
-describe('Authentication Tests', () => {
+describe("Authentication Tests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getUser).mockImplementation(async (id: string) => ({
+      id,
+      email: id === "123" ? "admin@example.com" : `${id}@example.com`,
+      cpf: null,
+      sellerCode: null,
+      password: "hashedPassword",
+      name: id === "123" ? "Super Admin" : "Test User",
+      phone: null,
+      isSuperAdmin: id === "123",
+      mustChangePassword: false,
+      emailVerified: true,
+      status: "active",
+      lastPasswordChange: null,
+      lastLogin: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    vi.mocked(storage.getTenant).mockResolvedValue({
+      id: 1,
+      name: "Tenant Test",
+      slug: "tenant-test",
+      plan: "free",
+      status: "active",
+      logo: null,
+      primaryColor: "#9333ea",
+      secondaryColor: "#db2777",
+      loginMessage: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    vi.mocked(storage.getTenantUser).mockImplementation(
+      async (_tenantId: number, userId: string) => ({
+        id: 1,
+        tenantId: 1,
+        userId,
+        role: userId === "456" ? "manager" : "seller",
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
   });
 
-  describe('Password Hashing', () => {
-    it('should hash a password using bcrypt with correct salt rounds', async () => {
-      const password = 'mySecurePassword123';
-      const hashedPassword = '$2b$10$abcdefghijklmnopqrstuvwxyz123456';
+  describe("Password Hashing", () => {
+    it("should hash a password using bcrypt with correct salt rounds", async () => {
+      const password = "mySecurePassword123";
+      const hashedPassword = "$2b$10$abcdefghijklmnopqrstuvwxyz123456";
 
       vi.mocked(bcrypt.hash).mockResolvedValue(hashedPassword as never);
 
@@ -47,20 +91,20 @@ describe('Authentication Tests', () => {
       expect(result).toBe(hashedPassword);
     });
 
-    it('should handle hashing errors gracefully', async () => {
-      const password = 'testPassword';
-      const error = new Error('Hashing failed');
+    it("should handle hashing errors gracefully", async () => {
+      const password = "testPassword";
+      const error = new Error("Hashing failed");
 
       vi.mocked(bcrypt.hash).mockRejectedValue(error);
 
-      await expect(hashPassword(password)).rejects.toThrow('Hashing failed');
+      await expect(hashPassword(password)).rejects.toThrow("Hashing failed");
     });
 
-    it('should hash different passwords to different values', async () => {
-      const password1 = 'password1';
-      const password2 = 'password2';
-      const hash1 = '$2b$10$hash1';
-      const hash2 = '$2b$10$hash2';
+    it("should hash different passwords to different values", async () => {
+      const password1 = "password1";
+      const password2 = "password2";
+      const hash1 = "$2b$10$hash1";
+      const hash2 = "$2b$10$hash2";
 
       vi.mocked(bcrypt.hash)
         .mockResolvedValueOnce(hash1 as never)
@@ -73,10 +117,10 @@ describe('Authentication Tests', () => {
     });
   });
 
-  describe('Password Comparison', () => {
-    it('should return true when password matches hash', async () => {
-      const password = 'correctPassword';
-      const hash = '$2b$10$validHashValue';
+  describe("Password Comparison", () => {
+    it("should return true when password matches hash", async () => {
+      const password = "correctPassword";
+      const hash = "$2b$10$validHashValue";
 
       vi.mocked(bcrypt.compare).mockResolvedValue(true as never);
 
@@ -86,9 +130,9 @@ describe('Authentication Tests', () => {
       expect(result).toBe(true);
     });
 
-    it('should return false when password does not match hash', async () => {
-      const password = 'wrongPassword';
-      const hash = '$2b$10$validHashValue';
+    it("should return false when password does not match hash", async () => {
+      const password = "wrongPassword";
+      const hash = "$2b$10$validHashValue";
 
       vi.mocked(bcrypt.compare).mockResolvedValue(false as never);
 
@@ -98,18 +142,18 @@ describe('Authentication Tests', () => {
       expect(result).toBe(false);
     });
 
-    it('should handle comparison errors', async () => {
-      const password = 'testPassword';
-      const hash = 'invalidHash';
-      const error = new Error('Comparison failed');
+    it("should handle comparison errors", async () => {
+      const password = "testPassword";
+      const hash = "invalidHash";
+      const error = new Error("Comparison failed");
 
       vi.mocked(bcrypt.compare).mockRejectedValue(error);
 
-      await expect(comparePassword(password, hash)).rejects.toThrow('Comparison failed');
+      await expect(comparePassword(password, hash)).rejects.toThrow("Comparison failed");
     });
   });
 
-  describe('Session Validation - requireAuth', () => {
+  describe("Session Validation - requireAuth", () => {
     let mockReq: Partial<Request>;
     let mockRes: Partial<Response>;
     let mockNext: NextFunction;
@@ -121,51 +165,50 @@ describe('Authentication Tests', () => {
       mockRes = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn().mockReturnThis(),
+        clearCookie: vi.fn().mockReturnThis(),
       };
       mockNext = vi.fn();
     });
 
-    it('should allow authenticated users to proceed', () => {
+    it("should allow authenticated users to proceed", async () => {
       const sessionUser: SessionUser = {
-        id: '123',
-        email: 'user@example.com',
-        name: 'Test User',
+        id: "123",
+        email: "user@example.com",
+        name: "Test User",
         isSuperAdmin: false,
         mustChangePassword: false,
         tenantId: 1,
-        role: 'seller',
+        role: "seller",
       };
       mockReq.session!.user = sessionUser;
 
-      requireAuth(mockReq as Request, mockRes as Response, mockNext);
+      await requireAuth(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockNext).toHaveBeenCalled();
       expect(mockRes.status).not.toHaveBeenCalled();
     });
 
-    it('should reject unauthenticated users with 401', () => {
+    it("should reject unauthenticated users with 401", async () => {
       mockReq.session!.user = undefined;
 
-      requireAuth(mockReq as Request, mockRes as Response, mockNext);
+      await requireAuth(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Autenticação necessária' });
+      expect(mockRes.json).toHaveBeenCalledWith({ error: "Autenticação necessária" });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should reject requests without session', () => {
+    it("should reject requests without session", async () => {
       mockReq.session = undefined as any;
 
-      // The auth function tries to access req.session.user
-      // Since session is undefined, it will throw an error
-      // We need to wrap this in a try-catch or use expect().toThrow()
-      expect(() => {
-        requireAuth(mockReq as Request, mockRes as Response, mockNext);
-      }).toThrow();
+      await requireAuth(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(401);
+      expect(mockNext).not.toHaveBeenCalled();
     });
   });
 
-  describe('Super Admin Authorization - requireSuperAdmin', () => {
+  describe("Super Admin Authorization - requireSuperAdmin", () => {
     let mockReq: Partial<Request>;
     let mockRes: Partial<Response>;
     let mockNext: NextFunction;
@@ -177,57 +220,60 @@ describe('Authentication Tests', () => {
       mockRes = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn().mockReturnThis(),
+        clearCookie: vi.fn().mockReturnThis(),
       };
       mockNext = vi.fn();
     });
 
-    it('should allow super admins to proceed', () => {
+    it("should allow super admins to proceed", async () => {
       const superAdminUser: SessionUser = {
-        id: '123',
-        email: 'admin@example.com',
-        name: 'Super Admin',
+        id: "123",
+        email: "admin@example.com",
+        name: "Super Admin",
         isSuperAdmin: true,
         mustChangePassword: false,
       };
       mockReq.session!.user = superAdminUser;
 
-      requireSuperAdmin(mockReq as Request, mockRes as Response, mockNext);
+      await requireSuperAdmin(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockNext).toHaveBeenCalled();
       expect(mockRes.status).not.toHaveBeenCalled();
     });
 
-    it('should reject non-super-admin users with 403', () => {
+    it("should reject non-super-admin users with 403", async () => {
       const regularUser: SessionUser = {
-        id: '456',
-        email: 'user@example.com',
-        name: 'Regular User',
+        id: "456",
+        email: "user@example.com",
+        name: "Regular User",
         isSuperAdmin: false,
         mustChangePassword: false,
         tenantId: 1,
-        role: 'seller',
+        role: "seller",
       };
       mockReq.session!.user = regularUser;
 
-      requireSuperAdmin(mockReq as Request, mockRes as Response, mockNext);
+      await requireSuperAdmin(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(403);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Acesso restrito a super administradores' });
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: "Acesso restrito a super administradores",
+      });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should reject unauthenticated users with 401', () => {
+    it("should reject unauthenticated users with 401", async () => {
       mockReq.session!.user = undefined;
 
-      requireSuperAdmin(mockReq as Request, mockRes as Response, mockNext);
+      await requireSuperAdmin(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Autenticação necessária' });
+      expect(mockRes.json).toHaveBeenCalledWith({ error: "Autenticação necessária" });
       expect(mockNext).not.toHaveBeenCalled();
     });
   });
 
-  describe('Tenant Access Control - requireTenantAccess', () => {
+  describe("Tenant Access Control - requireTenantAccess", () => {
     let mockReq: Partial<Request>;
     let mockRes: Partial<Response>;
     let mockNext: NextFunction;
@@ -241,116 +287,117 @@ describe('Authentication Tests', () => {
       mockRes = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn().mockReturnThis(),
+        clearCookie: vi.fn().mockReturnThis(),
       };
       mockNext = vi.fn();
     });
 
-    it('should allow super admin to access any tenant', () => {
+    it("should allow super admin to access any tenant", async () => {
       const superAdminUser: SessionUser = {
-        id: '123',
-        email: 'admin@example.com',
-        name: 'Super Admin',
+        id: "123",
+        email: "admin@example.com",
+        name: "Super Admin",
         isSuperAdmin: true,
         mustChangePassword: false,
       };
       mockReq.session!.user = superAdminUser;
-      mockReq.params!.tenantId = '1';
+      mockReq.params!.tenantId = "1";
 
-      requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
-
-      expect(mockNext).toHaveBeenCalled();
-      expect(mockRes.status).not.toHaveBeenCalled();
-    });
-
-    it('should allow user to access their own tenant', () => {
-      const tenantUser: SessionUser = {
-        id: '456',
-        email: 'user@example.com',
-        name: 'Tenant User',
-        isSuperAdmin: false,
-        mustChangePassword: false,
-        tenantId: 1,
-        role: 'seller',
-      };
-      mockReq.session!.user = tenantUser;
-      mockReq.params!.tenantId = '1';
-
-      requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
+      await requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockNext).toHaveBeenCalled();
       expect(mockRes.status).not.toHaveBeenCalled();
     });
 
-    it('should reject user accessing different tenant with 403', () => {
+    it("should allow user to access their own tenant", async () => {
       const tenantUser: SessionUser = {
-        id: '456',
-        email: 'user@example.com',
-        name: 'Tenant User',
+        id: "456",
+        email: "user@example.com",
+        name: "Tenant User",
         isSuperAdmin: false,
         mustChangePassword: false,
         tenantId: 1,
-        role: 'seller',
+        role: "seller",
       };
       mockReq.session!.user = tenantUser;
-      mockReq.params!.tenantId = '2'; // Different tenant
+      mockReq.params!.tenantId = "1";
 
-      requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
+      await requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(mockNext).toHaveBeenCalled();
+      expect(mockRes.status).not.toHaveBeenCalled();
+    });
+
+    it("should reject user accessing different tenant with 403", async () => {
+      const tenantUser: SessionUser = {
+        id: "456",
+        email: "user@example.com",
+        name: "Tenant User",
+        isSuperAdmin: false,
+        mustChangePassword: false,
+        tenantId: 1,
+        role: "seller",
+      };
+      mockReq.session!.user = tenantUser;
+      mockReq.params!.tenantId = "2"; // Different tenant
+
+      await requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(403);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Acesso negado a este tenant' });
+      expect(mockRes.json).toHaveBeenCalledWith({ error: "Acesso negado a este tenant" });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should reject requests without tenantId with 400', () => {
+    it("should reject requests without tenantId with 400", async () => {
       const tenantUser: SessionUser = {
-        id: '456',
-        email: 'user@example.com',
-        name: 'Tenant User',
+        id: "456",
+        email: "user@example.com",
+        name: "Tenant User",
         isSuperAdmin: false,
         mustChangePassword: false,
         tenantId: 1,
-        role: 'seller',
+        role: "seller",
       };
       mockReq.session!.user = tenantUser;
 
-      requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
+      await requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Tenant ID é obrigatório' });
+      expect(mockRes.json).toHaveBeenCalledWith({ error: "Tenant ID é obrigatório" });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should accept tenantId from query parameters', () => {
+    it("should accept tenantId from query parameters", async () => {
       const tenantUser: SessionUser = {
-        id: '456',
-        email: 'user@example.com',
-        name: 'Tenant User',
+        id: "456",
+        email: "user@example.com",
+        name: "Tenant User",
         isSuperAdmin: false,
         mustChangePassword: false,
         tenantId: 1,
-        role: 'seller',
+        role: "seller",
       };
       mockReq.session!.user = tenantUser;
-      mockReq.query!.tenantId = '1';
+      mockReq.query!.tenantId = "1";
 
-      requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
+      await requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockNext).toHaveBeenCalled();
       expect(mockRes.status).not.toHaveBeenCalled();
     });
 
-    it('should reject unauthenticated users with 401', () => {
+    it("should reject unauthenticated users with 401", async () => {
       mockReq.session!.user = undefined;
-      mockReq.params!.tenantId = '1';
+      mockReq.params!.tenantId = "1";
 
-      requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
+      await requireTenantAccess(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
       expect(mockNext).not.toHaveBeenCalled();
     });
   });
 
-  describe('Role-Based Access Control - requireRole', () => {
+  describe("Role-Based Access Control - requireRole", () => {
     let mockReq: Partial<Request>;
     let mockRes: Partial<Response>;
     let mockNext: NextFunction;
@@ -362,117 +409,119 @@ describe('Authentication Tests', () => {
       mockRes = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn().mockReturnThis(),
+        clearCookie: vi.fn().mockReturnThis(),
       };
       mockNext = vi.fn();
     });
 
-    it('should allow user with matching role to proceed', () => {
+    it("should allow user with matching role to proceed", async () => {
       const managerUser: SessionUser = {
-        id: '456',
-        email: 'manager@example.com',
-        name: 'Manager User',
+        id: "456",
+        email: "manager@example.com",
+        name: "Manager User",
         isSuperAdmin: false,
         mustChangePassword: false,
         tenantId: 1,
-        role: 'manager',
+        role: "manager",
       };
       mockReq.session!.user = managerUser;
 
-      const middleware = requireRole('manager', 'seller');
-      middleware(mockReq as Request, mockRes as Response, mockNext);
+      const middleware = requireRole("manager", "seller");
+      await middleware(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockNext).toHaveBeenCalled();
       expect(mockRes.status).not.toHaveBeenCalled();
     });
 
-    it('should allow super admin regardless of role', () => {
+    it("should allow super admin regardless of role", async () => {
       const superAdminUser: SessionUser = {
-        id: '123',
-        email: 'admin@example.com',
-        name: 'Super Admin',
+        id: "123",
+        email: "admin@example.com",
+        name: "Super Admin",
         isSuperAdmin: true,
         mustChangePassword: false,
       };
       mockReq.session!.user = superAdminUser;
 
-      const middleware = requireRole('manager');
-      middleware(mockReq as Request, mockRes as Response, mockNext);
+      const middleware = requireRole("manager");
+      await middleware(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockNext).toHaveBeenCalled();
       expect(mockRes.status).not.toHaveBeenCalled();
     });
 
-    it('should reject user with insufficient role with 403', () => {
+    it("should reject user with insufficient role with 403", async () => {
       const sellerUser: SessionUser = {
-        id: '789',
-        email: 'seller@example.com',
-        name: 'Seller User',
+        id: "789",
+        email: "seller@example.com",
+        name: "Seller User",
         isSuperAdmin: false,
         mustChangePassword: false,
         tenantId: 1,
-        role: 'seller',
+        role: "seller",
       };
       mockReq.session!.user = sellerUser;
 
-      const middleware = requireRole('manager');
-      middleware(mockReq as Request, mockRes as Response, mockNext);
+      const middleware = requireRole("manager");
+      await middleware(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(403);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Permissão insuficiente' });
+      expect(mockRes.json).toHaveBeenCalledWith({ error: "Permissão insuficiente" });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should reject unauthenticated users with 401', () => {
+    it("should reject unauthenticated users with 401", async () => {
       mockReq.session!.user = undefined;
 
-      const middleware = requireRole('seller');
-      middleware(mockReq as Request, mockRes as Response, mockNext);
+      const middleware = requireRole("seller");
+      await middleware(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(401);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Autenticação necessária' });
+      expect(mockRes.json).toHaveBeenCalledWith({ error: "Autenticação necessária" });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should reject user without role with 403', () => {
+    it("should reject user without active tenant membership with 403", async () => {
       const userWithoutRole: SessionUser = {
-        id: '999',
-        email: 'norole@example.com',
-        name: 'User Without Role',
+        id: "999",
+        email: "norole@example.com",
+        name: "User Without Role",
         isSuperAdmin: false,
         mustChangePassword: false,
         tenantId: 1,
       };
       mockReq.session!.user = userWithoutRole;
+      vi.mocked(storage.getTenantUser).mockResolvedValueOnce(undefined);
 
-      const middleware = requireRole('seller');
-      middleware(mockReq as Request, mockRes as Response, mockNext);
+      const middleware = requireRole("seller");
+      await middleware(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(403);
-      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Permissão insuficiente' });
+      expect(mockRes.json).toHaveBeenCalledWith({ error: "Acesso negado a este tenant" });
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should accept multiple roles', () => {
+    it("should accept multiple roles", async () => {
       const sellerUser: SessionUser = {
-        id: '789',
-        email: 'seller@example.com',
-        name: 'Seller User',
+        id: "789",
+        email: "seller@example.com",
+        name: "Seller User",
         isSuperAdmin: false,
         mustChangePassword: false,
         tenantId: 1,
-        role: 'seller',
+        role: "seller",
       };
       mockReq.session!.user = sellerUser;
 
-      const middleware = requireRole('manager', 'seller');
-      middleware(mockReq as Request, mockRes as Response, mockNext);
+      const middleware = requireRole("manager", "seller");
+      await middleware(mockReq as Request, mockRes as Response, mockNext);
 
       expect(mockNext).toHaveBeenCalled();
       expect(mockRes.status).not.toHaveBeenCalled();
     });
   });
 
-  describe('Super Admin Creation - createSuperAdminIfNotExists', () => {
+  describe("Super Admin Creation - createSuperAdminIfNotExists", () => {
     let originalEnv: NodeJS.ProcessEnv;
 
     beforeEach(() => {
@@ -483,67 +532,38 @@ describe('Authentication Tests', () => {
       process.env = originalEnv;
     });
 
-    it('should create super admin if none exists', async () => {
-      // Set environment variables for test
+    it("should skip super admin creation when no explicit password is configured", async () => {
       delete process.env.ADMIN_EMAIL;
       delete process.env.ADMIN_PASSWORD;
 
-      vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
-      vi.mocked(storage.createUser).mockResolvedValue({
-        id: '123',
-        email: 'admin@zippi.crm',
-        name: 'Super Admin',
-        isSuperAdmin: true,
-        password: 'hashedPassword',
-        cpf: null,
-        sellerCode: null,
-        phone: null,
-        mustChangePassword: true,
-        emailVerified: false,
-        status: 'active',
-        lastPasswordChange: null,
-        lastLogin: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-
-      const hashedPassword = '$2b$10$hashedAdminPassword';
-      vi.mocked(bcrypt.hash).mockResolvedValue(hashedPassword as never);
-
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const warningSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       await createSuperAdminIfNotExists();
 
-      expect(storage.getUserByEmail).toHaveBeenCalledWith('admin@zippi.crm');
-      // Don't check the exact password value since it's randomly generated
-      // Just verify that bcrypt.hash was called with correct salt rounds
-      expect(bcrypt.hash).toHaveBeenCalled();
-      const hashCall = vi.mocked(bcrypt.hash).mock.calls[0];
-      expect(hashCall[1]).toBe(10); // Verify salt rounds
-      expect(storage.createUser).toHaveBeenCalledWith({
-        email: 'admin@zippi.crm',
-        password: hashedPassword,
-        name: 'Super Admin',
-        isSuperAdmin: true,
-      });
-      expect(consoleSpy).toHaveBeenCalledWith('[SYSTEM] Super Admin created: admin@zippi.crm');
+      expect(storage.getUserByEmail).not.toHaveBeenCalled();
+      expect(storage.createUser).not.toHaveBeenCalled();
+      expect(bcrypt.hash).not.toHaveBeenCalled();
+      expect(warningSpy).toHaveBeenCalledWith(
+        "[SECURITY] Super admin bootstrap skipped: set ADMIN_PASSWORD explicitly to create the initial account.",
+      );
 
-      consoleSpy.mockRestore();
+      warningSpy.mockRestore();
     });
 
-    it('should not create super admin if one already exists', async () => {
+    it("should not create super admin if one already exists", async () => {
+      process.env.ADMIN_PASSWORD = "ExistingAdminPassword123!";
       const existingAdmin = {
-        id: '123',
-        email: 'admin@zippi.crm',
-        name: 'Existing Admin',
+        id: "123",
+        email: "admin@zippi.crm",
+        name: "Existing Admin",
         isSuperAdmin: true,
-        password: 'hashedPassword',
+        password: "hashedPassword",
         cpf: null,
         sellerCode: null,
         phone: null,
         mustChangePassword: false,
         emailVerified: true,
-        status: 'active' as const,
+        status: "active" as const,
         lastPasswordChange: null,
         lastLogin: null,
         createdAt: new Date().toISOString(),
@@ -553,47 +573,47 @@ describe('Authentication Tests', () => {
 
       await createSuperAdminIfNotExists();
 
-      expect(storage.getUserByEmail).toHaveBeenCalledWith('admin@zippi.crm');
+      expect(storage.getUserByEmail).toHaveBeenCalledWith("admin@zippi.crm");
       expect(storage.createUser).not.toHaveBeenCalled();
       expect(bcrypt.hash).not.toHaveBeenCalled();
     });
 
-    it('should use custom admin credentials from environment variables', async () => {
-      process.env.ADMIN_EMAIL = 'custom@admin.com';
-      process.env.ADMIN_PASSWORD = 'CustomPassword123!';
+    it("should use custom admin credentials from environment variables", async () => {
+      process.env.ADMIN_EMAIL = "custom@admin.com";
+      process.env.ADMIN_PASSWORD = "CustomPassword123!";
 
       vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
       vi.mocked(storage.createUser).mockResolvedValue({
-        id: '123',
-        email: 'custom@admin.com',
-        name: 'Super Admin',
+        id: "123",
+        email: "custom@admin.com",
+        name: "Super Admin",
         isSuperAdmin: true,
-        password: 'hashedPassword',
+        password: "hashedPassword",
         cpf: null,
         sellerCode: null,
         phone: null,
         mustChangePassword: true,
         emailVerified: false,
-        status: 'active',
+        status: "active",
         lastPasswordChange: null,
         lastLogin: null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
 
-      const hashedPassword = '$2b$10$customHashedPassword';
+      const hashedPassword = "$2b$10$customHashedPassword";
       vi.mocked(bcrypt.hash).mockResolvedValue(hashedPassword as never);
 
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       await createSuperAdminIfNotExists();
 
-      expect(storage.getUserByEmail).toHaveBeenCalledWith('custom@admin.com');
-      expect(bcrypt.hash).toHaveBeenCalledWith('CustomPassword123!', 10);
+      expect(storage.getUserByEmail).toHaveBeenCalledWith("custom@admin.com");
+      expect(bcrypt.hash).toHaveBeenCalledWith("CustomPassword123!", 10);
       expect(storage.createUser).toHaveBeenCalledWith({
-        email: 'custom@admin.com',
+        email: "custom@admin.com",
         password: hashedPassword,
-        name: 'Super Admin',
+        name: "Super Admin",
         isSuperAdmin: true,
       });
 

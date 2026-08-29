@@ -1,38 +1,37 @@
-version: '3.8'
-
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: zippcrm-db
+  app:
+    image: zippcrm:${APP_VERSION:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zippcrm-app
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: zippcrm
-      POSTGRES_PASSWORD: zippcrm123
-      POSTGRES_DB: zippcrm
-      PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "${HOST_PORT:-6000}:6000"
+    environment:
+      NODE_ENV: production
+      PORT: 6000
+      DATABASE_PATH: /app/data/zippcrm.db
+      SESSION_DATABASE_PATH: /app/data/sessions.db
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET with at least 32 characters}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL for the initial super admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD with at least 12 characters}
+      ALLOW_EMPTY_DATABASE_BOOTSTRAP: ${ALLOW_EMPTY_DATABASE_BOOTSTRAP:-false}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - zippcrm_data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U zippcrm -d zippcrm"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Adminer - Interface web para gerenciar o banco (opcional)
-  adminer:
-    image: adminer:latest
-    container_name: zippcrm-adminer
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    depends_on:
-      - postgres
-    environment:
-      ADMINER_DEFAULT_SERVER: postgres
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:6000/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
-  postgres_data:
-    name: zippcrm-postgres-data
+  zippcrm_data:
+    name: zippcrm-sqlite-data

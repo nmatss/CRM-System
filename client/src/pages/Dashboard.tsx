@@ -12,7 +12,6 @@ import {
   ShoppingBag,
   Wallet,
   TrendingUp,
-  TrendingDown,
   AlertTriangle,
   Lightbulb,
   Clock,
@@ -32,7 +31,7 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
-  Legend
+  Legend,
 } from "recharts";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -61,22 +60,119 @@ interface DashboardStats {
   cashbackChart: Array<{ month: string; concedido: number; resgatado: number }>;
   topProducts: Array<{ name: string; sales: number; revenue: number }>;
   insights: Array<{ type: string; title: string; description: string; priority: string }>;
-  customersAtRisk: Array<{ id: number; name: string; segment: string; lastPurchase: string; risk: string }>;
-  expiringCashback: Array<{ customerId: number; customerName: string; amount: number; expiresAt: string }>;
-  activeCampaigns: Array<{ id: number; name: string; status: string; sent: number; openRate: number }>;
+  customersAtRisk: Array<{
+    id: number;
+    name: string;
+    segment: string;
+    lastPurchase: string;
+    risk: string;
+  }>;
+  expiringCashback: Array<{
+    customerId: number;
+    customerName: string;
+    amount: number;
+    expiresAt: string;
+  }>;
+  activeCampaigns: Array<{
+    id: number;
+    name: string;
+    status: string;
+    sent: number;
+    openRate: number;
+  }>;
 }
 
 const COLORS = {
-  vip: '#9333ea',
-  frequent: '#00C49F',
-  new: '#FFBB28',
-  atrisk: '#FF8042',
-  inactive: '#8884d8',
+  vip: "#9333ea",
+  frequent: "#00C49F",
+  new: "#FFBB28",
+  atrisk: "#FF8042",
+  inactive: "#8884d8",
 };
+
+function toNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function normalizeDashboardStats(payload: any): DashboardStats {
+  const totalCustomers = toNumber(payload?.kpis?.totalCustomers ?? payload?.totalCustomers);
+  const activeCustomers = toNumber(payload?.kpis?.activeCustomers ?? payload?.activeCustomers);
+  const vipCustomers = toNumber(payload?.vipCustomers);
+  const newCustomers = toNumber(payload?.newCustomers);
+  const inactiveCustomers = Math.max(
+    totalCustomers - vipCustomers - newCustomers - activeCustomers,
+    0,
+  );
+
+  return {
+    kpis: {
+      totalRevenue: toNumber(payload?.kpis?.totalRevenue ?? payload?.totalRevenue),
+      revenueChange: toNumber(payload?.kpis?.revenueChange ?? payload?.revenueGrowth),
+      averageTicket: toNumber(payload?.kpis?.averageTicket ?? payload?.averageTicket),
+      ticketChange: toNumber(payload?.kpis?.ticketChange),
+      totalCustomers,
+      activeCustomers,
+      activeChange: toNumber(payload?.kpis?.activeChange),
+      churnRate: toNumber(payload?.kpis?.churnRate),
+      churnChange: toNumber(payload?.kpis?.churnChange),
+      averageLTV: toNumber(payload?.kpis?.averageLTV),
+      ltvChange: toNumber(payload?.kpis?.ltvChange),
+      cashbackPending: toNumber(payload?.kpis?.cashbackPending),
+      cashbackChange: toNumber(payload?.kpis?.cashbackChange),
+      cashbackROI: toNumber(payload?.kpis?.cashbackROI),
+      roiChange: toNumber(payload?.kpis?.roiChange),
+    },
+    salesChart: Array.isArray(payload?.salesChart)
+      ? payload.salesChart
+      : (payload?.weeklyData || []).map((item: any) => ({
+          date: String(item?.date ?? item?.name ?? ""),
+          value: toNumber(item?.value ?? item?.total),
+        })),
+    customerSegments: Array.isArray(payload?.customerSegments)
+      ? payload.customerSegments
+      : [
+          { name: "VIP", value: vipCustomers, color: COLORS.vip },
+          { name: "Novo", value: newCustomers, color: COLORS.new },
+          { name: "Ativo", value: activeCustomers, color: COLORS.frequent },
+          { name: "Inativo", value: inactiveCustomers, color: COLORS.inactive },
+        ].filter((item) => item.value > 0),
+    cashbackChart: Array.isArray(payload?.cashbackChart) ? payload.cashbackChart : [],
+    topProducts: Array.isArray(payload?.topProducts)
+      ? payload.topProducts.map((item: any) => ({
+          name: String(item?.name ?? ""),
+          sales: toNumber(item?.sales ?? item?.quantity),
+          revenue: toNumber(item?.revenue),
+        }))
+      : [],
+    insights: Array.isArray(payload?.insights) ? payload.insights : [],
+    customersAtRisk: Array.isArray(payload?.customersAtRisk) ? payload.customersAtRisk : [],
+    expiringCashback: Array.isArray(payload?.expiringCashback) ? payload.expiringCashback : [],
+    activeCampaigns: Array.isArray(payload?.activeCampaigns) ? payload.activeCampaigns : [],
+  };
+}
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { user, isSuperAdmin } = useAuth();
+
+  const {
+    data: stats,
+    isLoading,
+    isError,
+    error,
+  } = useQuery<DashboardStats, Error>({
+    queryKey: ["dashboard-stats"],
+    queryFn: async () => {
+      const response = await fetch("/api/v1/dashboard/stats");
+      if (!response.ok) {
+        throw new Error("Erro ao carregar estatísticas do dashboard");
+      }
+      const payload = await response.json();
+      return normalizeDashboardStats(payload);
+    },
+    enabled: Boolean(user?.tenantId),
+    refetchInterval: 30000,
+  });
 
   // Super Admin without tenant should be redirected to admin page
   if (isSuperAdmin && !user?.tenantId) {
@@ -84,125 +180,31 @@ export default function Dashboard() {
     return null;
   }
 
-  const { data: stats, isLoading } = useQuery<DashboardStats>({
-    queryKey: ["dashboard-stats"],
-    queryFn: async () => {
-      const response = await fetch("/api/v1/dashboard/stats");
-      if (!response.ok) {
-        // Return mock data if API is not ready
-        return {
-          kpis: {
-            totalRevenue: 287450.80,
-            revenueChange: 12.5,
-            averageTicket: 145.30,
-            ticketChange: 5.2,
-            totalCustomers: 1847,
-            activeCustomers: 892,
-            activeChange: 8.3,
-            churnRate: 5.2,
-            churnChange: -1.5,
-            averageLTV: 1250.80,
-            ltvChange: 15.8,
-            cashbackPending: 142300,
-            cashbackChange: 6.7,
-            cashbackROI: 12.0,
-            roiChange: 2.1,
-          },
-          salesChart: [
-            { date: '01/12', value: 12500 },
-            { date: '02/12', value: 18200 },
-            { date: '03/12', value: 15800 },
-            { date: '04/12', value: 21300 },
-            { date: '05/12', value: 19400 },
-            { date: '06/12', value: 24100 },
-            { date: '07/12', value: 22800 },
-            { date: '08/12', value: 26700 },
-            { date: '09/12', value: 23900 },
-            { date: '10/12', value: 28500 },
-            { date: '11/12', value: 25600 },
-            { date: '12/12', value: 31200 },
-          ],
-          customerSegments: [
-            { name: 'VIP', value: 145, color: COLORS.vip },
-            { name: 'Frequente', value: 412, color: COLORS.frequent },
-            { name: 'Novo', value: 387, color: COLORS.new },
-            { name: 'Em Risco', value: 234, color: COLORS.atrisk },
-            { name: 'Inativo', value: 669, color: COLORS.inactive },
-          ],
-          cashbackChart: [
-            { month: 'Jul', concedido: 18000, resgatado: 4500 },
-            { month: 'Ago', concedido: 22000, resgatado: 5800 },
-            { month: 'Set', concedido: 25000, resgatado: 6200 },
-            { month: 'Out', concedido: 28000, resgatado: 7100 },
-            { month: 'Nov', concedido: 31000, resgatado: 8500 },
-            { month: 'Dez', concedido: 34000, resgatado: 9200 },
-          ],
-          topProducts: [
-            { name: 'Smartphone Galaxy S24', sales: 145, revenue: 217500 },
-            { name: 'Notebook Dell Inspiron', sales: 98, revenue: 196000 },
-            { name: 'Smart TV 55" LG', sales: 132, revenue: 184800 },
-            { name: 'Fone JBL Bluetooth', sales: 287, revenue: 86100 },
-            { name: 'Mouse Gamer Logitech', sales: 412, revenue: 61800 },
-          ],
-          insights: [
-            {
-              type: 'warning',
-              title: 'Churn aumentando em clientes Novos',
-              description: '23% dos novos clientes não compraram nos últimos 45 dias. Considere criar campanha de reativação.',
-              priority: 'high'
-            },
-            {
-              type: 'success',
-              title: 'Campanha de Black Friday com alto ROI',
-              description: 'A campanha gerou R$ 45.200 em receita com apenas R$ 2.800 investidos (ROI: 16x).',
-              priority: 'medium'
-            },
-            {
-              type: 'info',
-              title: 'Categoria "Eletrônicos" em alta',
-              description: 'Vendas de eletrônicos cresceram 34% este mês. Aumente estoque de produtos populares.',
-              priority: 'low'
-            },
-            {
-              type: 'warning',
-              title: 'Cashback expirando em 7 dias',
-              description: 'R$ 8.450 em cashback de 47 clientes irá expirar. Envie lembretes para aumentar resgates.',
-              priority: 'high'
-            },
-          ],
-          customersAtRisk: [
-            { id: 1, name: 'João Silva', segment: 'VIP', lastPurchase: '2024-09-15', risk: 'Alto' },
-            { id: 2, name: 'Maria Santos', segment: 'Frequente', lastPurchase: '2024-10-02', risk: 'Médio' },
-            { id: 3, name: 'Carlos Oliveira', segment: 'VIP', lastPurchase: '2024-09-28', risk: 'Alto' },
-            { id: 4, name: 'Ana Costa', segment: 'Frequente', lastPurchase: '2024-10-10', risk: 'Médio' },
-          ],
-          expiringCashback: [
-            { customerId: 101, customerName: 'Pedro Alves', amount: 250.00, expiresAt: '2024-12-20' },
-            { customerId: 102, customerName: 'Juliana Mendes', amount: 180.50, expiresAt: '2024-12-21' },
-            { customerId: 103, customerName: 'Roberto Lima', amount: 420.00, expiresAt: '2024-12-22' },
-            { customerId: 104, customerName: 'Fernanda Rocha', amount: 95.00, expiresAt: '2024-12-23' },
-          ],
-          activeCampaigns: [
-            { id: 1, name: 'Natal 2024 - Ofertas Especiais', status: 'Ativa', sent: 1847, openRate: 42.5 },
-            { id: 2, name: 'Reativação Clientes Inativos', status: 'Ativa', sent: 669, openRate: 28.3 },
-            { id: 3, name: 'Cashback em Dobro VIP', status: 'Agendada', sent: 0, openRate: 0 },
-          ],
-        };
-      }
-      return response.json();
-    },
-    refetchInterval: 30000,
-  });
-
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
   };
 
   const formatPercent = (value: number) => {
-    return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`;
+    return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
   };
 
   if (isLoading || !stats) {
+    if (isError) {
+      return (
+        <Layout>
+          <div className="flex items-center justify-center h-[60vh] px-4">
+            <Alert variant="destructive" className="max-w-xl">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Dashboard indisponível</AlertTitle>
+              <AlertDescription>
+                {error?.message || "Não foi possível carregar os dados do dashboard."}
+              </AlertDescription>
+            </Alert>
+          </div>
+        </Layout>
+      );
+    }
+
     return (
       <Layout>
         <div className="flex items-center justify-center h-[60vh]">
@@ -233,7 +235,7 @@ export default function Dashboard() {
     },
     {
       title: "Total de Clientes",
-      value: stats.kpis.totalCustomers.toLocaleString('pt-BR'),
+      value: stats.kpis.totalCustomers.toLocaleString("pt-BR"),
       change: `${stats.kpis.activeCustomers} ativos`,
       comparison: formatPercent(stats.kpis.activeChange) + " vs mês anterior",
       trend: stats.kpis.activeChange >= 0 ? "up" : "down",
@@ -242,7 +244,7 @@ export default function Dashboard() {
     },
     {
       title: "Clientes Ativos",
-      value: stats.kpis.activeCustomers.toLocaleString('pt-BR'),
+      value: stats.kpis.activeCustomers.toLocaleString("pt-BR"),
       change: formatPercent(stats.kpis.activeChange),
       comparison: "últimos 30 dias",
       trend: stats.kpis.activeChange >= 0 ? "up" : "down",
@@ -294,9 +296,15 @@ export default function Dashboard() {
           title="Dashboard Unificado"
           description="Visão completa do desempenho do seu negócio"
         >
-          <Button variant="outline" size="sm" className="text-xs sm:text-sm">
-            <span className="hidden sm:inline">Baixar Relatório</span>
-            <span className="sm:hidden">Relatório</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs sm:text-sm"
+            disabled
+            title="Não há endpoint de exportação consolidada do dashboard"
+          >
+            <span className="hidden sm:inline">Relatório indisponível</span>
+            <span className="sm:hidden">Sem exportação</span>
           </Button>
           <Button size="sm" className="text-xs sm:text-sm" onClick={() => setLocation("/orders")}>
             <span className="hidden sm:inline">Novo Pedido</span>
@@ -329,10 +337,18 @@ export default function Dashboard() {
                     <ArrowDownRight className="h-3 w-3 text-rose-500 flex-shrink-0" />
                   )}
                   <p className="text-xs flex-wrap">
-                    <span className={kpi.trend === "up" ? "text-emerald-600 font-medium" : "text-rose-600 font-medium"}>
+                    <span
+                      className={
+                        kpi.trend === "up"
+                          ? "text-emerald-600 font-medium"
+                          : "text-rose-600 font-medium"
+                      }
+                    >
                       {kpi.change}
                     </span>
-                    <span className="text-muted-foreground ml-1 hidden sm:inline">{kpi.comparison}</span>
+                    <span className="text-muted-foreground ml-1 hidden sm:inline">
+                      {kpi.comparison}
+                    </span>
                   </p>
                 </div>
               </CardContent>
@@ -346,7 +362,9 @@ export default function Dashboard() {
           <Card className="lg:col-span-2">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-base sm:text-lg">Vendas por Período</CardTitle>
-              <CardDescription className="text-xs sm:text-sm">Evolução da receita nos últimos 30 dias</CardDescription>
+              <CardDescription className="text-xs sm:text-sm">
+                Evolução da receita nos últimos 30 dias
+              </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 sm:pl-2">
               <div className="h-[250px] sm:h-[300px] w-full">
@@ -354,8 +372,8 @@ export default function Dashboard() {
                   <AreaChart data={stats.salesChart}>
                     <defs>
                       <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -386,7 +404,7 @@ export default function Dashboard() {
                         borderColor: "hsl(var(--border))",
                         borderRadius: "var(--radius)",
                       }}
-                      formatter={(value: number) => [formatCurrency(value), 'Vendas']}
+                      formatter={(value: number) => [formatCurrency(value), "Vendas"]}
                     />
                     <Area
                       type="monotone"
@@ -406,7 +424,9 @@ export default function Dashboard() {
           <Card>
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-base sm:text-lg">Clientes por Segmento</CardTitle>
-              <CardDescription className="text-xs sm:text-sm">Distribuição da base de clientes</CardDescription>
+              <CardDescription className="text-xs sm:text-sm">
+                Distribuição da base de clientes
+              </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
               <div className="h-[250px] sm:h-[300px]">
@@ -422,7 +442,9 @@ export default function Dashboard() {
                       dataKey="value"
                       label={({ name, percent }) => {
                         const isMobile = window.innerWidth < 640;
-                        return isMobile ? `${(percent * 100).toFixed(0)}%` : `${name} ${(percent * 100).toFixed(0)}%`;
+                        return isMobile
+                          ? `${(percent * 100).toFixed(0)}%`
+                          : `${name} ${(percent * 100).toFixed(0)}%`;
                       }}
                       labelLine={false}
                     >
@@ -431,10 +453,7 @@ export default function Dashboard() {
                       ))}
                     </Pie>
                     <Tooltip />
-                    <Legend
-                      wrapperStyle={{ fontSize: '12px' }}
-                      iconSize={10}
-                    />
+                    <Legend wrapperStyle={{ fontSize: "12px" }} iconSize={10} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -444,7 +463,9 @@ export default function Dashboard() {
           {/* Cashback: Concedido vs Resgatado */}
           <Card>
             <CardHeader className="p-4 sm:p-6">
-              <CardTitle className="text-base sm:text-lg">Cashback: Concedido vs Resgatado</CardTitle>
+              <CardTitle className="text-base sm:text-lg">
+                Cashback: Concedido vs Resgatado
+              </CardTitle>
               <CardDescription className="text-xs sm:text-sm">Últimos 6 meses</CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
@@ -473,9 +494,19 @@ export default function Dashboard() {
                       }}
                       formatter={(value: number) => formatCurrency(value)}
                     />
-                    <Legend wrapperStyle={{ fontSize: '12px' }} iconSize={10} />
-                    <Bar dataKey="concedido" fill="#9333ea" radius={[4, 4, 0, 0]} name="Concedido" />
-                    <Bar dataKey="resgatado" fill="#00C49F" radius={[4, 4, 0, 0]} name="Resgatado" />
+                    <Legend wrapperStyle={{ fontSize: "12px" }} iconSize={10} />
+                    <Bar
+                      dataKey="concedido"
+                      fill="#9333ea"
+                      radius={[4, 4, 0, 0]}
+                      name="Concedido"
+                    />
+                    <Bar
+                      dataKey="resgatado"
+                      fill="#00C49F"
+                      radius={[4, 4, 0, 0]}
+                      name="Resgatado"
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -487,23 +518,32 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-base sm:text-lg">Top 5 Produtos Mais Vendidos</CardTitle>
-            <CardDescription className="text-xs sm:text-sm">Produtos com melhor desempenho este mês</CardDescription>
+            <CardDescription className="text-xs sm:text-sm">
+              Produtos com melhor desempenho este mês
+            </CardDescription>
           </CardHeader>
           <CardContent className="p-4 sm:p-6">
             <div className="space-y-3 sm:space-y-4">
               {stats.topProducts.map((product, index) => (
-                <div key={index} className="flex items-center justify-between gap-3 border-b pb-3 last:border-0 last:pb-0">
+                <div
+                  key={index}
+                  className="flex items-center justify-between gap-3 border-b pb-3 last:border-0 last:pb-0"
+                >
                   <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                     <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-sm sm:text-base flex-shrink-0">
                       {index + 1}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-sm sm:text-base truncate">{product.name}</p>
-                      <p className="text-xs sm:text-sm text-muted-foreground">{product.sales} vendas</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
+                        {product.sales} vendas
+                      </p>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="font-bold text-sm sm:text-lg whitespace-nowrap">{formatCurrency(product.revenue)}</p>
+                    <p className="font-bold text-sm sm:text-lg whitespace-nowrap">
+                      {formatCurrency(product.revenue)}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -520,20 +560,39 @@ export default function Dashboard() {
                 <Lightbulb className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-500 flex-shrink-0" />
                 Ações Recomendadas
               </CardTitle>
-              <CardDescription className="text-xs sm:text-sm">Insights acionáveis para melhorar seus resultados</CardDescription>
+              <CardDescription className="text-xs sm:text-sm">
+                Insights acionáveis para melhorar seus resultados
+              </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
               <div className="space-y-3">
                 {stats.insights.map((insight, index) => (
-                  <Alert key={index} className={
-                    insight.type === 'warning' ? 'border-orange-500/50 bg-orange-50 dark:bg-orange-950/20' :
-                    insight.type === 'success' ? 'border-green-500/50 bg-green-50 dark:bg-green-950/20' :
-                    'border-blue-500/50 bg-blue-50 dark:bg-blue-950/20'
-                  }>
+                  <Alert
+                    key={index}
+                    className={
+                      insight.type === "warning"
+                        ? "border-orange-500/50 bg-orange-50 dark:bg-orange-950/20"
+                        : insight.type === "success"
+                          ? "border-green-500/50 bg-green-50 dark:bg-green-950/20"
+                          : "border-blue-500/50 bg-blue-50 dark:bg-blue-950/20"
+                    }
+                  >
                     <AlertTitle className="text-xs sm:text-sm font-semibold flex items-center gap-2 flex-wrap">
-                      {insight.priority === 'high' && <Badge variant="destructive" className="text-xs flex-shrink-0">Alta</Badge>}
-                      {insight.priority === 'medium' && <Badge variant="default" className="text-xs flex-shrink-0">Média</Badge>}
-                      {insight.priority === 'low' && <Badge variant="secondary" className="text-xs flex-shrink-0">Baixa</Badge>}
+                      {insight.priority === "high" && (
+                        <Badge variant="destructive" className="text-xs flex-shrink-0">
+                          Alta
+                        </Badge>
+                      )}
+                      {insight.priority === "medium" && (
+                        <Badge variant="default" className="text-xs flex-shrink-0">
+                          Média
+                        </Badge>
+                      )}
+                      {insight.priority === "low" && (
+                        <Badge variant="secondary" className="text-xs flex-shrink-0">
+                          Baixa
+                        </Badge>
+                      )}
                       <span className="break-words">{insight.title}</span>
                     </AlertTitle>
                     <AlertDescription className="text-xs mt-1 break-words">
@@ -552,27 +611,40 @@ export default function Dashboard() {
                 <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-red-500 flex-shrink-0" />
                 Clientes em Risco
               </CardTitle>
-              <CardDescription className="text-xs sm:text-sm">Clientes VIP/Frequentes sem compra recente</CardDescription>
+              <CardDescription className="text-xs sm:text-sm">
+                Clientes VIP/Frequentes sem compra recente
+              </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
               <div className="space-y-3">
                 {stats.customersAtRisk.map((customer) => (
-                  <div key={customer.id} className="flex items-center justify-between gap-3 p-2 sm:p-3 bg-muted/50 rounded-lg">
+                  <div
+                    key={customer.id}
+                    className="flex items-center justify-between gap-3 p-2 sm:p-3 bg-muted/50 rounded-lg"
+                  >
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-sm sm:text-base truncate">{customer.name}</p>
                       <p className="text-xs text-muted-foreground truncate">
-                        Último pedido: {new Date(customer.lastPurchase).toLocaleDateString('pt-BR')}
+                        Último pedido: {new Date(customer.lastPurchase).toLocaleDateString("pt-BR")}
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <Badge variant={customer.risk === 'Alto' ? 'destructive' : 'default'} className="text-xs">
+                      <Badge
+                        variant={customer.risk === "Alto" ? "destructive" : "default"}
+                        className="text-xs"
+                      >
                         {customer.segment}
                       </Badge>
                     </div>
                   </div>
                 ))}
               </div>
-              <Button variant="outline" className="w-full mt-4 text-xs sm:text-sm" size="sm" onClick={() => setLocation("/customers")}>
+              <Button
+                variant="outline"
+                className="w-full mt-4 text-xs sm:text-sm"
+                size="sm"
+                onClick={() => setLocation("/customers")}
+              >
                 Ver Todos os Clientes
               </Button>
             </CardContent>
@@ -585,25 +657,39 @@ export default function Dashboard() {
                 <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500 flex-shrink-0" />
                 Cashback Expirando
               </CardTitle>
-              <CardDescription className="text-xs sm:text-sm">Saldos que expiram nos próximos 7 dias</CardDescription>
+              <CardDescription className="text-xs sm:text-sm">
+                Saldos que expiram nos próximos 7 dias
+              </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
               <div className="space-y-3">
                 {stats.expiringCashback.map((cashback) => (
-                  <div key={cashback.customerId} className="flex items-center justify-between gap-3 p-2 sm:p-3 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                  <div
+                    key={cashback.customerId}
+                    className="flex items-center justify-between gap-3 p-2 sm:p-3 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800"
+                  >
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm sm:text-base truncate">{cashback.customerName}</p>
+                      <p className="font-medium text-sm sm:text-base truncate">
+                        {cashback.customerName}
+                      </p>
                       <p className="text-xs text-muted-foreground truncate">
-                        Expira em: {new Date(cashback.expiresAt).toLocaleDateString('pt-BR')}
+                        Expira em: {new Date(cashback.expiresAt).toLocaleDateString("pt-BR")}
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="font-bold text-sm sm:text-base text-orange-600 whitespace-nowrap">{formatCurrency(cashback.amount)}</p>
+                      <p className="font-bold text-sm sm:text-base text-orange-600 whitespace-nowrap">
+                        {formatCurrency(cashback.amount)}
+                      </p>
                     </div>
                   </div>
                 ))}
               </div>
-              <Button variant="outline" className="w-full mt-4 text-xs sm:text-sm" size="sm" onClick={() => setLocation("/cashback")}>
+              <Button
+                variant="outline"
+                className="w-full mt-4 text-xs sm:text-sm"
+                size="sm"
+                onClick={() => setLocation("/cashback")}
+              >
                 Gerenciar Cashback
               </Button>
             </CardContent>
@@ -616,17 +702,22 @@ export default function Dashboard() {
                 <ShoppingBag className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500 flex-shrink-0" />
                 Campanhas Ativas
               </CardTitle>
-              <CardDescription className="text-xs sm:text-sm">Status das campanhas em andamento</CardDescription>
+              <CardDescription className="text-xs sm:text-sm">
+                Status das campanhas em andamento
+              </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
               <div className="space-y-3">
                 {stats.activeCampaigns.map((campaign) => (
-                  <div key={campaign.id} className="flex items-center justify-between p-2 sm:p-3 bg-muted/50 rounded-lg">
+                  <div
+                    key={campaign.id}
+                    className="flex items-center justify-between p-2 sm:p-3 bg-muted/50 rounded-lg"
+                  >
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-xs sm:text-sm truncate">{campaign.name}</p>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <Badge
-                          variant={campaign.status === 'Ativa' ? 'default' : 'secondary'}
+                          variant={campaign.status === "Ativa" ? "default" : "secondary"}
                           className="text-xs flex-shrink-0"
                         >
                           {campaign.status}
@@ -641,7 +732,12 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
-              <Button variant="outline" className="w-full mt-4 text-xs sm:text-sm" size="sm" onClick={() => setLocation("/campaigns")}>
+              <Button
+                variant="outline"
+                className="w-full mt-4 text-xs sm:text-sm"
+                size="sm"
+                onClick={() => setLocation("/campaigns")}
+              >
                 Ver Todas as Campanhas
               </Button>
             </CardContent>

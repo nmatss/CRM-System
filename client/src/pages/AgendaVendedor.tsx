@@ -5,20 +5,31 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { 
-  MessageCircle, 
-  Phone, 
-  Check, 
-  Copy, 
-  ChevronDown, 
+import {
+  MessageCircle,
+  Phone,
+  Check,
+  Copy,
+  ChevronDown,
   ChevronUp,
   Gift,
   ShoppingCart,
@@ -30,50 +41,37 @@ import {
   AlertTriangle,
   CheckCircle,
   ListTodo,
-  User,
   TrendingUp,
   Target,
   Sparkles,
-  Star,
-  DollarSign,
-  Users,
   CalendarDays,
   Flame,
   Award,
   ArrowUpRight,
   ArrowDownRight,
-  BarChart3,
   Zap,
-  Heart,
-  PhoneCall,
   Mail,
   ChevronRight,
-  Eye,
-  History
+  History,
+  Loader2,
+  Send,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { unwrapList } from "@/lib/apiResponses";
+import { actionErrorDescription } from "@/lib/actionErrors";
+import { buildWhatsAppUrl } from "@/lib/agendaActions";
 import type { SellerTask, Customer, SellerGoal, CustomerInteraction } from "@shared/schema";
 import { Trophy, Settings2, MessageSquare } from "lucide-react";
-
-const formatDate = (date: Date | string | null): string => {
-  if (!date) return "";
-  const d = typeof date === "string" ? new Date(date) : date;
-  return d.toLocaleDateString("pt-BR");
-};
-
-const formatDateForInput = (date: Date | string | null): string => {
-  if (!date) return new Date().toISOString().split('T')[0];
-  const d = typeof date === "string" ? new Date(date) : date;
-  return d.toISOString().split('T')[0];
-};
 
 const getDateOnly = (date: Date | string | null): string => {
   if (!date) return "";
   const d = typeof date === "string" ? new Date(date) : date;
-  return d.toISOString().split('T')[0];
+  return d.toISOString().split("T")[0];
 };
 
 const isBeforeDate = (date1: Date | string | null, date2: string): boolean => {
@@ -102,51 +100,56 @@ interface SellerRankingItem {
   totalInteractions: number;
 }
 
-interface DashboardData {
-  birthdaysToday: Customer[];
-  birthdaysWeek: Customer[];
-  vipCustomers: Customer[];
-  recentPurchases: Customer[];
-  dormantCustomers: Customer[];
-  todayTasks: TaskWithCustomer[];
-  weekTasks: TaskWithCustomer[];
-  completedThisWeek: number;
-  totalSalesThisMonth: number;
-  avgTicket: number;
-  conversionRate: number;
+interface CreateTaskInput {
+  customerId: number | null;
+  type: string;
+  dueDate: string;
+  script: string;
+  notes: string;
 }
 
-const taskTypeConfig: Record<TaskType, { label: string; color: string; bgColor: string; icon: React.ReactNode }> = {
+interface CreateInteractionInput {
+  customerId: number;
+  type: string;
+  channel: string;
+  notes: string;
+  outcome: string;
+}
+
+const taskTypeConfig: Record<
+  TaskType,
+  { label: string; color: string; bgColor: string; icon: React.ReactNode }
+> = {
   aniversario: {
     label: "Aniversariante",
     color: "bg-pink-500 hover:bg-pink-600",
     bgColor: "bg-pink-50 text-pink-700 border-pink-200",
-    icon: <Gift className="h-3 w-3" />
+    icon: <Gift className="h-3 w-3" />,
   },
   carrinho_abandonado: {
     label: "Carrinho Abandonado",
     color: "bg-orange-500 hover:bg-orange-600",
     bgColor: "bg-orange-50 text-orange-700 border-orange-200",
-    icon: <ShoppingCart className="h-3 w-3" />
+    icon: <ShoppingCart className="h-3 w-3" />,
   },
   recompra: {
     label: "Recompra Sugerida",
     color: "bg-blue-500 hover:bg-blue-600",
     bgColor: "bg-blue-50 text-blue-700 border-blue-200",
-    icon: <RefreshCw className="h-3 w-3" />
+    icon: <RefreshCw className="h-3 w-3" />,
   },
   vip_sumido: {
     label: "VIP Sumido",
     color: "bg-purple-500 hover:bg-purple-600",
     bgColor: "bg-purple-50 text-purple-700 border-purple-200",
-    icon: <Crown className="h-3 w-3" />
+    icon: <Crown className="h-3 w-3" />,
   },
   manual: {
     label: "Tarefa Manual",
     color: "bg-gray-500 hover:bg-gray-600",
     bgColor: "bg-gray-50 text-gray-700 border-gray-200",
-    icon: <ListTodo className="h-3 w-3" />
-  }
+    icon: <ListTodo className="h-3 w-3" />,
+  },
 };
 
 function getGreeting(): string {
@@ -158,88 +161,89 @@ function getGreeting(): string {
 
 function getDaysAgo(dateInput: Date | string | null | undefined): number {
   if (!dateInput) return 999;
-  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
   const today = new Date();
   const diffTime = today.getTime() - date.getTime();
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 }
 
 function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 }
 
 function parseCurrencyToNumber(value: string | number | null | undefined): number {
   if (value === null || value === undefined) return 0;
-  if (typeof value === 'number') return value;
+  if (typeof value === "number") return value;
   // Remove currency symbols and spaces, then handle Brazilian format (1.234,56)
   // First strip thousands separator (.), then replace decimal comma with dot
   const cleaned = value
-    .replace(/[R$\s]/g, '')     // Remove currency symbol and spaces
-    .replace(/\./g, '')          // Remove thousands separator (periods)
-    .replace(',', '.');          // Replace decimal comma with dot
+    .replace(/[R$\s]/g, "") // Remove currency symbol and spaces
+    .replace(/\./g, "") // Remove thousands separator (periods)
+    .replace(",", "."); // Replace decimal comma with dot
   const parsed = parseFloat(cleaned);
   return isNaN(parsed) ? 0 : parsed;
 }
 
 function formatLTV(value: string | number | null | undefined): string {
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return formatCurrency(value);
   }
   const num = parseCurrencyToNumber(value);
   return formatCurrency(num);
 }
 
-function QuickStatCard({ 
-  title, 
-  value, 
+function QuickStatCard({
+  title,
+  value,
   subtitle,
-  icon, 
+  icon,
   trend,
   trendValue,
   color,
-  onClick
-}: { 
-  title: string; 
-  value: string | number; 
+  onClick,
+}: {
+  title: string;
+  value: string | number;
   subtitle?: string;
-  icon: React.ReactNode; 
-  trend?: 'up' | 'down' | 'neutral';
+  icon: React.ReactNode;
+  trend?: "up" | "down" | "neutral";
   trendValue?: string;
   color: string;
   onClick?: () => void;
 }) {
   return (
-    <motion.div
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
-    >
-      <Card 
+    <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+      <Card
         className={`relative overflow-hidden cursor-pointer transition-shadow hover:shadow-lg ${color}`}
         onClick={onClick}
-        data-testid={`stat-card-${title.toLowerCase().replace(/\s/g, '-')}`}
+        data-testid={`stat-card-${title.toLowerCase().replace(/\s/g, "-")}`}
       >
-        <div className="absolute top-0 right-0 w-20 h-20 opacity-10">
-          {icon}
-        </div>
+        <div className="absolute top-0 right-0 w-20 h-20 opacity-10">{icon}</div>
         <CardContent className="p-4">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{title}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                {title}
+              </p>
               <p className="text-2xl font-bold mt-1">{value}</p>
               {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
             </div>
-            <div className={`p-2 rounded-lg ${color.includes('bg-') ? 'bg-white/50' : 'bg-primary/10'}`}>
+            <div
+              className={`p-2 rounded-lg ${color.includes("bg-") ? "bg-white/50" : "bg-primary/10"}`}
+            >
               {icon}
             </div>
           </div>
           {trend && trendValue && (
             <div className="flex items-center gap-1 mt-2">
-              {trend === 'up' ? (
+              {trend === "up" ? (
                 <ArrowUpRight className="h-3 w-3 text-green-600" />
-              ) : trend === 'down' ? (
+              ) : trend === "down" ? (
                 <ArrowDownRight className="h-3 w-3 text-red-600" />
               ) : null}
-              <span className={`text-xs font-medium ${trend === 'up' ? 'text-green-600' : trend === 'down' ? 'text-red-600' : 'text-muted-foreground'}`}>
+              <span
+                className={`text-xs font-medium ${trend === "up" ? "text-green-600" : trend === "down" ? "text-red-600" : "text-muted-foreground"}`}
+              >
                 {trendValue}
               </span>
             </div>
@@ -250,10 +254,18 @@ function QuickStatCard({
   );
 }
 
-function BirthdayCard({ customer, onContact }: { customer: Customer; onContact: (customer: Customer) => void }) {
-  const isToday = customer.birthDate && new Date(customer.birthDate).getDate() === new Date().getDate() && 
-                  new Date(customer.birthDate).getMonth() === new Date().getMonth();
-  
+function BirthdayCard({
+  customer,
+  onContact,
+}: {
+  customer: Customer;
+  onContact: (customer: Customer) => void;
+}) {
+  const isToday =
+    customer.birthDate &&
+    new Date(customer.birthDate).getDate() === new Date().getDate() &&
+    new Date(customer.birthDate).getMonth() === new Date().getMonth();
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -20 }}
@@ -262,9 +274,13 @@ function BirthdayCard({ customer, onContact }: { customer: Customer; onContact: 
     >
       <div className="relative">
         <Avatar className="h-10 w-10 ring-2 ring-pink-300">
-          <AvatarImage src={customer.image || ''} alt={customer.name} />
+          <AvatarImage src={customer.image || ""} alt={customer.name} />
           <AvatarFallback className="bg-pink-100 text-pink-700 font-semibold">
-            {customer.name?.split(" ").map(n => n[0]).join("").slice(0, 2)}
+            {customer.name
+              ?.split(" ")
+              .map((n) => n[0])
+              .join("")
+              .slice(0, 2)}
           </AvatarFallback>
         </Avatar>
         {isToday && (
@@ -282,13 +298,17 @@ function BirthdayCard({ customer, onContact }: { customer: Customer; onContact: 
               <Sparkles className="h-3 w-3" /> Hoje!
             </span>
           ) : (
-            customer.birthDate && new Date(customer.birthDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+            customer.birthDate &&
+            new Date(customer.birthDate).toLocaleDateString("pt-BR", {
+              day: "2-digit",
+              month: "short",
+            })
           )}
         </p>
       </div>
-      <Button 
-        size="sm" 
-        variant="ghost" 
+      <Button
+        size="sm"
+        variant="ghost"
         className="h-8 w-8 p-0 text-pink-600 hover:bg-pink-100"
         onClick={() => onContact(customer)}
         data-testid={`button-birthday-contact-${customer.id}`}
@@ -299,23 +319,33 @@ function BirthdayCard({ customer, onContact }: { customer: Customer; onContact: 
   );
 }
 
-function VIPCustomerCard({ customer, onContact }: { customer: Customer; onContact: (customer: Customer) => void }) {
+function VIPCustomerCard({
+  customer,
+  onContact,
+}: {
+  customer: Customer;
+  onContact: (customer: Customer) => void;
+}) {
   const daysAgo = getDaysAgo(customer.lastPurchase);
   const isAtRisk = daysAgo > 60;
-  
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-        isAtRisk ? 'bg-amber-50 border-amber-200' : 'bg-purple-50/50 border-purple-100'
+        isAtRisk ? "bg-amber-50 border-amber-200" : "bg-purple-50/50 border-purple-100"
       }`}
     >
       <div className="relative">
         <Avatar className="h-10 w-10 ring-2 ring-purple-300">
-          <AvatarImage src={customer.image || ''} alt={customer.name} />
+          <AvatarImage src={customer.image || ""} alt={customer.name} />
           <AvatarFallback className="bg-purple-100 text-purple-700 font-semibold">
-            {customer.name?.split(" ").map(n => n[0]).join("").slice(0, 2)}
+            {customer.name
+              ?.split(" ")
+              .map((n) => n[0])
+              .join("")
+              .slice(0, 2)}
           </AvatarFallback>
         </Avatar>
         <Crown className="absolute -top-1 -right-1 h-4 w-4 text-amber-500" />
@@ -333,13 +363,13 @@ function VIPCustomerCard({ customer, onContact }: { customer: Customer; onContac
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="text-green-600 font-medium">{formatLTV(customer.ltv)}</span>
           <span>•</span>
-          <span>{daysAgo > 0 ? `${daysAgo}d sem comprar` : 'Comprou hoje'}</span>
+          <span>{daysAgo > 0 ? `${daysAgo}d sem comprar` : "Comprou hoje"}</span>
         </div>
       </div>
       <div className="flex gap-1">
-        <Button 
-          size="sm" 
-          variant="ghost" 
+        <Button
+          size="sm"
+          variant="ghost"
           className="h-8 w-8 p-0"
           onClick={() => onContact(customer)}
           data-testid={`button-vip-contact-${customer.id}`}
@@ -351,23 +381,23 @@ function VIPCustomerCard({ customer, onContact }: { customer: Customer; onContac
   );
 }
 
-function TaskMiniCard({ 
-  task, 
-  onComplete, 
-  isUpdating 
-}: { 
-  task: TaskWithCustomer; 
+function TaskMiniCard({
+  task,
+  onComplete,
+  isUpdating,
+}: {
+  task: TaskWithCustomer;
   onComplete: (id: number) => void;
   isUpdating: boolean;
 }) {
   const config = taskTypeConfig[task.type as TaskType] || taskTypeConfig.manual;
-  const todayStr = new Date().toISOString().split('T')[0];
-  const isOverdue = isBeforeDate(task.dueDate, todayStr) && task.status === 'pending';
+  const todayStr = new Date().toISOString().split("T")[0];
+  const isOverdue = isBeforeDate(task.dueDate, todayStr) && task.status === "pending";
 
   const handleWhatsApp = () => {
-    if (!task.customer?.phone || !task.script) return;
-    const texto = encodeURIComponent(task.script);
-    window.open(`https://wa.me/${task.customer.phone.replace(/\D/g, '')}?text=${texto}`, "_blank");
+    if (!task.script) return;
+    const url = buildWhatsAppUrl(task.customer?.phone, task.script);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -377,19 +407,23 @@ function TaskMiniCard({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -100 }}
       className={`p-3 rounded-lg border transition-all ${
-        isOverdue ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100 hover:border-gray-200'
+        isOverdue ? "bg-red-50 border-red-200" : "bg-white border-gray-100 hover:border-gray-200"
       }`}
     >
       <div className="flex items-start gap-3">
         <Avatar className="h-9 w-9">
-          <AvatarImage src={task.customer?.image || ''} alt={task.customer?.name || 'Cliente'} />
+          <AvatarImage src={task.customer?.image || ""} alt={task.customer?.name || "Cliente"} />
           <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-            {task.customer?.name?.split(" ").map(n => n[0]).join("").slice(0, 2) || 'CL'}
+            {task.customer?.name
+              ?.split(" ")
+              .map((n) => n[0])
+              .join("")
+              .slice(0, 2) || "CL"}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <p className="font-medium text-sm truncate">{task.customer?.name || 'Tarefa'}</p>
+            <p className="font-medium text-sm truncate">{task.customer?.name || "Tarefa"}</p>
             {isOverdue && <AlertTriangle className="h-3 w-3 text-red-500 flex-shrink-0" />}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
@@ -401,18 +435,18 @@ function TaskMiniCard({
         </div>
         <div className="flex gap-1">
           {task.customer?.phone && task.script && (
-            <Button 
-              size="sm" 
-              variant="ghost" 
+            <Button
+              size="sm"
+              variant="ghost"
               className="h-7 w-7 p-0 text-green-600"
               onClick={handleWhatsApp}
             >
               <Phone className="h-3.5 w-3.5" />
             </Button>
           )}
-          <Button 
-            size="sm" 
-            variant="ghost" 
+          <Button
+            size="sm"
+            variant="ghost"
             className="h-7 w-7 p-0 text-primary"
             onClick={() => onComplete(task.id)}
             disabled={isUpdating}
@@ -425,30 +459,28 @@ function TaskMiniCard({
   );
 }
 
-function PerformanceGoalCard({ 
-  title, 
-  current, 
-  goal, 
-  icon, 
-  color 
-}: { 
-  title: string; 
-  current: number; 
-  goal: number; 
-  icon: React.ReactNode; 
+function PerformanceGoalCard({
+  title,
+  current,
+  goal,
+  icon,
+  color,
+}: {
+  title: string;
+  current: number;
+  goal: number;
+  icon: React.ReactNode;
   color: string;
 }) {
   const percentage = Math.min((current / goal) * 100, 100);
   const isCompleted = current >= goal;
-  
+
   return (
     <Card className="overflow-hidden">
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <div className={`p-1.5 rounded-lg ${color}`}>
-              {icon}
-            </div>
+            <div className={`p-1.5 rounded-lg ${color}`}>{icon}</div>
             <span className="text-sm font-medium">{title}</span>
           </div>
           {isCompleted && (
@@ -463,9 +495,12 @@ function PerformanceGoalCard({
             <span className="text-2xl font-bold">{current}</span>
             <span className="text-sm text-muted-foreground">de {goal}</span>
           </div>
-          <Progress value={percentage} className={`h-2 ${isCompleted ? '[&>div]:bg-green-500' : ''}`} />
+          <Progress
+            value={percentage}
+            className={`h-2 ${isCompleted ? "[&>div]:bg-green-500" : ""}`}
+          />
           <p className="text-xs text-muted-foreground">
-            {isCompleted ? 'Parabéns! Meta atingida!' : `Faltam ${goal - current} para a meta`}
+            {isCompleted ? "Parabéns! Meta atingida!" : `Faltam ${goal - current} para a meta`}
           </p>
         </div>
       </CardContent>
@@ -473,11 +508,11 @@ function PerformanceGoalCard({
   );
 }
 
-function GoalsSettingsDialog({ 
-  goals, 
+function GoalsSettingsDialog({
+  goals,
   onSaveGoals,
-  isManager
-}: { 
+  isManager,
+}: {
   goals: SellerGoal | null;
   onSaveGoals: (data: any) => void;
   isManager: boolean;
@@ -520,7 +555,9 @@ function GoalsSettingsDialog({
               type="number"
               min="1"
               value={formData.dailyTaskGoal}
-              onChange={(e) => setFormData({...formData, dailyTaskGoal: parseInt(e.target.value) || 10})}
+              onChange={(e) =>
+                setFormData({ ...formData, dailyTaskGoal: parseInt(e.target.value) || 10 })
+              }
               data-testid="input-meta-diaria"
             />
           </div>
@@ -531,7 +568,9 @@ function GoalsSettingsDialog({
               type="number"
               min="1"
               value={formData.weeklyTaskGoal}
-              onChange={(e) => setFormData({...formData, weeklyTaskGoal: parseInt(e.target.value) || 50})}
+              onChange={(e) =>
+                setFormData({ ...formData, weeklyTaskGoal: parseInt(e.target.value) || 50 })
+              }
               data-testid="input-meta-semanal"
             />
           </div>
@@ -542,7 +581,9 @@ function GoalsSettingsDialog({
               type="number"
               min="1"
               value={formData.monthlyTaskGoal}
-              onChange={(e) => setFormData({...formData, monthlyTaskGoal: parseInt(e.target.value) || 200})}
+              onChange={(e) =>
+                setFormData({ ...formData, monthlyTaskGoal: parseInt(e.target.value) || 200 })
+              }
               data-testid="input-meta-mensal"
             />
           </div>
@@ -560,13 +601,23 @@ function GoalsSettingsDialog({
   );
 }
 
-function RankingCard({ ranking, currentUserId }: { ranking: SellerRankingItem[]; currentUserId?: string }) {
+function RankingCard({
+  ranking,
+  currentUserId,
+}: {
+  ranking: SellerRankingItem[];
+  currentUserId?: string;
+}) {
   const getMedalColor = (index: number) => {
     switch (index) {
-      case 0: return "text-yellow-500";
-      case 1: return "text-gray-400";
-      case 2: return "text-amber-600";
-      default: return "text-muted-foreground";
+      case 0:
+        return "text-yellow-500";
+      case 1:
+        return "text-gray-400";
+      case 2:
+        return "text-amber-600";
+      default:
+        return "text-muted-foreground";
     }
   };
 
@@ -592,17 +643,21 @@ function RankingCard({ ranking, currentUserId }: { ranking: SellerRankingItem[];
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.1 }}
               className={`flex items-center gap-3 p-2 rounded-lg ${
-                seller.sellerId === currentUserId ? 'bg-primary/10 border border-primary/20' : 'bg-muted/30'
+                seller.sellerId === currentUserId
+                  ? "bg-primary/10 border border-primary/20"
+                  : "bg-muted/30"
               }`}
             >
               <div className={`text-lg font-bold w-6 ${getMedalColor(index)}`}>
-                {index < 3 ? ['🥇', '🥈', '🥉'][index] : `#${index + 1}`}
+                {index < 3 ? ["🥇", "🥈", "🥉"][index] : `#${index + 1}`}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
                   {seller.sellerName}
                   {seller.sellerId === currentUserId && (
-                    <Badge variant="secondary" className="ml-2 text-[10px]">Você</Badge>
+                    <Badge variant="secondary" className="ml-2 text-[10px]">
+                      Você
+                    </Badge>
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -617,45 +672,57 @@ function RankingCard({ ranking, currentUserId }: { ranking: SellerRankingItem[];
   );
 }
 
-function NewTaskDialog({ 
-  customers, 
-  onCreateTask 
-}: { 
-  customers: Customer[]; 
-  onCreateTask: (data: any) => void;
+function NewTaskDialog({
+  customers,
+  onCreateTask,
+  isCreating = false,
+  trigger,
+}: {
+  customers: Customer[];
+  onCreateTask: (data: CreateTaskInput) => Promise<unknown>;
+  isCreating?: boolean;
+  trigger?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
-    customerId: '',
-    type: 'manual',
-    dueDate: new Date().toISOString().split('T')[0],
-    script: '',
-    notes: ''
+    customerId: "",
+    type: "manual",
+    dueDate: new Date().toISOString().split("T")[0],
+    script: "",
+    notes: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onCreateTask({
-      ...formData,
-      customerId: formData.customerId ? parseInt(formData.customerId) : null,
-    });
-    setOpen(false);
-    setFormData({
-      customerId: '',
-      type: 'manual',
-      dueDate: new Date().toISOString().split('T')[0],
-      script: '',
-      notes: ''
-    });
+    setSubmitError(null);
+    try {
+      await onCreateTask({
+        ...formData,
+        customerId: formData.customerId ? parseInt(formData.customerId) : null,
+      });
+      setOpen(false);
+      setFormData({
+        customerId: "",
+        type: "manual",
+        dueDate: new Date().toISOString().split("T")[0],
+        script: "",
+        notes: "",
+      });
+    } catch (error) {
+      setSubmitError(actionErrorDescription(error, "Não foi possível criar a tarefa."));
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="gap-2 shadow-lg" data-testid="button-nova-tarefa">
-          <Plus className="h-4 w-4" />
-          Nova Tarefa
-        </Button>
+        {trigger ?? (
+          <Button className="gap-2 shadow-lg" data-testid="button-nova-tarefa">
+            <Plus className="h-4 w-4" />
+            Nova Tarefa
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -667,9 +734,9 @@ function NewTaskDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <Label htmlFor="customer">Cliente (opcional)</Label>
-            <Select 
-              value={formData.customerId} 
-              onValueChange={(v) => setFormData({...formData, customerId: v})}
+            <Select
+              value={formData.customerId}
+              onValueChange={(v) => setFormData({ ...formData, customerId: v })}
             >
               <SelectTrigger data-testid="select-cliente">
                 <SelectValue placeholder="Selecione um cliente" />
@@ -677,7 +744,9 @@ function NewTaskDialog({
               <SelectContent>
                 <SelectItem value="">Nenhum cliente</SelectItem>
                 {customers.map((c) => (
-                  <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                  <SelectItem key={c.id} value={c.id.toString()}>
+                    {c.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -685,16 +754,18 @@ function NewTaskDialog({
 
           <div>
             <Label htmlFor="type">Tipo de Tarefa</Label>
-            <Select 
-              value={formData.type} 
-              onValueChange={(v) => setFormData({...formData, type: v})}
+            <Select
+              value={formData.type}
+              onValueChange={(v) => setFormData({ ...formData, type: v })}
             >
               <SelectTrigger data-testid="select-tipo">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {Object.entries(taskTypeConfig).map(([key, config]) => (
-                  <SelectItem key={key} value={key}>{config.label}</SelectItem>
+                  <SelectItem key={key} value={key}>
+                    {config.label}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -706,7 +777,7 @@ function NewTaskDialog({
               id="dueDate"
               type="date"
               value={formData.dueDate}
-              onChange={(e) => setFormData({...formData, dueDate: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
               required
               data-testid="input-data"
             />
@@ -718,7 +789,7 @@ function NewTaskDialog({
               id="script"
               placeholder="Mensagem sugerida para o cliente..."
               value={formData.script}
-              onChange={(e) => setFormData({...formData, script: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, script: e.target.value })}
               rows={3}
               data-testid="input-script"
             />
@@ -730,17 +801,28 @@ function NewTaskDialog({
               id="notes"
               placeholder="Observações adicionais..."
               value={formData.notes}
-              onChange={(e) => setFormData({...formData, notes: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
               data-testid="input-notas"
             />
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            {submitError && (
+              <p className="mr-auto text-sm text-destructive" role="alert">
+                {submitError}
+              </p>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={isCreating}
+            >
               Cancelar
             </Button>
-            <Button type="submit" data-testid="button-criar-tarefa">
-              Criar Tarefa
+            <Button type="submit" data-testid="button-criar-tarefa" disabled={isCreating}>
+              {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isCreating ? "Criando..." : "Criar Tarefa"}
             </Button>
           </DialogFooter>
         </form>
@@ -749,26 +831,270 @@ function NewTaskDialog({
   );
 }
 
-function TaskCard({ 
-  task, 
-  onComplete, 
+function NewInteractionDialog({
+  customers,
+  onCreateInteraction,
+  isCreating,
+  disabled,
+}: {
+  customers: Customer[];
+  onCreateInteraction: (data: CreateInteractionInput) => Promise<unknown>;
+  isCreating: boolean;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    customerId: "",
+    type: "contact",
+    channel: "phone",
+    notes: "",
+    outcome: "",
+  });
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSubmitError(null);
+
+    try {
+      await onCreateInteraction({
+        ...formData,
+        customerId: Number(formData.customerId),
+      });
+      setOpen(false);
+      setFormData({ customerId: "", type: "contact", channel: "phone", notes: "", outcome: "" });
+    } catch (error) {
+      setSubmitError(actionErrorDescription(error, "Não foi possível registrar a interação."));
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-auto py-3 flex-col gap-1"
+          disabled={disabled}
+        >
+          <MessageSquare className="h-4 w-4" />
+          <span className="text-xs">Interação</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Registrar interação</DialogTitle>
+          <CardDescription>Registre somente um contato que realmente aconteceu.</CardDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="interaction-customer">Cliente</Label>
+            <Select
+              value={formData.customerId}
+              onValueChange={(customerId) => setFormData({ ...formData, customerId })}
+              required
+            >
+              <SelectTrigger id="interaction-customer">
+                <SelectValue placeholder="Selecione um cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                {customers.map((customer) => (
+                  <SelectItem key={customer.id} value={String(customer.id)}>
+                    {customer.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="interaction-type">Tipo</Label>
+              <Select
+                value={formData.type}
+                onValueChange={(type) => setFormData({ ...formData, type })}
+              >
+                <SelectTrigger id="interaction-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="contact">Contato</SelectItem>
+                  <SelectItem value="follow_up">Acompanhamento</SelectItem>
+                  <SelectItem value="support">Atendimento</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="interaction-channel">Canal</Label>
+              <Select
+                value={formData.channel}
+                onValueChange={(channel) => setFormData({ ...formData, channel })}
+              >
+                <SelectTrigger id="interaction-channel">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="phone">Telefone</SelectItem>
+                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                  <SelectItem value="in_person">Presencial</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="interaction-notes">Notas</Label>
+            <Textarea
+              id="interaction-notes"
+              value={formData.notes}
+              onChange={(event) => setFormData({ ...formData, notes: event.target.value })}
+              placeholder="Resumo objetivo do contato"
+              required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="interaction-outcome">Resultado</Label>
+            <Input
+              id="interaction-outcome"
+              value={formData.outcome}
+              onChange={(event) => setFormData({ ...formData, outcome: event.target.value })}
+              placeholder="Ex.: retorno agendado"
+            />
+          </div>
+          {submitError && (
+            <p className="text-sm text-destructive" role="alert">
+              {submitError}
+            </p>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={isCreating}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              disabled={isCreating || !formData.customerId || !formData.notes.trim()}
+            >
+              {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isCreating ? "Registrando..." : "Registrar"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WhatsAppDialog({ customers, disabled }: { customers: Customer[]; disabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [customerId, setCustomerId] = useState("");
+  const [message, setMessage] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const selectedCustomer = customers.find((customer) => String(customer.id) === customerId);
+
+  const handleOpenWhatsApp = () => {
+    const url = buildWhatsAppUrl(selectedCustomer?.phone, message);
+    if (!url) {
+      setValidationError("O cliente selecionado não possui um telefone válido para WhatsApp.");
+      return;
+    }
+
+    setValidationError(null);
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-auto py-3 flex-col gap-1"
+          disabled={disabled}
+        >
+          <MessageCircle className="h-4 w-4" />
+          <span className="text-xs">WhatsApp</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Abrir WhatsApp</DialogTitle>
+          <CardDescription>
+            Abre o WhatsApp em uma nova janela. O CRM não confirma o envio nem registra uma
+            interação automaticamente.
+          </CardDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="whatsapp-customer">Cliente</Label>
+            <Select value={customerId} onValueChange={setCustomerId}>
+              <SelectTrigger id="whatsapp-customer">
+                <SelectValue placeholder="Selecione um cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                {customers.map((customer) => (
+                  <SelectItem key={customer.id} value={String(customer.id)}>
+                    {customer.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="whatsapp-message">Mensagem</Label>
+            <Textarea
+              id="whatsapp-message"
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="Escreva a mensagem que será preenchida no WhatsApp"
+            />
+          </div>
+          {validationError && (
+            <p className="text-sm text-destructive" role="alert">
+              {validationError}
+            </p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={handleOpenWhatsApp}
+              disabled={!customerId || !message.trim()}
+            >
+              <Send className="mr-2 h-4 w-4" />
+              Abrir WhatsApp
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TaskCard({
+  task,
+  onComplete,
   isUpdating,
-}: { 
-  task: TaskWithCustomer; 
+}: {
+  task: TaskWithCustomer;
   onComplete: (id: number) => void;
   isUpdating: boolean;
 }) {
   const [scriptExpanded, setScriptExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const config = taskTypeConfig[task.type as TaskType] || taskTypeConfig.manual;
-  const isCompleted = task.status === 'completed';
-  const todayStr = new Date().toISOString().split('T')[0];
-  const isOverdue = isBeforeDate(task.dueDate, todayStr) && task.status === 'pending';
+  const isCompleted = task.status === "completed";
+  const todayStr = new Date().toISOString().split("T")[0];
+  const isOverdue = isBeforeDate(task.dueDate, todayStr) && task.status === "pending";
 
   const handleWhatsApp = () => {
-    if (!task.customer?.phone || !task.script) return;
-    const texto = encodeURIComponent(task.script);
-    window.open(`https://wa.me/${task.customer.phone.replace(/\D/g, '')}?text=${texto}`, "_blank");
+    if (!task.script) return;
+    const url = buildWhatsAppUrl(task.customer?.phone, task.script);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const handleCopyScript = async () => {
@@ -785,22 +1111,34 @@ function TaskCard({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -300 }}
     >
-      <Card className={`overflow-hidden transition-all ${
-        isOverdue ? 'border-red-300 bg-red-50/30 shadow-red-100' : 
-        isCompleted ? 'border-green-200 bg-green-50/30' : 
-        'hover:shadow-md'
-      }`} data-testid={`card-tarefa-${task.id}`}>
+      <Card
+        className={`overflow-hidden transition-all ${
+          isOverdue
+            ? "border-red-300 bg-red-50/30 shadow-red-100"
+            : isCompleted
+              ? "border-green-200 bg-green-50/30"
+              : "hover:shadow-md"
+        }`}
+        data-testid={`card-tarefa-${task.id}`}
+      >
         <CardContent className="p-4">
           <div className="flex items-start gap-4">
             <Avatar className="h-12 w-12 ring-2 ring-offset-2 ring-primary/20">
-              <AvatarImage src={task.customer?.image || ''} alt={task.customer?.name || 'Cliente'} />
+              <AvatarImage
+                src={task.customer?.image || ""}
+                alt={task.customer?.name || "Cliente"}
+              />
               <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                {task.customer?.name?.split(" ").map(n => n[0]).join("").slice(0, 2) || 'CL'}
+                {task.customer?.name
+                  ?.split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .slice(0, 2) || "CL"}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-semibold text-base">{task.customer?.name || 'Cliente'}</h3>
+                <h3 className="font-semibold text-base">{task.customer?.name || "Cliente"}</h3>
                 {isCompleted && (
                   <Badge className="bg-green-500 text-white gap-1 text-xs">
                     <CheckCircle className="h-3 w-3" />
@@ -821,7 +1159,7 @@ function TaskCard({
                 </Badge>
                 <span className="text-xs text-muted-foreground flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
-                  {new Date(task.dueDate).toLocaleDateString('pt-BR')}
+                  {new Date(task.dueDate).toLocaleDateString("pt-BR")}
                 </span>
               </div>
             </div>
@@ -830,18 +1168,28 @@ function TaskCard({
           {task.customer && (
             <div className="mt-4 grid grid-cols-3 gap-3">
               <div className="p-2 rounded-lg bg-muted/50">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Última Compra</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                  Última Compra
+                </p>
                 <p className="text-sm font-semibold mt-0.5">
-                  {task.customer.lastPurchase ? `${getDaysAgo(task.customer.lastPurchase)}d atrás` : 'N/A'}
+                  {task.customer.lastPurchase
+                    ? `${getDaysAgo(task.customer.lastPurchase)}d atrás`
+                    : "N/A"}
                 </p>
               </div>
               <div className="p-2 rounded-lg bg-muted/50">
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wide">LTV</p>
-                <p className="text-sm font-semibold text-green-600 mt-0.5">{formatLTV(task.customer.ltv)}</p>
+                <p className="text-sm font-semibold text-green-600 mt-0.5">
+                  {formatLTV(task.customer.ltv)}
+                </p>
               </div>
               <div className="p-2 rounded-lg bg-muted/50">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Segmento</p>
-                <p className="text-sm font-semibold capitalize mt-0.5">{task.customer.segment || 'Novo'}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                  Segmento
+                </p>
+                <p className="text-sm font-semibold capitalize mt-0.5">
+                  {task.customer.segment || "Novo"}
+                </p>
               </div>
             </div>
           )}
@@ -863,7 +1211,11 @@ function TaskCard({
               >
                 <MessageCircle className="h-4 w-4" />
                 Ver Script
-                {scriptExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                {scriptExpanded ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
               </Button>
             )}
 
@@ -888,7 +1240,7 @@ function TaskCard({
                   className="gap-2 text-green-600 border-green-600 hover:bg-green-50"
                 >
                   <Check className="h-4 w-4" />
-                  {isUpdating ? 'Salvando...' : 'Concluir'}
+                  {isUpdating ? "Salvando..." : "Concluir"}
                 </Button>
               </>
             )}
@@ -929,118 +1281,120 @@ function TaskCard({
 export default function AgendaVendedor() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('overview');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState("overview");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [updatingTaskId, setUpdatingTaskId] = useState<number | null>(null);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toISOString().split("T")[0];
   const weekEnd = new Date();
   weekEnd.setDate(weekEnd.getDate() + 7);
-  const weekEndStr = weekEnd.toISOString().split('T')[0];
+  const weekEndStr = weekEnd.toISOString().split("T")[0];
 
   const { data: todayTasks = [], isLoading: todayLoading } = useQuery<TaskWithCustomer[]>({
-    queryKey: ['/api/seller-tasks', 'today'],
+    queryKey: ["/api/v1/seller-tasks", "today"],
     queryFn: async () => {
-      const params = new URLSearchParams({ dateFrom: today, dateTo: today, status: 'pending' });
-      const res = await fetch(`/api/seller-tasks?${params.toString()}`, { credentials: 'include' });
+      const params = new URLSearchParams({ dateFrom: today, dateTo: today, status: "pending" });
+      const res = await fetch(`/api/v1/seller-tasks?${params.toString()}`, {
+        credentials: "include",
+      });
       if (!res.ok) return [];
       return res.json();
-    }
+    },
   });
 
   const { data: weekTasks = [] } = useQuery<TaskWithCustomer[]>({
-    queryKey: ['/api/seller-tasks', 'week'],
+    queryKey: ["/api/v1/seller-tasks", "week"],
     queryFn: async () => {
-      const params = new URLSearchParams({ dateFrom: today, dateTo: weekEndStr, status: 'pending' });
-      const res = await fetch(`/api/seller-tasks?${params.toString()}`, { credentials: 'include' });
+      const params = new URLSearchParams({
+        dateFrom: today,
+        dateTo: weekEndStr,
+        status: "pending",
+      });
+      const res = await fetch(`/api/v1/seller-tasks?${params.toString()}`, {
+        credentials: "include",
+      });
       if (!res.ok) return [];
       return res.json();
-    }
+    },
   });
 
   const { data: completedTasks = [] } = useQuery<TaskWithCustomer[]>({
-    queryKey: ['/api/seller-tasks', 'completed'],
+    queryKey: ["/api/v1/seller-tasks", "completed"],
     queryFn: async () => {
-      const params = new URLSearchParams({ status: 'completed' });
-      const res = await fetch(`/api/seller-tasks?${params.toString()}`, { credentials: 'include' });
+      const params = new URLSearchParams({ status: "completed" });
+      const res = await fetch(`/api/v1/seller-tasks?${params.toString()}`, {
+        credentials: "include",
+      });
       if (!res.ok) return [];
       return res.json();
-    }
+    },
   });
 
-  const { data: stats, isLoading: statsLoading } = useQuery<SellerStats>({
-    queryKey: ['/api/seller-tasks/stats'],
+  const { data: stats } = useQuery<SellerStats>({
+    queryKey: ["/api/v1/seller-tasks/stats"],
     queryFn: async () => {
-      const res = await fetch('/api/seller-tasks/stats', { credentials: 'include' });
+      const res = await fetch("/api/v1/seller-tasks/stats", { credentials: "include" });
       if (!res.ok) return { pending: 0, completed: 0, today: 0, overdue: 0 };
       return res.json();
-    }
+    },
   });
 
-  const { data: customers = [] } = useQuery<Customer[]>({
-    queryKey: ['/api/customers'],
+  const {
+    data: customers = [],
+    isLoading: customersLoading,
+    isError: customersError,
+    refetch: refetchCustomers,
+  } = useQuery<Customer[]>({
+    queryKey: ["/api/v1/customers", "agenda-actions", 100],
     queryFn: async () => {
-      const res = await fetch('/api/customers', { credentials: 'include' });
-      if (!res.ok) return [];
-      return res.json();
-    }
+      const res = await fetch("/api/v1/customers?limit=100", { credentials: "include" });
+      if (!res.ok) throw new Error(`Falha ao carregar clientes (${res.status})`);
+      const payload = await res.json();
+      return unwrapList<Customer>(payload);
+    },
   });
 
   const { data: goals } = useQuery<SellerGoal>({
-    queryKey: ['/api/seller-goals'],
+    queryKey: ["/api/v1/seller-goals"],
     queryFn: async () => {
-      const res = await fetch('/api/seller-goals', { credentials: 'include' });
+      const res = await fetch("/api/v1/seller-goals", { credentials: "include" });
       if (!res.ok) return { dailyTaskGoal: 10, weeklyTaskGoal: 50, monthlyTaskGoal: 200 };
       return res.json();
-    }
+    },
   });
 
   const { data: ranking = [] } = useQuery<SellerRankingItem[]>({
-    queryKey: ['/api/seller-ranking'],
+    queryKey: ["/api/v1/seller-ranking"],
     queryFn: async () => {
-      const res = await fetch('/api/seller-ranking?period=weekly', { credentials: 'include' });
+      const res = await fetch("/api/v1/seller-ranking?period=weekly", { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
-    }
-  });
-
-  const { data: recentInteractions = [] } = useQuery<CustomerInteraction[]>({
-    queryKey: ['/api/customer-interactions'],
-    queryFn: async () => {
-      const res = await fetch('/api/customer-interactions?limit=10', { credentials: 'include' });
-      if (!res.ok) return [];
-      return res.json();
-    }
+    },
   });
 
   const goalsMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await fetch('/api/seller-goals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(data)
-      });
-      if (!res.ok) throw new Error('Falha ao salvar metas');
+      const res = await apiRequest("POST", "/seller-goals", data);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/seller-goals'] });
-    }
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/seller-goals"] });
+    },
   });
 
   const dashboardData = useMemo(() => {
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentDay = now.getDate();
-    
-    const birthdaysToday = customers.filter(c => {
+
+    const birthdaysToday = customers.filter((c) => {
       if (!c.birthDate) return false;
       const bd = new Date(c.birthDate);
       return bd.getDate() === currentDay && bd.getMonth() === currentMonth;
     });
 
-    const birthdaysWeek = customers.filter(c => {
+    const birthdaysWeek = customers.filter((c) => {
       if (!c.birthDate) return false;
       const bd = new Date(c.birthDate);
       const bdThisYear = new Date(now.getFullYear(), bd.getMonth(), bd.getDate());
@@ -1049,7 +1403,7 @@ export default function AgendaVendedor() {
     });
 
     const vipCustomers = customers
-      .filter(c => c.segment === 'vip' || c.segment === 'premium')
+      .filter((c) => c.segment === "vip" || c.segment === "premium")
       .sort((a, b) => {
         const ltvA = parseCurrencyToNumber(a.ltv);
         const ltvB = parseCurrencyToNumber(b.ltv);
@@ -1058,16 +1412,14 @@ export default function AgendaVendedor() {
       .slice(0, 5);
 
     const dormantCustomers = customers
-      .filter(c => {
+      .filter((c) => {
         const days = getDaysAgo(c.lastPurchase);
         return days > 30 && days < 999;
       })
       .sort((a, b) => getDaysAgo(b.lastPurchase) - getDaysAgo(a.lastPurchase))
       .slice(0, 5);
 
-    const recentPurchases = customers
-      .filter(c => getDaysAgo(c.lastPurchase) <= 7)
-      .slice(0, 5);
+    const recentPurchases = customers.filter((c) => getDaysAgo(c.lastPurchase) <= 7).slice(0, 5);
 
     return {
       birthdaysToday,
@@ -1080,63 +1432,77 @@ export default function AgendaVendedor() {
 
   const completeMutation = useMutation({
     mutationFn: async (taskId: number) => {
-      const res = await fetch(`/api/seller-tasks/${taskId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ status: 'completed' })
-      });
-      if (!res.ok) throw new Error('Falha ao completar tarefa');
+      const res = await apiRequest("PUT", `/seller-tasks/${taskId}`, { status: "completed" });
       return res.json();
     },
     onMutate: (taskId) => setUpdatingTaskId(taskId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes('seller-tasks') });
+      queryClient.invalidateQueries({
+        predicate: (q) => String(q.queryKey[0]).includes("seller-tasks"),
+      });
     },
-    onSettled: () => setUpdatingTaskId(null)
+    onSettled: () => setUpdatingTaskId(null),
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const res = await fetch('/api/seller-tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(data)
-      });
-      if (!res.ok) throw new Error('Falha ao criar tarefa');
+    mutationFn: async (data: CreateTaskInput) => {
+      const res = await apiRequest("POST", "/seller-tasks", data);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).includes('seller-tasks') });
-    }
+      queryClient.invalidateQueries({
+        predicate: (q) => String(q.queryKey[0]).includes("seller-tasks"),
+      });
+      toast({ title: "Tarefa criada", description: "A tarefa foi registrada na agenda." });
+    },
+  });
+
+  const interactionMutation = useMutation({
+    mutationFn: async (data: CreateInteractionInput) => {
+      const res = await apiRequest("POST", "/customer-interactions", data);
+      return res.json() as Promise<CustomerInteraction>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/customer-interactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/v1/seller-ranking"] });
+      toast({
+        title: "Interação registrada",
+        description: "O contato foi salvo no histórico do cliente.",
+      });
+    },
   });
 
   const handleContactCustomer = (customer: Customer) => {
-    if (customer.phone) {
-      const msg = encodeURIComponent(`Olá ${customer.name?.split(' ')[0]}!`);
-      window.open(`https://wa.me/${customer.phone.replace(/\D/g, '')}?text=${msg}`, "_blank");
+    const url = buildWhatsAppUrl(customer.phone, `Olá ${customer.name?.split(" ")[0]}!`);
+    if (url) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
     }
+    toast({
+      title: "WhatsApp indisponível",
+      description: "Este cliente não possui um telefone válido para WhatsApp.",
+      variant: "destructive",
+    });
   };
 
   const META_DIARIA = goals?.dailyTaskGoal || 10;
   const META_SEMANAL = goals?.weeklyTaskGoal || 50;
-  const isManager = user?.role === 'manager' || user?.isSuperAdmin;
+  const isManager = user?.role === "manager" || user?.isSuperAdmin;
   const completedToday = stats?.completed || 0;
-  const completedWeek = completedTasks.filter(t => {
-    const completedDate = new Date(t.completedAt || '');
+  const completedWeek = completedTasks.filter((t) => {
+    const completedDate = new Date(t.completedAt || "");
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     return completedDate >= weekAgo;
   }).length;
 
-  const overdueTasks = weekTasks.filter(t => isBeforeDate(t.dueDate, today));
+  const overdueTasks = weekTasks.filter((t) => isBeforeDate(t.dueDate, today));
 
   const filteredTasks = useMemo(() => {
-    const tasksToFilter = activeTab === 'completed' ? completedTasks : 
-                         activeTab === 'week' ? weekTasks : todayTasks;
-    if (typeFilter === 'all') return tasksToFilter;
-    return tasksToFilter.filter(t => t.type === typeFilter);
+    const tasksToFilter =
+      activeTab === "completed" ? completedTasks : activeTab === "week" ? weekTasks : todayTasks;
+    if (typeFilter === "all") return tasksToFilter;
+    return tasksToFilter.filter((t) => t.type === typeFilter);
   }, [activeTab, typeFilter, todayTasks, weekTasks, completedTasks]);
 
   return (
@@ -1155,10 +1521,14 @@ export default function AgendaVendedor() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold tracking-tight">
-                  {getGreeting()}, {user?.name?.split(' ')[0] || 'Vendedor'}!
+                  {getGreeting()}, {user?.name?.split(" ")[0] || "Vendedor"}!
                 </h1>
                 <p className="text-muted-foreground">
-                  {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  {new Date().toLocaleDateString("pt-BR", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                  })}
                 </p>
               </div>
             </motion.div>
@@ -1169,7 +1539,11 @@ export default function AgendaVendedor() {
               onSaveGoals={goalsMutation.mutate}
               isManager={isManager ?? false}
             />
-            <NewTaskDialog customers={customers} onCreateTask={createMutation.mutate} />
+            <NewTaskDialog
+              customers={customers}
+              onCreateTask={createMutation.mutateAsync}
+              isCreating={createMutation.isPending}
+            />
           </div>
         </div>
 
@@ -1181,8 +1555,8 @@ export default function AgendaVendedor() {
             subtitle={`${completedToday} concluídas`}
             icon={<Target className="h-5 w-5 text-blue-600" />}
             color="bg-blue-50"
-            trend={completedToday >= META_DIARIA ? 'up' : 'neutral'}
-            trendValue={completedToday >= META_DIARIA ? 'Meta atingida!' : `Meta: ${META_DIARIA}`}
+            trend={completedToday >= META_DIARIA ? "up" : "neutral"}
+            trendValue={completedToday >= META_DIARIA ? "Meta atingida!" : `Meta: ${META_DIARIA}`}
           />
           <QuickStatCard
             title="Pendentes"
@@ -1195,8 +1569,8 @@ export default function AgendaVendedor() {
             value={stats?.overdue || 0}
             icon={<AlertTriangle className="h-5 w-5 text-red-600" />}
             color="bg-red-50"
-            trend={stats?.overdue && stats.overdue > 0 ? 'down' : 'neutral'}
-            trendValue={stats?.overdue && stats.overdue > 0 ? 'Atenção!' : 'Tudo em dia'}
+            trend={stats?.overdue && stats.overdue > 0 ? "down" : "neutral"}
+            trendValue={stats?.overdue && stats.overdue > 0 ? "Atenção!" : "Tudo em dia"}
           />
           <QuickStatCard
             title="Aniversariantes"
@@ -1222,7 +1596,9 @@ export default function AgendaVendedor() {
                     <CalendarDays className="h-4 w-4" />
                     Hoje
                     {todayTasks.length > 0 && (
-                      <Badge variant="secondary" className="ml-1 h-5 px-1.5">{todayTasks.length}</Badge>
+                      <Badge variant="secondary" className="ml-1 h-5 px-1.5">
+                        {todayTasks.length}
+                      </Badge>
                     )}
                   </TabsTrigger>
                   <TabsTrigger value="week" className="gap-1.5">
@@ -1235,7 +1611,7 @@ export default function AgendaVendedor() {
                   </TabsTrigger>
                 </TabsList>
 
-                {activeTab !== 'overview' && (
+                {activeTab !== "overview" && (
                   <Select value={typeFilter} onValueChange={setTypeFilter}>
                     <SelectTrigger className="w-[180px]">
                       <SelectValue placeholder="Filtrar tipo" />
@@ -1243,7 +1619,9 @@ export default function AgendaVendedor() {
                     <SelectContent>
                       <SelectItem value="all">Todos os tipos</SelectItem>
                       {Object.entries(taskTypeConfig).map(([key, config]) => (
-                        <SelectItem key={key} value={key}>{config.label}</SelectItem>
+                        <SelectItem key={key} value={key}>
+                          {config.label}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1277,7 +1655,12 @@ export default function AgendaVendedor() {
                         <Zap className="h-4 w-4 text-amber-500" />
                         Prioridades de Hoje
                       </CardTitle>
-                      <Button variant="ghost" size="sm" className="text-xs" onClick={() => setActiveTab('today')}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => setActiveTab("today")}
+                      >
                         Ver todas <ChevronRight className="h-3 w-3 ml-1" />
                       </Button>
                     </div>
@@ -1307,11 +1690,11 @@ export default function AgendaVendedor() {
                       </AnimatePresence>
                     )}
                     {todayTasks.length > 3 && (
-                      <Button 
-                        variant="outline" 
-                        className="w-full mt-2" 
+                      <Button
+                        variant="outline"
+                        className="w-full mt-2"
                         size="sm"
-                        onClick={() => setActiveTab('today')}
+                        onClick={() => setActiveTab("today")}
                       >
                         Ver mais {todayTasks.length - 3} tarefas
                       </Button>
@@ -1334,13 +1717,14 @@ export default function AgendaVendedor() {
                           <div className="flex-1">
                             <p className="font-semibold text-red-800">Atenção! Tarefas atrasadas</p>
                             <p className="text-sm text-red-600">
-                              Você tem {overdueTasks.length} tarefa(s) que precisam de atenção urgente.
+                              Você tem {overdueTasks.length} tarefa(s) que precisam de atenção
+                              urgente.
                             </p>
                           </div>
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             variant="destructive"
-                            onClick={() => setActiveTab('week')}
+                            onClick={() => setActiveTab("week")}
                           >
                             Ver agora
                           </Button>
@@ -1363,7 +1747,9 @@ export default function AgendaVendedor() {
                       <CardContent className="py-12 text-center">
                         <CheckCircle className="h-12 w-12 mx-auto mb-3 text-green-500" />
                         <h3 className="font-semibold text-lg">Tudo limpo!</h3>
-                        <p className="text-muted-foreground mt-1">Nenhuma tarefa pendente para hoje.</p>
+                        <p className="text-muted-foreground mt-1">
+                          Nenhuma tarefa pendente para hoje.
+                        </p>
                       </CardContent>
                     </Card>
                   ) : (
@@ -1388,7 +1774,9 @@ export default function AgendaVendedor() {
                       <CardContent className="py-12 text-center">
                         <Calendar className="h-12 w-12 mx-auto mb-3 text-blue-500" />
                         <h3 className="font-semibold text-lg">Semana tranquila!</h3>
-                        <p className="text-muted-foreground mt-1">Nenhuma tarefa pendente para esta semana.</p>
+                        <p className="text-muted-foreground mt-1">
+                          Nenhuma tarefa pendente para esta semana.
+                        </p>
                       </CardContent>
                     </Card>
                   ) : (
@@ -1413,7 +1801,9 @@ export default function AgendaVendedor() {
                       <CardContent className="py-12 text-center">
                         <History className="h-12 w-12 mx-auto mb-3 text-gray-400" />
                         <h3 className="font-semibold text-lg">Nenhuma tarefa concluída</h3>
-                        <p className="text-muted-foreground mt-1">Complete suas primeiras tarefas para ver o histórico.</p>
+                        <p className="text-muted-foreground mt-1">
+                          Complete suas primeiras tarefas para ver o histórico.
+                        </p>
                       </CardContent>
                     </Card>
                   ) : (
@@ -1444,7 +1834,8 @@ export default function AgendaVendedor() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {dashboardData.birthdaysToday.length === 0 && dashboardData.birthdaysWeek.length === 0 ? (
+                {dashboardData.birthdaysToday.length === 0 &&
+                dashboardData.birthdaysWeek.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     Nenhum aniversário próximo
                   </p>
@@ -1452,17 +1843,29 @@ export default function AgendaVendedor() {
                   <>
                     {dashboardData.birthdaysToday.length > 0 && (
                       <div className="space-y-2">
-                        <p className="text-xs font-medium text-pink-600 uppercase tracking-wide">Hoje</p>
-                        {dashboardData.birthdaysToday.map(customer => (
-                          <BirthdayCard key={customer.id} customer={customer} onContact={handleContactCustomer} />
+                        <p className="text-xs font-medium text-pink-600 uppercase tracking-wide">
+                          Hoje
+                        </p>
+                        {dashboardData.birthdaysToday.map((customer) => (
+                          <BirthdayCard
+                            key={customer.id}
+                            customer={customer}
+                            onContact={handleContactCustomer}
+                          />
                         ))}
                       </div>
                     )}
                     {dashboardData.birthdaysWeek.length > 0 && (
                       <div className="space-y-2 mt-4">
-                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Esta Semana</p>
-                        {dashboardData.birthdaysWeek.map(customer => (
-                          <BirthdayCard key={customer.id} customer={customer} onContact={handleContactCustomer} />
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                          Esta Semana
+                        </p>
+                        {dashboardData.birthdaysWeek.map((customer) => (
+                          <BirthdayCard
+                            key={customer.id}
+                            customer={customer}
+                            onContact={handleContactCustomer}
+                          />
                         ))}
                       </div>
                     )}
@@ -1489,8 +1892,12 @@ export default function AgendaVendedor() {
                     Nenhum cliente VIP cadastrado
                   </p>
                 ) : (
-                  dashboardData.vipCustomers.map(customer => (
-                    <VIPCustomerCard key={customer.id} customer={customer} onContact={handleContactCustomer} />
+                  dashboardData.vipCustomers.map((customer) => (
+                    <VIPCustomerCard
+                      key={customer.id}
+                      customer={customer}
+                      onContact={handleContactCustomer}
+                    />
                   ))
                 )}
               </CardContent>
@@ -1509,23 +1916,29 @@ export default function AgendaVendedor() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  {dashboardData.dormantCustomers.map(customer => (
-                    <div 
+                  {dashboardData.dormantCustomers.map((customer) => (
+                    <div
                       key={customer.id}
                       className="flex items-center gap-2 p-2 rounded bg-white/80"
                     >
                       <Avatar className="h-8 w-8">
                         <AvatarFallback className="text-xs bg-amber-100 text-amber-700">
-                          {customer.name?.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                          {customer.name
+                            ?.split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .slice(0, 2)}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{customer.name}</p>
-                        <p className="text-xs text-amber-600">{getDaysAgo(customer.lastPurchase)}d sem comprar</p>
+                        <p className="text-xs text-amber-600">
+                          {getDaysAgo(customer.lastPurchase)}d sem comprar
+                        </p>
                       </div>
-                      <Button 
-                        size="sm" 
-                        variant="ghost" 
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         className="h-7 w-7 p-0"
                         onClick={() => handleContactCustomer(customer)}
                       >
@@ -1544,24 +1957,94 @@ export default function AgendaVendedor() {
                   <Zap className="h-4 w-4 text-yellow-500" />
                   Ações Rápidas
                 </CardTitle>
+                <CardDescription className="text-xs">
+                  Atalhos conectados aos recursos disponíveis no CRM.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-2">
-                <Button variant="outline" size="sm" className="h-auto py-3 flex-col gap-1">
-                  <Users className="h-4 w-4" />
-                  <span className="text-xs">Clientes</span>
-                </Button>
-                <Button variant="outline" size="sm" className="h-auto py-3 flex-col gap-1">
-                  <ShoppingCart className="h-4 w-4" />
-                  <span className="text-xs">Vendas</span>
-                </Button>
-                <Button variant="outline" size="sm" className="h-auto py-3 flex-col gap-1">
-                  <BarChart3 className="h-4 w-4" />
-                  <span className="text-xs">Relatórios</span>
-                </Button>
-                <Button variant="outline" size="sm" className="h-auto py-3 flex-col gap-1">
-                  <Mail className="h-4 w-4" />
-                  <span className="text-xs">Campanhas</span>
-                </Button>
+              <CardContent className="space-y-3">
+                {customersLoading ? (
+                  <div className="grid grid-cols-2 gap-2" aria-label="Carregando ações rápidas">
+                    <Skeleton className="h-16" />
+                    <Skeleton className="h-16" />
+                  </div>
+                ) : customersError ? (
+                  <div
+                    className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
+                    role="alert"
+                  >
+                    <p className="text-destructive">
+                      Não foi possível carregar os clientes para estas ações.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => void refetchCustomers()}
+                    >
+                      Tentar novamente
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    {customers.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Nenhum cliente cadastrado. Tarefas sem cliente ainda podem ser criadas.
+                      </p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <NewTaskDialog
+                        customers={customers}
+                        onCreateTask={createMutation.mutateAsync}
+                        isCreating={createMutation.isPending}
+                        trigger={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-auto py-3 flex-col gap-1"
+                          >
+                            <Plus className="h-4 w-4" />
+                            <span className="text-xs">Nova tarefa</span>
+                          </Button>
+                        }
+                      />
+                      <NewInteractionDialog
+                        customers={customers}
+                        onCreateInteraction={interactionMutation.mutateAsync}
+                        isCreating={interactionMutation.isPending}
+                        disabled={customers.length === 0}
+                      />
+                      <WhatsAppDialog customers={customers} disabled={customers.length === 0} />
+                      <div className="space-y-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-auto w-full py-3 flex-col gap-1"
+                          disabled
+                        >
+                          <CalendarDays className="h-4 w-4" />
+                          <span className="text-xs">Calendário</span>
+                        </Button>
+                        <p className="text-[10px] leading-tight text-muted-foreground">
+                          Sem integração de calendário.
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-auto w-full py-3 flex-col gap-1"
+                          disabled
+                        >
+                          <Mail className="h-4 w-4" />
+                          <span className="text-xs">E-mail</span>
+                        </Button>
+                        <p className="text-[10px] leading-tight text-muted-foreground">
+                          Sem provedor de envio configurado.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>

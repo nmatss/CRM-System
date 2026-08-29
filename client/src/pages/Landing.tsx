@@ -1,205 +1,131 @@
-import { useState } from "react";
-import { useLocation } from "wouter";
+import { useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import {
-  Store,
   Users,
   TrendingUp,
   Zap,
   MessageSquare,
   Gift,
   BarChart3,
-  Shield,
   Check,
-  ArrowRight,
   Sparkles,
-  Building2,
-  RefreshCw,
   Database,
   Link2,
-  ChevronRight,
-  Star,
   Phone,
-  Mail,
   Calendar,
-  Target,
   Rocket,
-  Award,
-  Globe,
-  Clock,
   HeartHandshake,
   Loader2,
   Send,
   DollarSign,
   ShoppingBag,
   Tags,
-  ArrowUpRight
+  ArrowUpRight,
 } from "lucide-react";
 import zippiLogo from "@assets/generated_images/zippi_crm_modern_logo.png";
-
-const integrations = [
-  {
-    name: "Microvix",
-    logo: "M",
-    color: "from-cyan-500 to-blue-600",
-    description: "Integração completa com ERP Microvix para sincronização de vendas, estoque e clientes em tempo real.",
-    features: ["Sincronização de vendas", "Gestão de estoque", "Cadastro de clientes", "Pedidos automáticos"]
-  },
-  {
-    name: "Zippi CRM",
-    logo: "Z",
-    color: "from-emerald-500 to-teal-600",
-    description: "Integração completa com Zippi CRM para gestão de relacionamento e vendas.",
-    features: ["Gestão de leads", "Pipeline de vendas", "Automação de marketing", "Relatórios avançados"]
-  },
-  {
-    name: "LinxPOS",
-    logo: "L",
-    color: "from-orange-500 to-amber-600",
-    description: "Integração nativa com LinxPOS para operações de PDV e gestão de loja física.",
-    features: ["PDV integrado", "Vendas em tempo real", "Gestão de caixa", "Multi-lojas"]
-  }
-];
 
 const features = [
   {
     icon: Users,
     title: "Visão 360° do Cliente",
-    description: "Histórico completo, preferências, comportamento de compra e segmentação inteligente.",
-    color: "from-cyan-500 to-blue-500"
+    description:
+      "Cadastro, histórico de pedidos e interações disponíveis em uma visão central do cliente.",
+    color: "from-cyan-500 to-blue-500",
   },
   {
     icon: Gift,
     title: "Cashback & Fidelidade",
-    description: "Programa de pontos e cashback configurável para aumentar retenção e ticket médio.",
-    color: "from-pink-500 to-rose-500"
+    description: "Regras e lançamentos de cashback com saldo e movimentações rastreáveis.",
+    color: "from-pink-500 to-rose-500",
   },
   {
     icon: MessageSquare,
-    title: "Campanhas Multicanal",
-    description: "WhatsApp, SMS e Email integrados para comunicação personalizada com clientes.",
-    color: "from-emerald-500 to-teal-500"
+    title: "Rascunhos de Campanhas",
+    description:
+      "Configuração de campanhas e templates; o envio depende de provedor ainda não integrado.",
+    color: "from-emerald-500 to-teal-500",
   },
   {
     icon: Zap,
-    title: "Automações Inteligentes",
-    description: "Regras automáticas para aniversários, pós-venda, reativação e muito mais.",
-    color: "from-amber-500 to-orange-500"
+    title: "Configuração de Automações",
+    description: "Cadastro de regras de automação; o motor de execução ainda não está disponível.",
+    color: "from-amber-500 to-orange-500",
   },
   {
     icon: Calendar,
     title: "Agenda do Vendedor",
-    description: "Tarefas diárias, follow-ups e clienteling para vendedores mais produtivos.",
-    color: "from-violet-500 to-purple-500"
+    description: "Tarefas, interações e atalhos para acompanhar o trabalho do vendedor.",
+    color: "from-violet-500 to-purple-500",
   },
   {
     icon: BarChart3,
-    title: "Relatórios Avançados",
-    description: "Dashboards em tempo real com métricas de vendas, performance e ROI de campanhas.",
-    color: "from-blue-500 to-indigo-500"
-  }
+    title: "Visão Operacional",
+    description:
+      "Consultas de clientes, produtos, pedidos e dados operacionais registrados no sistema.",
+    color: "from-blue-500 to-indigo-500",
+  },
 ];
-
-const plans = [
-  {
-    name: "Starter",
-    price: "297",
-    description: "Para lojas iniciando no CRM",
-    features: [
-      "Até 1.000 clientes",
-      "1 usuário",
-      "Campanhas por email",
-      "Relatórios básicos",
-      "Suporte por email"
-    ],
-    highlighted: false
-  },
-  {
-    name: "Professional",
-    price: "597",
-    description: "Para lojas em crescimento",
-    features: [
-      "Até 10.000 clientes",
-      "5 usuários",
-      "WhatsApp + Email + SMS",
-      "Automações ilimitadas",
-      "Integrações ERP",
-      "Suporte prioritário"
-    ],
-    highlighted: true
-  },
-  {
-    name: "Enterprise",
-    price: "Sob consulta",
-    description: "Para redes e franquias",
-    features: [
-      "Clientes ilimitados",
-      "Usuários ilimitados",
-      "Multi-lojas",
-      "API personalizada",
-      "Gerente de sucesso dedicado",
-      "SLA garantido"
-    ],
-    highlighted: false
-  }
-];
-
-const testimonials = [
-  {
-    name: "Maria Santos",
-    role: "Proprietária",
-    company: "Boutique Elegance",
-    text: "O Zippi CRM transformou nossa loja. Aumentamos o ticket médio em 35% com as campanhas de cashback!",
-    rating: 5,
-    metric: "+35%",
-    metricLabel: "Ticket Médio"
-  },
-  {
-    name: "Roberto Lima",
-    role: "Gerente",
-    company: "Fashion Store",
-    text: "A integração com Microvix foi perfeita. Agora temos visão completa do cliente em um só lugar.",
-    rating: 5,
-    metric: "2x",
-    metricLabel: "Produtividade"
-  },
-  {
-    name: "Ana Paula",
-    role: "Diretora",
-    company: "Rede ModaPlus",
-    text: "Com a Agenda do Vendedor, nossos consultores ficaram muito mais produtivos e engajados.",
-    rating: 5,
-    metric: "+50%",
-    metricLabel: "Engajamento"
-  }
-];
-
 
 export default function Landing() {
-  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isDemoOpen, setIsDemoOpen] = useState(false);
+  const contactTriggerRef = useRef<HTMLElement | null>(null);
+  const demoTriggerRef = useRef<HTMLElement | null>(null);
   const [contactForm, setContactForm] = useState({ name: "", email: "", phone: "", message: "" });
-  const [demoForm, setDemoForm] = useState({ name: "", email: "", phone: "", company: "", storeCount: "", preferredDate: "", message: "" });
+  const [demoForm, setDemoForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    company: "",
+    storeCount: "",
+    preferredDate: "",
+    message: "",
+  });
+
+  const openDialogFromCurrentFocus = (
+    triggerRef: { current: HTMLElement | null },
+    setOpen: (open: boolean) => void,
+  ) => {
+    triggerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setOpen(true);
+  };
+
+  const restoreDialogTriggerFocus = (event: Event, triggerRef: { current: HTMLElement | null }) => {
+    if (!triggerRef.current) return;
+    event.preventDefault();
+    triggerRef.current.focus();
+    triggerRef.current = null;
+  };
 
   const contactMutation = useMutation({
     mutationFn: async (data: typeof contactForm) => {
-      const response = await fetch("/api/contact", {
+      const response = await fetch("/api/v1/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
+        credentials: "include",
       });
-      if (!response.ok) throw new Error("Erro ao enviar mensagem");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Não foi possível enviar sua mensagem.");
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -208,27 +134,50 @@ export default function Landing() {
       setContactForm({ name: "", email: "", phone: "", message: "" });
     },
     onError: () => {
-      toast({ title: "Erro", description: "Não foi possível enviar sua mensagem.", variant: "destructive" });
+      toast({
+        title: "Erro",
+        description: "Não foi possível enviar sua mensagem.",
+        variant: "destructive",
+      });
     },
   });
 
   const demoMutation = useMutation({
     mutationFn: async (data: typeof demoForm) => {
-      const response = await fetch("/api/demo", {
+      const response = await fetch("/api/v1/demo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
+        credentials: "include",
       });
-      if (!response.ok) throw new Error("Erro ao agendar demo");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Não foi possível agendar a demo.");
+      }
       return response.json();
     },
     onSuccess: () => {
-      toast({ title: "Demo agendada!", description: "Nossa equipe entrará em contato para confirmar." });
+      toast({
+        title: "Solicitação recebida!",
+        description: "A demonstração depende de confirmação da equipe.",
+      });
       setIsDemoOpen(false);
-      setDemoForm({ name: "", email: "", phone: "", company: "", storeCount: "", preferredDate: "", message: "" });
+      setDemoForm({
+        name: "",
+        email: "",
+        phone: "",
+        company: "",
+        storeCount: "",
+        preferredDate: "",
+        message: "",
+      });
     },
     onError: () => {
-      toast({ title: "Erro", description: "Não foi possível agendar sua demo.", variant: "destructive" });
+      toast({
+        title: "Erro",
+        description: "Não foi possível agendar sua demo.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -248,35 +197,55 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-2">
-              <img 
-                src={zippiLogo} 
-                alt="Zippi CRM" 
+              <img
+                src={zippiLogo}
+                alt="Zippi CRM"
                 className="h-10 w-auto object-contain bg-[#050A1A] rounded"
                 data-testid="header-logo"
               />
             </div>
             <nav className="hidden md:flex items-center gap-8">
-              <a href="#features" className="text-sm text-gray-400 hover:text-white transition-colors">Recursos</a>
-              <a href="#integrations" className="text-sm text-gray-400 hover:text-white transition-colors">Integrações</a>
-              <a href="#pricing" className="text-sm text-gray-400 hover:text-white transition-colors">Planos</a>
-              <a href="#testimonials" className="text-sm text-gray-400 hover:text-white transition-colors">Cases</a>
+              <a
+                href="#features"
+                className="text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                Recursos
+              </a>
+              <a
+                href="#integrations"
+                className="text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                Integrações
+              </a>
+              <a
+                href="#pricing"
+                className="text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                Planos
+              </a>
+              <a
+                href="#contact"
+                className="text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                Contato
+              </a>
             </nav>
             <div className="flex items-center gap-3">
-              <Button 
+              <Button
                 variant="ghost"
                 className="text-gray-300 hover:text-white hover:bg-white/10"
                 data-testid="button-header-contact"
-                onClick={() => setIsContactOpen(true)}
+                onClick={() => openDialogFromCurrentFocus(contactTriggerRef, setIsContactOpen)}
               >
                 <Phone className="w-4 h-4 mr-2" />
                 Contato
               </Button>
-              <Button 
+              <Button
                 className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 shadow-lg shadow-cyan-500/25"
                 data-testid="button-header-demo"
-                onClick={() => setIsDemoOpen(true)}
+                onClick={() => openDialogFromCurrentFocus(demoTriggerRef, setIsDemoOpen)}
               >
-                Agendar Demo
+                Solicitar Demo
               </Button>
             </div>
           </div>
@@ -287,44 +256,47 @@ export default function Landing() {
         <div className="absolute inset-0 bg-gradient-to-b from-cyan-500/5 via-transparent to-transparent" />
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
         <div className="absolute top-1/3 right-1/4 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl" />
-        
+
         <div className="max-w-7xl mx-auto relative">
-          <motion.div 
+          <motion.div
             className="text-center max-w-4xl mx-auto"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <Badge className="mb-6 bg-cyan-500/10 text-cyan-400 border-cyan-500/20 hover:bg-cyan-500/20" data-testid="badge-hero">
+            <Badge
+              className="mb-6 bg-cyan-500/10 text-cyan-400 border-cyan-500/20 hover:bg-cyan-500/20"
+              data-testid="badge-hero"
+            >
               <Sparkles className="w-3 h-3 mr-1" />
-              Plataforma #1 para Varejo
+              CRM operacional para varejo
             </Badge>
             <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight mb-6">
-              Transforme dados em{" "}
+              Organize dados e{" "}
               <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
-                vendas recorrentes
+                rotinas comerciais
               </span>
             </h1>
-            <p className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed">
-              CRM completo para varejo de moda com integração nativa aos principais ERPs. 
-              Aumente vendas, fidelize clientes e potencialize sua equipe com inteligência de dados.
+            <p className="mx-auto mb-10 w-full min-w-0 max-w-[42rem] text-xl leading-relaxed text-gray-400">
+              Centralize clientes, produtos, pedidos, cashback e rotinas comerciais em um único
+              ambiente. Integrações e recursos em evolução são confirmados durante a demonstração.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button 
-                size="lg" 
+              <Button
+                size="lg"
                 className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-lg px-8 shadow-xl shadow-cyan-500/25"
                 data-testid="button-hero-demo"
-                onClick={() => setIsDemoOpen(true)}
+                onClick={() => openDialogFromCurrentFocus(demoTriggerRef, setIsDemoOpen)}
               >
                 <Rocket className="w-5 h-5 mr-2" />
-                Começar Agora
+                Solicitar demonstração
               </Button>
-              <Button 
-                size="lg" 
-                variant="outline" 
+              <Button
+                size="lg"
+                variant="outline"
                 className="text-lg px-8 border-gray-700 text-gray-300 hover:bg-white/5 hover:border-gray-600"
                 data-testid="button-hero-contact"
-                onClick={() => setIsContactOpen(true)}
+                onClick={() => openDialogFromCurrentFocus(contactTriggerRef, setIsContactOpen)}
               >
                 <Phone className="w-5 h-5 mr-2" />
                 Falar com Especialista
@@ -332,7 +304,7 @@ export default function Landing() {
             </div>
           </motion.div>
 
-          <motion.div 
+          <motion.div
             className="mt-20 relative"
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
@@ -348,26 +320,52 @@ export default function Landing() {
                     <div className="w-3 h-3 rounded-full bg-green-500/80"></div>
                   </div>
                   <div className="flex-1 text-center">
-                    <span className="text-xs text-gray-500">app.zippicrm.com.br</span>
+                    <span className="text-xs text-gray-500">Prévia ilustrativa do produto</span>
                   </div>
                 </div>
                 <div className="p-6">
                   <div className="flex items-center justify-between mb-6">
                     <div>
-                      <h3 className="text-lg font-semibold text-white">Visão Geral da Loja</h3>
-                      <p className="text-xs text-gray-500">Performance da Coleção Primavera 2025</p>
+                      <h3 className="text-lg font-semibold text-white">Exemplo de interface</h3>
+                      <p className="text-xs text-gray-500">
+                        Dados fictícios usados somente para demonstração visual
+                      </p>
                     </div>
                     <div className="flex gap-2">
-                      <div className="px-3 py-1.5 rounded-md bg-[#1F2937]/80 border border-white/10 text-xs text-gray-400">Baixar Relatório</div>
-                      <div className="px-3 py-1.5 rounded-md bg-cyan-600 text-xs text-white">Novo Pedido</div>
+                      <div className="px-3 py-1.5 rounded-md bg-[#1F2937]/80 border border-white/10 text-xs text-gray-400">
+                        Baixar Relatório
+                      </div>
+                      <div className="px-3 py-1.5 rounded-md bg-cyan-600 text-xs text-white">
+                        Novo Pedido
+                      </div>
                     </div>
                   </div>
                   <div className="grid grid-cols-4 gap-3 mb-6">
                     {[
-                      { label: "Vendas Totais", value: "R$ 145.231", trend: "+20.1% vs mês anterior", icon: DollarSign },
-                      { label: "Ticket Médio", value: "R$ 450,00", trend: "+12.5% vs mês anterior", icon: Tags },
-                      { label: "Total de Pedidos", value: "324", trend: "+19% vs mês anterior", icon: ShoppingBag },
-                      { label: "Novos Clientes VIP", value: "+12", trend: "+4 nesta semana", icon: Users }
+                      {
+                        label: "Vendas Totais",
+                        value: "R$ 145.231",
+                        trend: "+20.1% vs mês anterior",
+                        icon: DollarSign,
+                      },
+                      {
+                        label: "Ticket Médio",
+                        value: "R$ 450,00",
+                        trend: "+12.5% vs mês anterior",
+                        icon: Tags,
+                      },
+                      {
+                        label: "Total de Pedidos",
+                        value: "324",
+                        trend: "+19% vs mês anterior",
+                        icon: ShoppingBag,
+                      },
+                      {
+                        label: "Novos Clientes VIP",
+                        value: "+12",
+                        trend: "+4 nesta semana",
+                        icon: Users,
+                      },
                     ].map((stat, i) => (
                       <div key={i} className="bg-[#1F2937]/50 rounded-xl p-4 border border-white/5">
                         <div className="flex items-center justify-between mb-2">
@@ -400,10 +398,10 @@ export default function Landing() {
                             { day: "Qui", h: 35 },
                             { day: "Sex", h: 70 },
                             { day: "Sab", h: 100 },
-                            { day: "Dom", h: 76 }
+                            { day: "Dom", h: 76 },
                           ].map((bar, i) => (
                             <div key={i} className="flex flex-col items-center gap-1">
-                              <div 
+                              <div
                                 className="w-6 bg-cyan-500 rounded-t-sm"
                                 style={{ height: `${bar.h}%` }}
                               ></div>
@@ -416,14 +414,34 @@ export default function Landing() {
                     <div className="col-span-3 bg-[#1F2937]/50 rounded-xl p-4 border border-white/5">
                       <div className="mb-1">
                         <p className="text-sm font-medium text-white">Vendas Recentes</p>
-                        <p className="text-[10px] text-gray-500">Feed ao vivo de vendas</p>
+                        <p className="text-[10px] text-gray-500">Exemplo ilustrativo</p>
                       </div>
                       <div className="space-y-3 mt-3">
                         {[
-                          { name: "Mariana Costa", email: "mariana@email.com", value: "R$ 1.250,00", initials: "MC" },
-                          { name: "João Pedro Silva", email: "joao.silva@gmail.com", value: "R$ 890,00", initials: "JP" },
-                          { name: "Ana Beatriz", email: "ana.b@outlook.com", value: "R$ 2.100,00", initials: "AB" },
-                          { name: "Carlos Eduardo", email: "carlos.e@email.com", value: "R$ 650,00", initials: "CE" }
+                          {
+                            name: "Mariana Costa",
+                            email: "mariana@email.com",
+                            value: "R$ 1.250,00",
+                            initials: "MC",
+                          },
+                          {
+                            name: "João Pedro Silva",
+                            email: "joao.silva@gmail.com",
+                            value: "R$ 890,00",
+                            initials: "JP",
+                          },
+                          {
+                            name: "Ana Beatriz",
+                            email: "ana.b@outlook.com",
+                            value: "R$ 2.100,00",
+                            initials: "AB",
+                          },
+                          {
+                            name: "Carlos Eduardo",
+                            email: "carlos.e@email.com",
+                            value: "R$ 650,00",
+                            initials: "CE",
+                          },
                         ].map((sale, i) => (
                           <div key={i} className="flex items-center gap-2">
                             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-[10px] font-medium text-white">
@@ -446,10 +464,9 @@ export default function Landing() {
         </div>
       </section>
 
-
       <section id="features" className="py-24 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
-          <motion.div 
+          <motion.div
             className="text-center mb-16"
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
@@ -460,11 +477,10 @@ export default function Landing() {
               Recursos Poderosos
             </Badge>
             <h2 className="text-4xl font-bold mb-4">
-              Tudo que você precisa para{" "}
-              <span className="text-cyan-400">crescer</span>
+              Recursos disponíveis para a <span className="text-cyan-400">operação comercial</span>
             </h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-              Ferramentas completas para conhecer, engajar e fidelizar seus clientes
+            <p className="mx-auto w-full min-w-0 max-w-[42rem] text-xl text-gray-400">
+              Conheça o escopo atual e as limitações de cada módulo antes da contratação.
             </p>
           </motion.div>
 
@@ -477,9 +493,14 @@ export default function Landing() {
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
               >
-                <Card className="h-full bg-[#0F172A]/50 border-white/5 hover:border-white/10 transition-all hover:bg-[#0F172A]/80 group" data-testid={`card-feature-${index}`}>
+                <Card
+                  className="h-full bg-[#0F172A]/50 border-white/5 hover:border-white/10 transition-all hover:bg-[#0F172A]/80 group"
+                  data-testid={`card-feature-${index}`}
+                >
                   <CardHeader>
-                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform`}>
+                    <div
+                      className={`w-12 h-12 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-4 shadow-lg group-hover:scale-110 transition-transform`}
+                    >
                       <feature.icon className="w-6 h-6 text-white" />
                     </div>
                     <CardTitle className="text-white">{feature.title}</CardTitle>
@@ -494,9 +515,12 @@ export default function Landing() {
         </div>
       </section>
 
-      <section id="integrations" className="py-24 px-4 sm:px-6 lg:px-8 bg-[#0F172A]/50">
+      <section
+        id="integrations"
+        className="overflow-hidden py-24 px-4 sm:px-6 lg:px-8 bg-[#0F172A]/50"
+      >
         <div className="max-w-7xl mx-auto">
-          <motion.div 
+          <motion.div
             className="text-center mb-16"
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
@@ -504,71 +528,36 @@ export default function Landing() {
           >
             <Badge className="mb-4 bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
               <Link2 className="w-3 h-3 mr-1" />
-              Integrações Nativas
+              Integrações
             </Badge>
             <h2 className="text-4xl font-bold mb-4">
-              Conectado aos principais{" "}
-              <span className="text-emerald-400">ERPs do Brasil</span>
+              Conectores sob <span className="text-emerald-400">avaliação técnica</span>
             </h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-              Integração plug-and-play com os sistemas que você já usa
+            <p className="mx-auto w-full min-w-0 max-w-[42rem] text-xl text-gray-400">
+              Não anunciamos integração nativa sem contrato e validação. Fale conosco para verificar
+              a disponibilidade para o seu sistema.
             </p>
           </motion.div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {integrations.map((integration, index) => (
-              <motion.div
-                key={integration.name}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
-              >
-                <Card className="h-full bg-[#0F172A]/80 border-white/5 hover:border-white/10 transition-all" data-testid={`card-integration-${integration.name.toLowerCase().replace(' ', '-')}`}>
-                  <CardHeader>
-                    <div className="flex items-center gap-4 mb-2">
-                      <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${integration.color} flex items-center justify-center text-white text-2xl font-bold shadow-lg`}>
-                        {integration.logo}
-                      </div>
-                      <div>
-                        <CardTitle className="text-xl text-white">{integration.name}</CardTitle>
-                        <Badge variant="secondary" className="mt-1 bg-white/5 text-gray-400 border-white/10">Certificado</Badge>
-                      </div>
-                    </div>
-                    <CardDescription className="text-gray-400 text-base">
-                      {integration.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-2">
-                      {integration.features.map((feature, i) => (
-                        <li key={i} className="flex items-center gap-2 text-sm text-gray-300">
-                          <Check className="w-4 h-4 text-emerald-400" />
-                          {feature}
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-
-          <div className="mt-12 text-center">
-            <p className="text-gray-500 mb-4">E muitas outras integrações disponíveis</p>
-            <div className="flex justify-center gap-8 opacity-40">
-              <Database className="w-8 h-8 text-gray-500" />
-              <RefreshCw className="w-8 h-8 text-gray-500" />
-              <Building2 className="w-8 h-8 text-gray-500" />
-              <Globe className="w-8 h-8 text-gray-500" />
-            </div>
+          <div className="mx-auto w-full min-w-0 max-w-[42rem] overflow-hidden rounded-2xl border border-white/10 bg-[#0F172A]/80 p-4 text-center sm:p-8">
+            <Database className="mx-auto mb-4 h-10 w-10 text-emerald-400" />
+            <p className="mb-6 text-gray-300">
+              O escopo, a origem dos dados, a frequência de sincronização e os requisitos de
+              segurança precisam ser analisados antes de qualquer compromisso de integração.
+            </p>
+            <Button
+              variant="outline"
+              className="h-auto w-full min-w-0 max-w-full whitespace-normal break-words sm:w-auto"
+              onClick={() => openDialogFromCurrentFocus(contactTriggerRef, setIsContactOpen)}
+            >
+              Consultar compatibilidade
+            </Button>
           </div>
         </div>
       </section>
 
       <section id="pricing" className="py-24 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
-          <motion.div 
+          <motion.div
             className="text-center mb-16"
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
@@ -576,138 +565,38 @@ export default function Landing() {
           >
             <Badge className="mb-4 bg-amber-500/10 text-amber-400 border-amber-500/20">
               <TrendingUp className="w-3 h-3 mr-1" />
-              Planos Flexíveis
+              Condições comerciais
             </Badge>
             <h2 className="text-4xl font-bold mb-4">
-              Escolha o plano ideal para{" "}
-              <span className="text-amber-400">sua loja</span>
+              Planos em <span className="text-amber-400">definição comercial</span>
             </h2>
-            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-              Comece agora e escale conforme seu negócio cresce
+            <p className="mx-auto w-full min-w-0 max-w-[42rem] text-xl text-gray-400">
+              Preços, limites, SLA e serviços ainda dependem de aprovação comercial formal.
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {plans.map((plan, index) => (
-              <motion.div
-                key={plan.name}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
+          <Card className="mx-auto w-full min-w-0 max-w-[42rem] overflow-hidden bg-[#0F172A]/80 border-white/10">
+            <CardContent className="grid min-w-0 grid-cols-1 gap-5 p-4 text-center sm:p-8">
+              <p className="min-w-0 break-words text-gray-300">
+                Solicite uma conversa para entender o estado atual do produto. Nenhum preço, limite
+                de uso ou nível de serviço é oferecido nesta página.
+              </p>
+              <Button
+                className="h-auto w-full min-w-0 max-w-full whitespace-normal break-words"
+                onClick={() => openDialogFromCurrentFocus(contactTriggerRef, setIsContactOpen)}
               >
-                <Card 
-                  className={`h-full relative bg-[#0F172A]/80 border-white/5 ${plan.highlighted ? 'border-cyan-500/50 shadow-xl shadow-cyan-500/10 scale-105' : ''}`}
-                  data-testid={`card-plan-${plan.name.toLowerCase()}`}
-                >
-                  {plan.highlighted && (
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                      <Badge className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white border-0">
-                        <Star className="w-3 h-3 mr-1" />
-                        Mais Popular
-                      </Badge>
-                    </div>
-                  )}
-                  <CardHeader className="text-center pb-2">
-                    <CardTitle className="text-xl text-white">{plan.name}</CardTitle>
-                    <CardDescription className="text-gray-400">{plan.description}</CardDescription>
-                    <div className="mt-4">
-                      {plan.price === "Sob consulta" ? (
-                        <span className="text-3xl font-bold text-white">{plan.price}</span>
-                      ) : (
-                        <>
-                          <span className="text-sm text-gray-500">R$</span>
-                          <span className="text-5xl font-bold text-white">{plan.price}</span>
-                          <span className="text-gray-500">/mês</span>
-                        </>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-3 mb-6">
-                      {plan.features.map((feature, i) => (
-                        <li key={i} className="flex items-center gap-2 text-sm text-gray-300">
-                          <Check className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                          {feature}
-                        </li>
-                      ))}
-                    </ul>
-                    <Button 
-                      className={`w-full ${plan.highlighted ? 'bg-gradient-to-r from-cyan-500 to-blue-600 shadow-lg shadow-cyan-500/25' : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'}`}
-                      variant={plan.highlighted ? "default" : "ghost"}
-                    >
-                      {plan.price === "Sob consulta" ? "Falar com Vendas" : "Começar Agora"}
-                      <ChevronRight className="w-4 h-4 ml-1" />
-                    </Button>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
+                Solicitar informações comerciais
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </section>
 
-      <section id="testimonials" className="py-24 px-4 sm:px-6 lg:px-8 bg-[#0F172A]/50">
-        <div className="max-w-7xl mx-auto">
-          <motion.div 
-            className="text-center mb-16"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true }}
-          >
-            <Badge className="mb-4 bg-pink-500/10 text-pink-400 border-pink-500/20">
-              <Award className="w-3 h-3 mr-1" />
-              Cases de Sucesso
-            </Badge>
-            <h2 className="text-4xl font-bold mb-4">
-              Resultados que{" "}
-              <span className="text-pink-400">falam por si</span>
-            </h2>
-          </motion.div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {testimonials.map((testimonial, index) => (
-              <motion.div
-                key={testimonial.name}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.1 }}
-              >
-                <Card className="h-full bg-[#0F172A]/80 border-white/5" data-testid={`card-testimonial-${index}`}>
-                  <CardContent className="pt-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex gap-1">
-                        {[...Array(testimonial.rating)].map((_, i) => (
-                          <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400" />
-                        ))}
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-cyan-400">{testimonial.metric}</div>
-                        <div className="text-xs text-gray-500">{testimonial.metricLabel}</div>
-                      </div>
-                    </div>
-                    <p className="text-gray-300 mb-6 italic">"{testimonial.text}"</p>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600"></div>
-                      <div>
-                        <p className="font-medium text-white">{testimonial.name}</p>
-                        <p className="text-sm text-gray-500">{testimonial.role}, {testimonial.company}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="py-24 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+      <section id="contact" className="py-24 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-cyan-600/20 to-blue-600/20" />
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl" />
         <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-blue-600/20 rounded-full blur-3xl" />
-        
+
         <div className="max-w-4xl mx-auto text-center relative">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -715,45 +604,48 @@ export default function Landing() {
             viewport={{ once: true }}
           >
             <h2 className="text-4xl sm:text-5xl font-bold mb-6">
-              Pronto para transformar{" "}
-              <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">sua loja?</span>
+              Quer conhecer o estado atual do{" "}
+              <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+                produto?
+              </span>
             </h2>
             <p className="text-xl text-gray-300 mb-10">
-              Junte-se a mais de 500 lojas que já usam o Zippi CRM para crescer de forma inteligente
+              Solicite uma demonstração. A equipe apresentará apenas os módulos disponíveis e as
+              limitações conhecidas.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button 
-                size="lg" 
+              <Button
+                size="lg"
                 className="bg-white text-gray-900 hover:bg-gray-100 text-lg px-8 shadow-xl"
                 data-testid="button-cta-demo"
-                onClick={() => setIsDemoOpen(true)}
+                onClick={() => openDialogFromCurrentFocus(demoTriggerRef, setIsDemoOpen)}
               >
                 <Rocket className="w-5 h-5 mr-2" />
-                Agendar Demonstração Gratuita
+                Solicitar demonstração
               </Button>
-              <Button 
-                size="lg" 
+              <Button
+                size="lg"
                 variant="outline"
                 className="border-white/30 text-white hover:bg-white/10 text-lg px-8"
                 data-testid="button-cta-contact"
-                onClick={() => setIsContactOpen(true)}
+                onClick={() => openDialogFromCurrentFocus(contactTriggerRef, setIsContactOpen)}
               >
                 <HeartHandshake className="w-5 h-5 mr-2" />
                 Falar com Consultor
               </Button>
             </div>
-            <div className="flex items-center justify-center gap-8 mt-10 text-sm text-gray-400">
+            <div className="mt-10 flex flex-col items-center justify-center gap-4 text-sm text-gray-400 md:flex-row md:gap-8">
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-emerald-400" />
-                Demo personalizada
+                Escopo confirmado na conversa
               </div>
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-emerald-400" />
-                Suporte em português
+                Sem promessa de integração não validada
               </div>
               <div className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-emerald-400" />
-                Implantação assistida
+                Condições comerciais sob aprovação
               </div>
             </div>
           </motion.div>
@@ -764,27 +656,37 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-2">
-              <img 
-                src={zippiLogo} 
-                alt="Zippi CRM" 
+              <img
+                src={zippiLogo}
+                alt="Zippi CRM"
                 className="h-8 w-auto object-contain bg-[#050A1A] rounded"
                 data-testid="footer-logo"
               />
             </div>
-            <div className="flex items-center gap-8 text-sm text-gray-500">
-              <a href="#" className="hover:text-white transition-colors">Termos de Uso</a>
-              <a href="#" className="hover:text-white transition-colors">Privacidade</a>
-              <a href="#" className="hover:text-white transition-colors">Suporte</a>
+            <div className="flex flex-col items-center gap-2 text-sm text-gray-500 md:items-end">
+              <p>
+                Termos de uso e política de privacidade: conteúdo jurídico pendente de aprovação.
+              </p>
+              <button
+                type="button"
+                className="hover:text-white transition-colors underline underline-offset-4"
+                onClick={() => openDialogFromCurrentFocus(contactTriggerRef, setIsContactOpen)}
+              >
+                Contatar suporte
+              </button>
             </div>
             <p className="text-sm text-gray-600">
-              © 2024 Zippi CRM. Todos os direitos reservados.
+              © {new Date().getFullYear()} Zippi CRM. Todos os direitos reservados.
             </p>
           </div>
         </div>
       </footer>
 
       <Dialog open={isContactOpen} onOpenChange={setIsContactOpen}>
-        <DialogContent className="bg-[#0F172A] border-white/10 text-white max-w-md">
+        <DialogContent
+          className="bg-[#0F172A] border-white/10 text-white max-w-md"
+          onCloseAutoFocus={(event) => restoreDialogTriggerFocus(event, contactTriggerRef)}
+        >
           <DialogHeader>
             <DialogTitle className="text-xl">Entre em Contato</DialogTitle>
             <DialogDescription className="text-gray-400">
@@ -851,9 +753,13 @@ export default function Landing() {
               data-testid="button-submit-contact"
             >
               {contactMutation.isPending ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Enviando...</>
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Enviando...
+                </>
               ) : (
-                <><Send className="w-4 h-4 mr-2" /> Enviar Mensagem</>
+                <>
+                  <Send className="w-4 h-4 mr-2" /> Enviar Mensagem
+                </>
               )}
             </Button>
           </form>
@@ -861,11 +767,14 @@ export default function Landing() {
       </Dialog>
 
       <Dialog open={isDemoOpen} onOpenChange={setIsDemoOpen}>
-        <DialogContent className="bg-[#0F172A] border-white/10 text-white max-w-md">
+        <DialogContent
+          className="bg-[#0F172A] border-white/10 text-white max-w-md"
+          onCloseAutoFocus={(event) => restoreDialogTriggerFocus(event, demoTriggerRef)}
+        >
           <DialogHeader>
-            <DialogTitle className="text-xl">Agendar Demonstração</DialogTitle>
+            <DialogTitle className="text-xl">Solicitar Demonstração</DialogTitle>
             <DialogDescription className="text-gray-400">
-              Veja o Zippi CRM em ação. Agende uma demo personalizada.
+              Envie sua preferência. A data somente será confirmada após contato da equipe.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleDemoSubmit} className="space-y-4">
@@ -966,9 +875,13 @@ export default function Landing() {
               data-testid="button-submit-demo"
             >
               {demoMutation.isPending ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Agendando...</>
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Enviando...
+                </>
               ) : (
-                <><Calendar className="w-4 h-4 mr-2" /> Agendar Demo</>
+                <>
+                  <Calendar className="w-4 h-4 mr-2" /> Solicitar Demo
+                </>
               )}
             </Button>
           </form>

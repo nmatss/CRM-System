@@ -15,9 +15,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Plus, Search, Download, Filter, MoreVertical } from "lucide-react";
-import { useAIDrawer } from "@/hooks/use-ai-drawer";
 
 /**
  * EXEMPLO 1: Página com Grid de Cards Responsivo
@@ -25,10 +31,7 @@ import { useAIDrawer } from "@/hooks/use-ai-drawer";
 export function ExemploGridCards() {
   return (
     <Layout>
-      <PageHeader
-        title="Estatísticas da Loja"
-        description="Visão geral dos principais indicadores"
-      >
+      <PageHeader title="Estatísticas da Loja" description="Visão geral dos principais indicadores">
         <Button variant="outline" size="sm">
           <Download className="h-4 w-4 mr-2" />
           <span className="hidden sm:inline">Exportar</span>
@@ -47,9 +50,7 @@ export function ExemploGridCards() {
             <CardDescription>Total de Clientes</CardDescription>
           </CardHeader>
           <CardContent>
-            <Badge className="bg-[hsl(var(--color-success-500))] text-white">
-              +12% este mês
-            </Badge>
+            <Badge className="bg-[hsl(var(--color-success-500))] text-white">+12% este mês</Badge>
           </CardContent>
         </Card>
 
@@ -59,9 +60,7 @@ export function ExemploGridCards() {
             <CardDescription>Vendas Totais</CardDescription>
           </CardHeader>
           <CardContent>
-            <Badge className="bg-[hsl(var(--color-success-500))] text-white">
-              +8% este mês
-            </Badge>
+            <Badge className="bg-[hsl(var(--color-success-500))] text-white">+8% este mês</Badge>
           </CardContent>
         </Card>
 
@@ -71,9 +70,7 @@ export function ExemploGridCards() {
             <CardDescription>Pedidos Hoje</CardDescription>
           </CardHeader>
           <CardContent>
-            <Badge className="bg-[hsl(var(--color-warning-500))] text-white">
-              -3% que ontem
-            </Badge>
+            <Badge className="bg-[hsl(var(--color-warning-500))] text-white">-3% que ontem</Badge>
           </CardContent>
         </Card>
 
@@ -83,9 +80,7 @@ export function ExemploGridCards() {
             <CardDescription>Satisfação</CardDescription>
           </CardHeader>
           <CardContent>
-            <Badge className="bg-[hsl(var(--color-success-500))] text-white">
-              Excelente
-            </Badge>
+            <Badge className="bg-[hsl(var(--color-success-500))] text-white">Excelente</Badge>
           </CardContent>
         </Card>
       </div>
@@ -99,67 +94,40 @@ export function ExemploGridCards() {
 export function ExemploFormulario() {
   return (
     <Layout>
-      <PageHeader
-        title="Novo Cliente"
-        description="Preencha os dados do cliente"
-      />
+      <PageHeader title="Novo Cliente" description="Preencha os dados do cliente" />
 
       <Card>
         <CardHeader>
           <CardTitle>Informações Pessoais</CardTitle>
-          <CardDescription>
-            Dados básicos do cliente
-          </CardDescription>
+          <CardDescription>Dados básicos do cliente</CardDescription>
         </CardHeader>
         <CardContent>
           {/* Grid responsivo: 1 coluna em mobile, 2 em desktop */}
           <form className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="nome">Nome Completo</Label>
-              <Input
-                id="nome"
-                placeholder="João da Silva"
-                className="w-full"
-              />
+              <Input id="nome" placeholder="João da Silva" className="w-full" />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="joao@email.com"
-                className="w-full"
-              />
+              <Input id="email" type="email" placeholder="joao@email.com" className="w-full" />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="telefone">Telefone</Label>
-              <Input
-                id="telefone"
-                type="tel"
-                placeholder="(11) 99999-9999"
-                className="w-full"
-              />
+              <Input id="telefone" type="tel" placeholder="(11) 99999-9999" className="w-full" />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="cpf">CPF</Label>
-              <Input
-                id="cpf"
-                placeholder="000.000.000-00"
-                className="w-full"
-              />
+              <Input id="cpf" placeholder="000.000.000-00" className="w-full" />
             </div>
 
             {/* Endereço ocupa 2 colunas em desktop */}
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="endereco">Endereço</Label>
-              <Input
-                id="endereco"
-                placeholder="Rua, Número, Bairro"
-                className="w-full"
-              />
+              <Input id="endereco" placeholder="Rua, Número, Bairro" className="w-full" />
             </div>
 
             {/* Botões ocupam 2 colunas e ficam à direita */}
@@ -183,24 +151,36 @@ export function ExemploFormulario() {
  */
 export function ExemploTabela() {
   const clientes = [
-    { id: 1, nome: "João Silva", email: "joao@email.com", telefone: "(11) 99999-9999", status: "Ativo" },
-    { id: 2, nome: "Maria Santos", email: "maria@email.com", telefone: "(11) 88888-8888", status: "Ativo" },
-    { id: 3, nome: "Pedro Costa", email: "pedro@email.com", telefone: "(11) 77777-7777", status: "Inativo" },
+    {
+      id: 1,
+      nome: "João Silva",
+      email: "joao@email.com",
+      telefone: "(11) 99999-9999",
+      status: "Ativo",
+    },
+    {
+      id: 2,
+      nome: "Maria Santos",
+      email: "maria@email.com",
+      telefone: "(11) 88888-8888",
+      status: "Ativo",
+    },
+    {
+      id: 3,
+      nome: "Pedro Costa",
+      email: "pedro@email.com",
+      telefone: "(11) 77777-7777",
+      status: "Inativo",
+    },
   ];
 
   return (
     <Layout>
-      <PageHeader
-        title="Lista de Clientes"
-        description="Gerencie seus clientes"
-      >
+      <PageHeader title="Lista de Clientes" description="Gerencie seus clientes">
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <div className="relative flex-1 sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar cliente..."
-              className="pl-9 w-full"
-            />
+            <Input placeholder="Buscar cliente..." className="pl-9 w-full" />
           </div>
           <Button variant="outline" size="icon" className="sm:w-auto">
             <Filter className="h-4 w-4" />
@@ -229,15 +209,9 @@ export function ExemploTabela() {
               <TableBody>
                 {clientes.map((cliente) => (
                   <TableRow key={cliente.id}>
-                    <TableCell className="font-medium">
-                      {cliente.nome}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      {cliente.email}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      {cliente.telefone}
-                    </TableCell>
+                    <TableCell className="font-medium">{cliente.nome}</TableCell>
+                    <TableCell className="hidden md:table-cell">{cliente.email}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{cliente.telefone}</TableCell>
                     <TableCell>
                       <Badge
                         className={
@@ -266,101 +240,7 @@ export function ExemploTabela() {
 }
 
 /**
- * EXEMPLO 4: Integrando com o Chat de IA
- */
-export function ExemploComIA() {
-  const aiDrawer = useAIDrawer();
-
-  return (
-    <Layout>
-      <PageHeader
-        title="Análise de Dados"
-        description="Use a IA para analisar seus dados"
-      />
-
-      <div className="grid-responsive-2col">
-        <Card>
-          <CardHeader>
-            <CardTitle>Seus Dados</CardTitle>
-            <CardDescription>
-              Visualize e analise suas informações
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm text-muted-foreground">
-                  Total de vendas este mês
-                </p>
-                <p className="text-2xl font-bold">R$ 45.678</p>
-              </div>
-
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm text-muted-foreground">
-                  Novos clientes
-                </p>
-                <p className="text-2xl font-bold">128</p>
-              </div>
-
-              {/* Botão para abrir a IA */}
-              <Button
-                onClick={aiDrawer.open}
-                className="w-full"
-                variant="outline"
-              >
-                <span>Analisar com IA</span>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Insights Recentes</CardTitle>
-            <CardDescription>
-              Recomendações da AITOPIA
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex gap-3 p-3 bg-primary/10 rounded-lg border border-primary/20">
-                <div className="flex-1">
-                  <p className="text-sm font-medium">
-                    Oportunidade de Venda
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    5 clientes não compram há mais de 30 dias
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-3 p-3 bg-[hsl(var(--color-success-50))] dark:bg-[hsl(var(--color-success-900))] rounded-lg border border-[hsl(var(--color-success-200))]">
-                <div className="flex-1">
-                  <p className="text-sm font-medium">
-                    Meta Alcançada
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Você atingiu 120% da meta mensal!
-                  </p>
-                </div>
-              </div>
-
-              <Button
-                onClick={aiDrawer.open}
-                className="w-full"
-              >
-                Ver Mais Insights
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </Layout>
-  );
-}
-
-/**
- * EXEMPLO 5: Layout Complexo com Múltiplas Seções
+ * EXEMPLO 4: Layout Complexo com Múltiplas Seções
  */
 export function ExemploCompleto() {
   return (
@@ -481,7 +361,6 @@ export function ExemploCompleto() {
  * 7. Use spacing-* para gaps consistentes
  * 8. Use container-padding para padding lateral
  * 9. Sempre teste em mobile (375px), tablet (768px) e desktop (1280px)
- * 10. Use useAIDrawer() para integrar com o chat de IA
  *
  * CORES:
  * - Primary (roxo): Ações principais, links importantes

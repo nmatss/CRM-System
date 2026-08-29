@@ -1,12 +1,67 @@
 import express, { type Request, Response, NextFunction } from "express";
+import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import rateLimit from "express-rate-limit";
-import { setupCsrf } from "./csrf";
+import { generalLimiter } from "./rateLimit";
+import { logger, requestIdMiddleware } from "./logger";
+import { sqlite } from "./db";
+import { sessionSqlite, usingSeparateSessionDatabase } from "./sessionDb";
+import { outboxWorker } from "./outbox";
+import { AUTOMATION_JOB_TYPE, handleAutomationJob } from "./services/automationEngine";
+import { CAMPAIGN_JOB_TYPE, handleCampaignDispatchJob } from "./services/campaignDispatch";
 
 const app = express();
 const httpServer = createServer(app);
+
+// Embedded outbox worker (ADR 0001): campaigns and automations execute here.
+outboxWorker
+  .register(CAMPAIGN_JOB_TYPE, handleCampaignDispatchJob)
+  .register(AUTOMATION_JOB_TYPE, handleAutomationJob);
+
+const trustProxy = process.env.TRUST_PROXY?.trim();
+if (trustProxy) {
+  if (/^\d+$/.test(trustProxy)) {
+    app.set("trust proxy", Number(trustProxy));
+  } else {
+    app.set(
+      "trust proxy",
+      trustProxy
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    );
+  }
+}
+
+if (process.env.NODE_ENV === "production") {
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          baseUri: ["'self'"],
+          connectSrc: ["'self'"],
+          fontSrc: ["'self'", "data:"],
+          formAction: ["'self'"],
+          frameAncestors: ["'none'"],
+          imgSrc: ["'self'", "data:", "blob:", "https:"],
+          objectSrc: ["'none'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+        },
+      },
+      hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: false,
+      },
+      frameguard: {
+        action: "deny",
+      },
+    }),
+  );
+}
 
 declare module "http" {
   interface IncomingMessage {
@@ -16,39 +71,17 @@ declare module "http" {
 
 app.use(
   express.json({
+    limit: "1mb",
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
   }),
 );
 
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 
-// Rate limiting configuration
-const generalLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 100, // Limit each IP to 100 requests per minute
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  message: {
-    error: "Muitas requisições. Por favor, tente novamente em alguns instantes.",
-  },
-  skip: (req) => {
-    // Skip rate limiting for health check endpoint
-    return req.path === "/api/health";
-  },
-});
-
-export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login attempts per 15 minutes
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipSuccessfulRequests: true, // Don't count successful requests
-  message: {
-    error: "Muitas tentativas de login. Por favor, tente novamente em 15 minutos.",
-  },
-});
+// Correlate every API response, including requests rejected by rate limiting.
+app.use(requestIdMiddleware);
 
 // Apply general rate limiting to all API routes
 app.use("/api/", generalLimiter);
@@ -67,43 +100,97 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
 
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      log(logLine);
+      logger.info("HTTP request completed", {
+        requestId: req.requestId,
+        endpoint: path,
+        method: req.method,
+        statusCode: res.statusCode,
+        durationMs: duration,
+      });
     }
   });
 
   next();
 });
 
-(async () => {
+interface HttpError extends Error {
+  status?: number;
+  statusCode?: number;
+  code?: string;
+  details?: unknown;
+}
+
+let shutdownStarted = false;
+
+function closeDatabases() {
+  if (usingSeparateSessionDatabase && sessionSqlite.open) {
+    sessionSqlite.close();
+  }
+  if (sqlite.open) {
+    sqlite.close();
+  }
+}
+
+function shutdown(signal: string, exitCode = 0) {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+
+  logger.info("Application shutdown started", { signal });
+  // Stop claiming new jobs immediately; only the in-flight job is awaited.
+  void outboxWorker.stop();
+  const forceTimer = setTimeout(() => {
+    logger.error("Application shutdown timed out", { signal });
+    process.exit(1);
+  }, 10_000);
+  forceTimer.unref();
+
+  const finish = (error?: Error) => {
+    clearTimeout(forceTimer);
+    try {
+      closeDatabases();
+    } catch (closeError) {
+      logger.error("Failed to close SQLite connections", {
+        signal,
+        error: closeError,
+      });
+      exitCode = 1;
+    }
+
+    if (error) {
+      logger.error("HTTP server shutdown failed", { signal, error });
+      exitCode = 1;
+    } else {
+      logger.info("Application shutdown completed", { signal });
+    }
+    process.exit(exitCode);
+  };
+
+  if (!httpServer.listening) {
+    finish();
+    return;
+  }
+
+  httpServer.close(finish);
+  httpServer.closeIdleConnections();
+}
+
+async function startApplication() {
   await registerRoutes(httpServer, app);
 
-  // Setup CSRF protection after routes are registered
-  // This must come after session setup (which happens in registerRoutes)
-  setupCsrf(app);
-
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+  app.use((err: HttpError, req: Request, res: Response, _next: NextFunction) => {
+    const requestedStatus = err.status || err.statusCode || 500;
+    const status = requestedStatus >= 400 && requestedStatus <= 599 ? requestedStatus : 500;
+    const exposeDetails = process.env.NODE_ENV === "development";
+    const message =
+      status >= 500 && !exposeDetails ? "Internal Server Error" : err.message || "Request failed";
 
     // Standardized error response format
-    const errorResponse: { error: string; code?: string; details?: any } = {
-      error: message
+    const errorResponse: { error: string; code?: string; details?: unknown } = {
+      error: message,
     };
 
     // Add error code if available
@@ -112,17 +199,21 @@ app.use((req, res, next) => {
     }
 
     // Add additional details in development mode
-    if (process.env.NODE_ENV === "development" && err.stack) {
+    if (exposeDetails && err.stack) {
       errorResponse.details = {
         stack: err.stack,
-        ...err.details
+        ...(typeof err.details === "object" && err.details ? err.details : {}),
       };
-    } else if (err.details) {
-      errorResponse.details = err.details;
     }
 
+    logger.error("Unhandled request error", {
+      requestId: req.requestId,
+      endpoint: req.path,
+      method: req.method,
+      statusCode: status,
+      error: err,
+    });
     res.status(status).json(errorResponse);
-    // Don't throw after sending response - it causes "Cannot set headers after they are sent" error
   });
 
   // importantly only setup vite in development and after
@@ -148,6 +239,26 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      logger.info("Application started", { port });
+      if (process.env.OUTBOX_WORKER_ENABLED !== "false") {
+        outboxWorker.start();
+      }
     },
   );
-})();
+}
+
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));
+process.once("uncaughtException", (error) => {
+  logger.error("Uncaught exception", { error });
+  shutdown("uncaughtException", 1);
+});
+process.once("unhandledRejection", (reason) => {
+  logger.error("Unhandled promise rejection", { reason });
+  shutdown("unhandledRejection", 1);
+});
+
+void startApplication().catch((error: unknown) => {
+  logger.error("Application startup failed", { error });
+  shutdown("startupFailure", 1);
+});

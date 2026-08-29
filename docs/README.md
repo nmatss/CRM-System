@@ -1,234 +1,116 @@
-# ZippiCRM Documentation
+# Documentação do ZippiCRM
 
-Welcome to the ZippiCRM documentation directory. This folder contains comprehensive documentation for the ZippiCRM API and database schema.
+Este diretório reúne documentação técnica e operacional. O código e os testes continuam sendo a fonte de verdade do comportamento executável.
 
-## Documentation Files
+## Stack atual
 
-### API Documentation
+- Node.js 20.19.x e npm 10.8.x;
+- React 19, Vite 8 e Tailwind CSS 4 no frontend;
+- Express 4 e TypeScript no backend;
+- Drizzle ORM com SQLite (`better-sqlite3`);
+- sessões persistidas em SQLite;
+- Vitest, Testing Library, ESLint e Prettier para qualidade.
 
-1. **[openapi.yaml](./openapi.yaml)** (1,086 lines)
-   - Complete OpenAPI 3.0 specification
-   - All API endpoints with detailed schemas
-   - Request/response examples
-   - Authentication and authorization details
-   - Error response documentation
-   - **Use this for**: API integration, Swagger UI, Postman imports
+Consulte o [README principal](../README.md) para instalação e comandos do projeto.
 
-2. **[API_README.md](./API_README.md)** (224 lines)
-   - Comprehensive API guide
-   - How to view the documentation
-   - Example API usage with curl
-   - Authentication flow
-   - Multi-tenancy explanation
-   - **Use this for**: Getting started with the API
+## Índice e estado dos documentos
 
-3. **[API_QUICK_REFERENCE.md](./API_QUICK_REFERENCE.md)** (222 lines)
-   - Quick lookup for all endpoints
-   - Request/response examples
-   - Common error codes
-   - Role permissions table
-   - Data enums reference
-   - **Use this for**: Quick reference during development
+Contagens de linhas foram removidas deste índice porque mudam sem representar cobertura ou completude.
 
-### Database Documentation
+| Documento                                                  | Estado verificável                                                    | Uso recomendado                                                        |
+| ---------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| [openapi.yaml](./openapi.yaml)                             | Especificação OpenAPI parcial; não cobre todas as rotas implementadas | Importação em editores OpenAPI e referência dos contratos já descritos |
+| [API_README.md](./API_README.md)                           | Guia parcial da API                                                   | Introdução aos endpoints documentados                                  |
+| [API_QUICK_REFERENCE.md](./API_QUICK_REFERENCE.md)         | Referência rápida parcial                                             | Consulta durante desenvolvimento, confirmando detalhes no código       |
+| [DATABASE.md](./DATABASE.md)                               | Snapshot resumido do schema                                           | Visão inicial do modelo; confirmar migrations e `shared/schema.ts`     |
+| [PROJECT_COMPLETION_PLAN.md](./PROJECT_COMPLETION_PLAN.md) | Plano e backlog; não descreve necessariamente o código já entregue    | Planejamento e retomada                                                |
+| [DEPLOY.md](../DEPLOY.md)                                  | Procedimento operacional                                              | Preparação e execução de deploy                                        |
+| [BACKUP_RESTORE.md](../BACKUP_RESTORE.md)                  | Procedimento operacional                                              | Backup, verificação e restauração do SQLite                            |
+| [RUNBOOK_PRODUCAO.md](../RUNBOOK_PRODUCAO.md)              | Procedimento operacional                                              | Operação, diagnóstico e resposta a incidentes                          |
+| [GO_LIVE_CHECKLIST.md](../GO_LIVE_CHECKLIST.md)            | Gate operacional                                                      | Verificações antes da publicação                                       |
 
-4. **[DATABASE.md](./DATABASE.md)** (532 lines)
-   - Complete database schema
-   - All tables and relationships
-   - Field descriptions
-   - Indexes and constraints
-   - **Use this for**: Understanding the data model
+O OpenAPI cobre apenas parte do conjunto de rotas em `server/routes.ts`. Portanto, não use a especificação atual para gerar um cliente completo nem para provar cobertura da API.
 
-## Quick Start
+## Arquitetura da API
 
-### For API Consumers
+- Base local padrão: `http://localhost:5000`;
+- API versionada: `/api/v1/*`;
+- health check: `/api/health`;
+- autenticação: sessão de servidor com cookie `zippcrm.sid` HTTP-only;
+- autorização: papéis `super_admin`, `manager` e `seller`, combinados com associação ao tenant;
+- payloads: JSON;
+- mutações privadas: token CSRF enviado no header `X-CSRF-Token`.
 
-1. Start with **[API_QUICK_REFERENCE.md](./API_QUICK_REFERENCE.md)** for a quick overview
-2. Read **[API_README.md](./API_README.md)** for detailed usage instructions
-3. Import **[openapi.yaml](./openapi.yaml)** into Swagger UI or Postman for interactive testing
+O backend contém rotas para autenticação, administração de tenants e usuários, equipe, configurações, dashboard, clientes, produtos, pedidos, cashback, campanhas, automações, agenda e metas de vendedores, interações, relatórios, importação, exportação e notificações. Os três documentos de API acima ainda não cobrem esse conjunto integralmente.
 
-### For Developers
+## Fluxo de autenticação e CSRF
 
-1. Review **[DATABASE.md](./DATABASE.md)** to understand the data model
-2. Study **[openapi.yaml](./openapi.yaml)** for complete API specifications
-3. Use **[API_QUICK_REFERENCE.md](./API_QUICK_REFERENCE.md)** as a daily reference
+1. Faça login em `POST /api/v1/auth/login` e preserve o cookie recebido.
+2. Consulte `GET /api/v1/csrf-token` usando a sessão autenticada.
+3. Envie o valor retornado em `X-CSRF-Token` nas requisições privadas `POST`, `PUT`, `PATCH` e `DELETE`.
+4. Use `POST /api/v1/auth/logout` com cookie e token para encerrar a sessão.
 
-### For Frontend Developers
-
-1. Check **[API_QUICK_REFERENCE.md](./API_QUICK_REFERENCE.md)** for available endpoints
-2. Use **[openapi.yaml](./openapi.yaml)** to generate TypeScript types
-3. Refer to **[API_README.md](./API_README.md)** for authentication flow
-
-## API Overview
-
-The ZippiCRM API is a RESTful API with the following characteristics:
-
-- **Authentication**: Session-based with HTTP-only cookies
-- **Authorization**: Role-based (super_admin, manager, seller)
-- **Multi-tenancy**: All data is scoped to tenants
-- **Format**: JSON request/response bodies
-- **Base URL**: `http://localhost:5000` (development)
-
-## Main API Sections
-
-### 1. Authentication (`/api/auth/*`)
-User login, logout, registration, and session management.
-
-### 2. Customers (`/api/customers`)
-Complete CRUD operations for customer management.
-
-### 3. Products (`/api/products`)
-Product catalog management (manager role required for modifications).
-
-### 4. Orders (`/api/orders`)
-Order processing and tracking.
-
-### 5. Health Check (`/api/health`)
-System status and database connectivity.
-
-## Using the OpenAPI Specification
-
-### With Swagger UI
+Exemplo local, sem credenciais reais:
 
 ```bash
-# Install dependencies
-npm install swagger-ui-express yamljs
-
-# Add to your server
-import swaggerUi from 'swagger-ui-express';
-import YAML from 'yamljs';
-
-const swaggerDocument = YAML.load('./docs/openapi.yaml');
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-```
-
-Visit: http://localhost:5000/api-docs
-
-### With Postman
-
-1. Open Postman
-2. Import → Upload Files
-3. Select `openapi.yaml`
-4. Use the generated collection
-
-### With Online Tools
-
-- **Swagger Editor**: https://editor.swagger.io/
-- **Swagger UI**: https://petstore.swagger.io/
-- **ReDoc**: https://redocly.github.io/redoc/
-
-## Authentication Flow
-
-```
-1. POST /api/auth/login
-   → Returns session cookie (connect.sid)
-
-2. Subsequent requests include cookie automatically
-   → Server validates session
-
-3. POST /api/auth/logout (when done)
-   → Destroys session
-```
-
-## Role Permissions Summary
-
-| Endpoint | Super Admin | Manager | Seller |
-|----------|-------------|---------|--------|
-| Health Check | ✓ | ✓ | ✓ |
-| Authentication | ✓ | ✓ | ✓ |
-| Customers (Read) | ✓ | ✓ | ✓ |
-| Customers (Write) | ✓ | ✓ | ✓ |
-| Products (Read) | ✓ | ✓ | ✓ |
-| Products (Write) | ✓ | ✓ | ✗ |
-| Orders (Read) | ✓ | ✓ | ✓ |
-| Orders (Write) | ✓ | ✓ | ✓ |
-
-## Example: Basic API Usage
-
-```bash
-# 1. Login
-curl -X POST http://localhost:5000/api/auth/login \
+curl -X POST http://localhost:5000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"user@example.com","password":"pass123"}' \
+  -d '{"username":"usuario@example.com","password":"senha-local"}' \
   -c cookies.txt
 
-# 2. Get customers
-curl http://localhost:5000/api/customers \
+curl http://localhost:5000/api/v1/csrf-token \
   -b cookies.txt
 
-# 3. Create customer
-curl -X POST http://localhost:5000/api/customers \
+# Substitua TOKEN_CSRF pelo valor retornado acima.
+curl -X POST http://localhost:5000/api/v1/customers \
   -H "Content-Type: application/json" \
+  -H "X-CSRF-Token: TOKEN_CSRF" \
   -b cookies.txt \
-  -d '{
-    "name": "Maria Silva",
-    "email": "maria@example.com",
-    "segment": "VIP"
-  }'
-
-# 4. Logout
-curl -X POST http://localhost:5000/api/auth/logout \
-  -b cookies.txt
+  -d '{"name":"Maria Silva","email":"maria@example.com","segment":"VIP"}'
 ```
 
-## Data Models
+Não use credenciais de produção em exemplos, documentação ou arquivos versionados.
 
-### Core Entities
+## Autorização e multi-tenancy
 
-- **Tenants**: Multi-tenant organizations
-- **Users**: System users with roles
-- **Customers**: End customers/clients
-- **Products**: Product catalog items
-- **Orders**: Purchase orders
+Papéis e tenant ativo são obtidos da sessão e verificados no servidor nas rotas protegidas. Isso não permite presumir que qualquer endpoint novo esteja automaticamente isolado: mudanças em leitura, escrita, exportação, cache, jobs ou integrações devem incluir validação positiva e negativa entre tenants.
 
-### Supporting Entities
+As permissões variam por recurso e operação. Confirme o middleware aplicado à rota em `server/routes.ts`; as tabelas dos guias parciais podem ficar defasadas.
 
-- Campaigns
-- Automations
-- Cashback Rules
-- Seller Tasks
-- Customer Interactions
+## OpenAPI e ferramentas externas
 
-For complete schema details, see [DATABASE.md](./DATABASE.md).
+O servidor atual não monta Swagger UI em `/api-docs`. Para inspecionar o snapshot disponível, abra [openapi.yaml](./openapi.yaml) em uma ferramenta compatível, como Swagger Editor, Redocly ou Postman.
 
-## Error Handling
+Não instale dependências no projeto apenas para visualizar o arquivo. Ao gerar tipos ou clientes, limite o uso aos caminhos descritos e faça revisão contra as rotas e schemas atuais.
 
-All endpoints return consistent error responses:
+## Erros
+
+O formato mais comum é:
 
 ```json
 {
-  "error": "Error message in Portuguese"
+  "error": "Mensagem de erro",
+  "code": "CODIGO_OPCIONAL",
+  "details": {}
 }
 ```
 
-Common HTTP status codes:
-- `200` - Success
-- `201` - Created
-- `400` - Bad Request
-- `401` - Unauthorized
-- `403` - Forbidden
-- `404` - Not Found
-- `500` - Internal Server Error
-- `503` - Service Unavailable
+`code` e `details` são opcionais, e handlers mais antigos podem responder com estruturas específicas. Consumidores devem tratar o status HTTP como sinal principal e não presumir uniformidade além do contrato verificado para cada rota.
 
-## Contributing
+Status frequentes: `200`, `201`, `400`, `401`, `403`, `404`, `409`, `429`, `500` e `503`.
 
-When updating the API:
+## Manutenção da documentação
 
-1. Update `openapi.yaml` with new endpoints
-2. Add examples to `API_README.md`
-3. Update `API_QUICK_REFERENCE.md` with the endpoint summary
-4. Update `DATABASE.md` if schema changes
+Ao mudar comportamento ou contrato:
 
-## Support
+1. atualize o schema compartilhado e as migrations quando aplicável;
+2. atualize o OpenAPI e os guias afetados no mesmo lote;
+3. adicione ou ajuste testes de contrato, autorização e isolamento por tenant;
+4. valide todos os links locais deste índice;
+5. não marque um documento como completo sem comparar sua cobertura com o código.
 
-For questions or issues:
-- Email: admin@zippi.crm
-- Review the relevant documentation file
-- Check the OpenAPI specification for details
+Não há um contato de suporte público configurado neste repositório. Use o canal privado definido pelos mantenedores para dúvidas ou incidentes.
 
 ---
 
-**Last Updated**: December 15, 2024
-**API Version**: 1.0.0
-**Documentation Version**: 1.0.0
+Última revisão factual deste índice: 29 de agosto de 2026.

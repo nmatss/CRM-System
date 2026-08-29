@@ -6,14 +6,63 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
+import { validateTemporaryPassword } from "@/lib/temporaryPassword";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Building2, Plus, Users, Store, Crown, Pencil, Copy, ExternalLink, MessageSquare, Calendar, Mail, Phone, CheckCircle2, Trash2, UserPlus, Link, BarChart3, ShoppingCart, Package, KeyRound, CreditCard, Hash } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  Building2,
+  Plus,
+  Users,
+  Store,
+  Crown,
+  Pencil,
+  Copy,
+  ExternalLink,
+  MessageSquare,
+  Calendar,
+  Mail,
+  Phone,
+  CheckCircle2,
+  Trash2,
+  UserPlus,
+  Link,
+  BarChart3,
+  ShoppingCart,
+  Package,
+  KeyRound,
+  CreditCard,
+  Hash,
+} from "lucide-react";
 import type { Tenant, ContactRequest, DemoRequest, User, TenantUser } from "@shared/schema";
 
 const formatDate = (date: Date | string | null): string => {
@@ -32,22 +81,35 @@ export default function Admin() {
   const { user, isSuperAdmin } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+
   const [activeTab, setActiveTab] = useState("dashboard");
-  
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [newTenant, setNewTenant] = useState({ name: "", slug: "", plan: "free" });
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
-  
+
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
   const [isEditUserDialogOpen, setIsEditUserDialogOpen] = useState(false);
   const [isAssignTenantDialogOpen, setIsAssignTenantDialogOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ email: "", password: "", name: "", cpf: "", sellerCode: "", phone: "", isSuperAdmin: false, tenantId: "", role: "seller" });
+  const [newUser, setNewUser] = useState({
+    email: "",
+    password: "",
+    name: "",
+    cpf: "",
+    sellerCode: "",
+    phone: "",
+    isSuperAdmin: false,
+    tenantId: "",
+    role: "seller",
+  });
   const [editingUser, setEditingUser] = useState<UserWithoutPassword | null>(null);
   const [editUserPassword, setEditUserPassword] = useState("");
   const [assigningUser, setAssigningUser] = useState<UserWithoutPassword | null>(null);
   const [assignTenantData, setAssignTenantData] = useState({ tenantId: "", role: "seller" });
+  const [resetPasswordUser, setResetPasswordUser] = useState<UserWithoutPassword | null>(null);
+  const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [temporaryPasswordConfirmation, setTemporaryPasswordConfirmation] = useState("");
 
   const { data: tenants = [], isLoading } = useQuery<Tenant[]>({
     queryKey: ["admin", "tenants"],
@@ -110,12 +172,7 @@ export default function Admin() {
 
   const updateContactStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
-      const response = await fetch(`/api/v1/admin/contacts/${id}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      if (!response.ok) throw new Error("Failed to update");
+      const response = await apiRequest("PUT", `/admin/contacts/${id}/status`, { status });
       return response.json();
     },
     onSuccess: () => {
@@ -126,12 +183,7 @@ export default function Admin() {
 
   const updateDemoStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
-      const response = await fetch(`/api/v1/admin/demos/${id}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      if (!response.ok) throw new Error("Failed to update");
+      const response = await apiRequest("PUT", `/admin/demos/${id}/status`, { status });
       return response.json();
     },
     onSuccess: () => {
@@ -142,15 +194,7 @@ export default function Admin() {
 
   const createTenantMutation = useMutation({
     mutationFn: async (data: { name: string; slug: string; plan: string }) => {
-      const response = await fetch("/api/v1/admin/tenants", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, status: "active" }),
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create tenant");
-      }
+      const response = await apiRequest("POST", "/admin/tenants", { ...data, status: "active" });
       return response.json();
     },
     onSuccess: () => {
@@ -166,15 +210,7 @@ export default function Admin() {
 
   const updateTenantMutation = useMutation({
     mutationFn: async (data: Partial<Tenant> & { id: number }) => {
-      const response = await fetch(`/api/v1/admin/tenants/${data.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to update tenant");
-      }
+      const response = await apiRequest("PUT", `/admin/tenants/${data.id}`, data);
       return response.json();
     },
     onSuccess: () => {
@@ -190,13 +226,7 @@ export default function Admin() {
 
   const deleteTenantMutation = useMutation({
     mutationFn: async (tenantId: number) => {
-      const response = await fetch(`/api/v1/admin/tenants/${tenantId}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete tenant");
-      }
+      const response = await apiRequest("DELETE", `/admin/tenants/${tenantId}`);
       return response.json();
     },
     onSuccess: () => {
@@ -209,22 +239,34 @@ export default function Admin() {
   });
 
   const createUserMutation = useMutation({
-    mutationFn: async (data: { email?: string; password: string; name: string; cpf?: string; sellerCode?: string; phone?: string; isSuperAdmin?: boolean; tenantId?: string; role?: string }) => {
-      const response = await fetch("/api/v1/admin/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create user");
-      }
+    mutationFn: async (data: {
+      email: string;
+      password: string;
+      name: string;
+      cpf?: string;
+      sellerCode?: string;
+      phone?: string;
+      isSuperAdmin?: boolean;
+      tenantId?: string;
+      role?: string;
+    }) => {
+      const response = await apiRequest("POST", "/admin/users", data);
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
       setIsUserDialogOpen(false);
-      setNewUser({ email: "", password: "", name: "", cpf: "", sellerCode: "", phone: "", isSuperAdmin: false, tenantId: "", role: "seller" });
+      setNewUser({
+        email: "",
+        password: "",
+        name: "",
+        cpf: "",
+        sellerCode: "",
+        phone: "",
+        isSuperAdmin: false,
+        tenantId: "",
+        role: "seller",
+      });
       toast({ title: "Usuário criado!", description: "Novo usuário adicionado com sucesso." });
     },
     onError: (error: Error) => {
@@ -233,16 +275,14 @@ export default function Admin() {
   });
 
   const updateUserMutation = useMutation({
-    mutationFn: async (data: { userId: string; name?: string; email?: string; password?: string; isSuperAdmin?: boolean }) => {
-      const response = await fetch(`/api/v1/admin/users/${data.userId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to update user");
-      }
+    mutationFn: async (data: {
+      userId: string;
+      name?: string;
+      email?: string;
+      password?: string;
+      isSuperAdmin?: boolean;
+    }) => {
+      const response = await apiRequest("PUT", `/admin/users/${data.userId}`, data);
       return response.json();
     },
     onSuccess: () => {
@@ -259,13 +299,7 @@ export default function Admin() {
 
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: string) => {
-      const response = await fetch(`/api/v1/admin/users/${userId}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to delete user");
-      }
+      const response = await apiRequest("DELETE", `/admin/users/${userId}`);
       return response.json();
     },
     onSuccess: () => {
@@ -279,15 +313,10 @@ export default function Admin() {
 
   const assignTenantMutation = useMutation({
     mutationFn: async (data: { userId: string; tenantId: number; role: string }) => {
-      const response = await fetch(`/api/v1/admin/users/${data.userId}/tenants`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId: data.tenantId, role: data.role }),
+      const response = await apiRequest("POST", `/admin/users/${data.userId}/tenants`, {
+        tenantId: data.tenantId,
+        role: data.role,
       });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to assign tenant");
-      }
       return response.json();
     },
     onSuccess: () => {
@@ -302,49 +331,38 @@ export default function Admin() {
     },
   });
 
-  const removeTenantUserMutation = useMutation({
-    mutationFn: async (data: { userId: string; tenantId: number }) => {
-      const response = await fetch(`/api/v1/admin/users/${data.userId}/tenants/${data.tenantId}`, {
-        method: "DELETE",
+  const resetPasswordMutation = useMutation({
+    mutationFn: async ({ userId, newPassword }: { userId: string; newPassword: string }) => {
+      const response = await apiRequest("POST", `/admin/users/${userId}/reset-password`, {
+        newPassword,
       });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to remove tenant user");
-      }
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
-      toast({ title: "Vínculo removido!" });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const resetPasswordMutation = useMutation({
-    mutationFn: async (userId: string) => {
-      const response = await fetch(`/api/v1/admin/users/${userId}/reset-password`, {
-        method: "POST",
+      toast({
+        title: "Senha resetada!",
+        description: "Informe a senha temporária ao usuário por canal seguro.",
       });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to reset password");
-      }
-      return response.json();
+      closeResetPasswordDialog();
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
-      toast({ title: "Senha resetada!", description: `Nova senha temporária: ${data.temporaryPassword}` });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    onError: () => {
+      toast({
+        title: "Erro",
+        description: "Não foi possível redefinir a senha.",
+        variant: "destructive",
+      });
     },
   });
 
   const handleCreateTenant = (e: React.FormEvent) => {
     e.preventDefault();
-    const slug = newTenant.slug || newTenant.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const slug =
+      newTenant.slug ||
+      newTenant.name
+        .toLowerCase()
+        .replace(/\s+/g, "-")
+        .replace(/[^a-z0-9-]/g, "");
     createTenantMutation.mutate({ ...newTenant, slug });
   };
 
@@ -357,14 +375,14 @@ export default function Admin() {
 
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanedCpf = newUser.cpf.replace(/\D/g, '');
+    const cleanedCpf = newUser.cpf.replace(/\D/g, "");
     createUserMutation.mutate({
       name: newUser.name,
-      email: newUser.email || undefined,
+      email: newUser.email,
       cpf: cleanedCpf || undefined,
       sellerCode: newUser.sellerCode || undefined,
       phone: newUser.phone || undefined,
-      password: newUser.password || newUser.sellerCode,
+      password: newUser.password,
       isSuperAdmin: newUser.isSuperAdmin,
       tenantId: newUser.tenantId || undefined,
       role: newUser.tenantId ? newUser.role : undefined,
@@ -395,6 +413,33 @@ export default function Admin() {
     }
   };
 
+  const closeResetPasswordDialog = () => {
+    setResetPasswordUser(null);
+    setTemporaryPassword("");
+    setTemporaryPasswordConfirmation("");
+  };
+
+  const handleResetPasswordDialogChange = (open: boolean) => {
+    if (!open) closeResetPasswordDialog();
+  };
+
+  const handleResetPassword = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!resetPasswordUser) return;
+    const validationError = validateTemporaryPassword(
+      temporaryPassword,
+      temporaryPasswordConfirmation,
+    );
+    if (validationError) {
+      toast({ title: "Revise a senha", description: validationError, variant: "destructive" });
+      return;
+    }
+    resetPasswordMutation.mutate({
+      userId: resetPasswordUser.id,
+      newPassword: temporaryPassword,
+    });
+  };
+
   const openEditDialog = (tenant: Tenant) => {
     setEditingTenant({ ...tenant });
     setIsEditDialogOpen(true);
@@ -414,11 +459,14 @@ export default function Admin() {
 
   const copyLoginUrl = (slug: string) => {
     navigator.clipboard.writeText(`${window.location.origin}/loja/${slug}`);
-    toast({ title: "Link copiado!", description: "URL de login copiada para a área de transferência." });
+    toast({
+      title: "Link copiado!",
+      description: "URL de login copiada para a área de transferência.",
+    });
   };
 
   const getTenantName = (tenantId: number) => {
-    return tenants.find(t => t.id === tenantId)?.name || `Loja #${tenantId}`;
+    return tenants.find((t) => t.id === tenantId)?.name || `Loja #${tenantId}`;
   };
 
   if (!isSuperAdmin) {
@@ -444,8 +492,12 @@ export default function Admin() {
       <div className="space-y-4 sm:space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold" data-testid="admin-title">Painel Admin</h1>
-            <p className="text-sm sm:text-base text-muted-foreground">Gerencie lojas, usuários e solicitações do sistema</p>
+            <h1 className="text-2xl sm:text-3xl font-bold" data-testid="admin-title">
+              Painel Admin
+            </h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              Gerencie lojas, usuários e solicitações do sistema
+            </p>
           </div>
         </div>
 
@@ -456,7 +508,9 @@ export default function Admin() {
               <Building2 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-total-tenants">{tenants.length}</div>
+              <div className="text-2xl font-bold" data-testid="stat-total-tenants">
+                {tenants.length}
+              </div>
             </CardContent>
           </Card>
           <Card>
@@ -476,7 +530,9 @@ export default function Admin() {
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-users">{users.length}</div>
+              <div className="text-2xl font-bold" data-testid="stat-users">
+                {users.length}
+              </div>
             </CardContent>
           </Card>
           <Card>
@@ -485,8 +541,12 @@ export default function Admin() {
               <MessageSquare className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-contacts">{contacts.length}</div>
-              <p className="text-xs text-muted-foreground">{contacts.filter(c => c.status === "pending").length} pendentes</p>
+              <div className="text-2xl font-bold" data-testid="stat-contacts">
+                {contacts.length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {contacts.filter((c) => c.status === "pending").length} pendentes
+              </p>
             </CardContent>
           </Card>
           <Card>
@@ -495,8 +555,12 @@ export default function Admin() {
               <Calendar className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold" data-testid="stat-demos">{demos.length}</div>
-              <p className="text-xs text-muted-foreground">{demos.filter(d => d.status === "pending").length} pendentes</p>
+              <div className="text-2xl font-bold" data-testid="stat-demos">
+                {demos.length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {demos.filter((d) => d.status === "pending").length} pendentes
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -504,12 +568,44 @@ export default function Admin() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
             <TabsList className="inline-flex w-full sm:grid sm:grid-cols-6 min-w-max sm:min-w-0">
-              <TabsTrigger value="dashboard" data-testid="tab-dashboard" className="whitespace-nowrap">Dashboard</TabsTrigger>
-              <TabsTrigger value="empresas" data-testid="tab-empresas" className="whitespace-nowrap">Empresas</TabsTrigger>
-              <TabsTrigger value="usuarios" data-testid="tab-usuarios" className="whitespace-nowrap">Usuários</TabsTrigger>
-              <TabsTrigger value="relatorios" data-testid="tab-relatorios" className="whitespace-nowrap">Relatórios</TabsTrigger>
-              <TabsTrigger value="contatos" data-testid="tab-contatos" className="whitespace-nowrap">Contatos</TabsTrigger>
-              <TabsTrigger value="demos" data-testid="tab-demos" className="whitespace-nowrap">Demos</TabsTrigger>
+              <TabsTrigger
+                value="dashboard"
+                data-testid="tab-dashboard"
+                className="whitespace-nowrap"
+              >
+                Dashboard
+              </TabsTrigger>
+              <TabsTrigger
+                value="empresas"
+                data-testid="tab-empresas"
+                className="whitespace-nowrap"
+              >
+                Empresas
+              </TabsTrigger>
+              <TabsTrigger
+                value="usuarios"
+                data-testid="tab-usuarios"
+                className="whitespace-nowrap"
+              >
+                Usuários
+              </TabsTrigger>
+              <TabsTrigger
+                value="relatorios"
+                data-testid="tab-relatorios"
+                className="whitespace-nowrap"
+              >
+                Relatórios
+              </TabsTrigger>
+              <TabsTrigger
+                value="contatos"
+                data-testid="tab-contatos"
+                className="whitespace-nowrap"
+              >
+                Contatos
+              </TabsTrigger>
+              <TabsTrigger value="demos" data-testid="tab-demos" className="whitespace-nowrap">
+                Demos
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -518,37 +614,53 @@ export default function Admin() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card className="bg-gradient-to-br from-purple-600/10 to-pink-600/10 border-purple-200">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Lojas Ativas</CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Lojas Ativas
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{tenants.filter((t) => t.status === "active").length}</div>
+                  <div className="text-3xl font-bold">
+                    {tenants.filter((t) => t.status === "active").length}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">de {tenants.length} total</p>
                 </CardContent>
               </Card>
               <Card className="bg-gradient-to-br from-blue-600/10 to-purple-600/10 border-blue-200">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Usuários Ativos</CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Usuários Ativos
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold">{users.length}</div>
-                  <p className="text-xs text-muted-foreground mt-1">{users.filter(u => u.isSuperAdmin).length} admins</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {users.filter((u) => u.isSuperAdmin).length} admins
+                  </p>
                 </CardContent>
               </Card>
               <Card className="bg-gradient-to-br from-orange-600/10 to-red-600/10 border-orange-200">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Contatos Pendentes</CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Contatos Pendentes
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{contacts.filter(c => c.status === "pending").length}</div>
+                  <div className="text-3xl font-bold">
+                    {contacts.filter((c) => c.status === "pending").length}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">de {contacts.length} total</p>
                 </CardContent>
               </Card>
               <Card className="bg-gradient-to-br from-green-600/10 to-teal-600/10 border-green-200">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Demos Pendentes</CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Demos Pendentes
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{demos.filter(d => d.status === "pending").length}</div>
+                  <div className="text-3xl font-bold">
+                    {demos.filter((d) => d.status === "pending").length}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">de {demos.length} total</p>
                 </CardContent>
               </Card>
@@ -567,7 +679,7 @@ export default function Admin() {
                     <p className="text-muted-foreground text-sm">Nenhuma loja cadastrada.</p>
                   ) : (
                     <div className="space-y-3">
-                      {tenants.slice(0, 5).map(t => (
+                      {tenants.slice(0, 5).map((t) => (
                         <div key={t.id} className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <Store className="w-4 h-4 text-purple-600" />
@@ -595,7 +707,7 @@ export default function Admin() {
                     <p className="text-muted-foreground text-sm">Nenhum contato recebido.</p>
                   ) : (
                     <div className="space-y-3">
-                      {contacts.slice(0, 5).map(c => (
+                      {contacts.slice(0, 5).map((c) => (
                         <div key={c.id} className="flex items-center justify-between">
                           <div>
                             <span className="font-medium">{c.name}</span>
@@ -618,7 +730,10 @@ export default function Admin() {
               <h2 className="text-lg sm:text-xl font-semibold">Lojas Cadastradas</h2>
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button className="bg-gradient-to-r from-purple-600 to-pink-600 w-full sm:w-auto" data-testid="button-add-tenant">
+                  <Button
+                    className="bg-gradient-to-r from-purple-600 to-pink-600 w-full sm:w-auto"
+                    data-testid="button-add-tenant"
+                  >
                     <Plus className="w-4 h-4 mr-2" />
                     Nova Loja
                   </Button>
@@ -626,6 +741,10 @@ export default function Admin() {
                 <DialogContent className="max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Criar Nova Loja</DialogTitle>
+                    <DialogDescription>
+                      Cadastre a loja, defina seu identificador de acesso e selecione o plano
+                      inicial.
+                    </DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleCreateTenant} className="space-y-4">
                     <div className="space-y-2">
@@ -651,8 +770,8 @@ export default function Admin() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="tenant-plan">Plano</Label>
-                      <Select 
-                        value={newTenant.plan} 
+                      <Select
+                        value={newTenant.plan}
                         onValueChange={(value) => setNewTenant({ ...newTenant, plan: value })}
                       >
                         <SelectTrigger data-testid="select-tenant-plan">
@@ -666,8 +785,8 @@ export default function Admin() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <Button 
-                      type="submit" 
+                    <Button
+                      type="submit"
                       className="w-full"
                       disabled={createTenantMutation.isPending}
                       data-testid="button-submit-tenant"
@@ -701,7 +820,9 @@ export default function Admin() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="font-medium truncate">{tenant.name}</div>
-                            <div className="text-sm text-muted-foreground truncate">/{tenant.slug}</div>
+                            <div className="text-sm text-muted-foreground truncate">
+                              /{tenant.slug}
+                            </div>
                             <div className="flex gap-2 mt-2 sm:hidden">
                               <Badge variant={tenant.status === "active" ? "default" : "secondary"}>
                                 {tenant.status === "active" ? "Ativo" : "Inativo"}
@@ -751,7 +872,8 @@ export default function Admin() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Excluir Loja?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Esta ação não pode ser desfeita. A loja "{tenant.name}" e todos os seus dados serão removidos permanentemente.
+                                  Esta ação não pode ser desfeita. A loja "{tenant.name}" e todos os
+                                  seus dados serão removidos permanentemente.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -779,7 +901,10 @@ export default function Admin() {
               <h2 className="text-lg sm:text-xl font-semibold">Usuários do Sistema</h2>
               <Dialog open={isUserDialogOpen} onOpenChange={setIsUserDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button className="bg-gradient-to-r from-purple-600 to-pink-600" data-testid="button-add-user">
+                  <Button
+                    className="bg-gradient-to-r from-purple-600 to-pink-600"
+                    data-testid="button-add-user"
+                  >
                     <UserPlus className="w-4 h-4 mr-2" />
                     Novo Usuário
                   </Button>
@@ -787,6 +912,10 @@ export default function Admin() {
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Criar Novo Usuário</DialogTitle>
+                    <DialogDescription>
+                      Informe os dados do usuário e, quando aplicável, vincule-o a uma loja com a
+                      função adequada.
+                    </DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleCreateUser} className="space-y-4">
                     <div className="space-y-2">
@@ -807,8 +936,11 @@ export default function Admin() {
                           id="user-cpf"
                           value={newUser.cpf}
                           onChange={(e) => {
-                            const value = e.target.value.replace(/\D/g, '').slice(0, 11);
-                            const formatted = value.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+                            const value = e.target.value.replace(/\D/g, "").slice(0, 11);
+                            const formatted = value.replace(
+                              /(\d{3})(\d{3})(\d{3})(\d{2})/,
+                              "$1.$2.$3-$4",
+                            );
                             setNewUser({ ...newUser, cpf: formatted });
                           }}
                           placeholder="000.000.000-00"
@@ -821,7 +953,9 @@ export default function Admin() {
                         <Input
                           id="user-seller-code"
                           value={newUser.sellerCode}
-                          onChange={(e) => setNewUser({ ...newUser, sellerCode: e.target.value.toUpperCase() })}
+                          onChange={(e) =>
+                            setNewUser({ ...newUser, sellerCode: e.target.value.toUpperCase() })
+                          }
                           placeholder="V001"
                           required
                           data-testid="input-user-seller-code"
@@ -830,13 +964,14 @@ export default function Admin() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="user-email">Email (opcional)</Label>
+                        <Label htmlFor="user-email">Email *</Label>
                         <Input
                           id="user-email"
                           type="email"
                           value={newUser.email}
                           onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                           placeholder="joao@exemplo.com"
+                          required
                           data-testid="input-user-email"
                         />
                       </div>
@@ -852,21 +987,24 @@ export default function Admin() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="user-password">Senha (deixe em branco para usar código vendedor)</Label>
+                      <Label htmlFor="user-password">Senha temporária *</Label>
                       <Input
                         id="user-password"
                         type="password"
                         value={newUser.password}
                         onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                        placeholder="Deixe em branco para usar código vendedor"
+                        minLength={12}
+                        required
                         data-testid="input-user-password"
                       />
                     </div>
                     <div className="space-y-2">
                       <Label>Super Admin?</Label>
-                      <Select 
-                        value={newUser.isSuperAdmin ? "yes" : "no"} 
-                        onValueChange={(value) => setNewUser({ ...newUser, isSuperAdmin: value === "yes" })}
+                      <Select
+                        value={newUser.isSuperAdmin ? "yes" : "no"}
+                        onValueChange={(value) =>
+                          setNewUser({ ...newUser, isSuperAdmin: value === "yes" })
+                        }
                       >
                         <SelectTrigger data-testid="select-user-admin">
                           <SelectValue />
@@ -881,17 +1019,21 @@ export default function Admin() {
                       <>
                         <div className="space-y-2">
                           <Label>Vincular a uma Loja (opcional)</Label>
-                          <Select 
-                            value={newUser.tenantId} 
-                            onValueChange={(value) => setNewUser({ ...newUser, tenantId: value })}
+                          <Select
+                            value={newUser.tenantId || "none"}
+                            onValueChange={(value) =>
+                              setNewUser({ ...newUser, tenantId: value === "none" ? "" : value })
+                            }
                           >
                             <SelectTrigger data-testid="select-user-tenant">
                               <SelectValue placeholder="Selecione uma loja" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Nenhuma</SelectItem>
+                              <SelectItem value="none">Nenhuma</SelectItem>
                               {tenants.map((t) => (
-                                <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                                <SelectItem key={t.id} value={String(t.id)}>
+                                  {t.name}
+                                </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -899,8 +1041,8 @@ export default function Admin() {
                         {newUser.tenantId && (
                           <div className="space-y-2">
                             <Label>Função na Loja</Label>
-                            <Select 
-                              value={newUser.role} 
+                            <Select
+                              value={newUser.role}
                               onValueChange={(value) => setNewUser({ ...newUser, role: value })}
                             >
                               <SelectTrigger data-testid="select-user-role">
@@ -915,8 +1057,8 @@ export default function Admin() {
                         )}
                       </>
                     )}
-                    <Button 
-                      type="submit" 
+                    <Button
+                      type="submit"
                       className="w-full"
                       disabled={createUserMutation.isPending}
                       data-testid="button-submit-user"
@@ -952,19 +1094,30 @@ export default function Admin() {
                             <div className="font-medium truncate">{u.name || u.email}</div>
                             <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-3 text-sm text-muted-foreground mt-1">
                               {u.cpf && (
-                                <span className="flex items-center gap-1" data-testid={`user-cpf-${u.id}`}>
+                                <span
+                                  className="flex items-center gap-1"
+                                  data-testid={`user-cpf-${u.id}`}
+                                >
                                   <CreditCard className="w-3 h-3 flex-shrink-0" />
-                                  <span className="truncate">{u.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}</span>
+                                  <span className="truncate">
+                                    {u.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")}
+                                  </span>
                                 </span>
                               )}
                               {u.sellerCode && (
-                                <span className="flex items-center gap-1" data-testid={`user-seller-code-${u.id}`}>
+                                <span
+                                  className="flex items-center gap-1"
+                                  data-testid={`user-seller-code-${u.id}`}
+                                >
                                   <Hash className="w-3 h-3 flex-shrink-0" />
                                   <span>{u.sellerCode}</span>
                                 </span>
                               )}
                               {u.email && (
-                                <span className="flex items-center gap-1 min-w-0" data-testid={`user-email-${u.id}`}>
+                                <span
+                                  className="flex items-center gap-1 min-w-0"
+                                  data-testid={`user-email-${u.id}`}
+                                >
                                   <Mail className="w-3 h-3 flex-shrink-0" />
                                   <span className="truncate">{u.email}</span>
                                 </span>
@@ -975,14 +1128,20 @@ export default function Admin() {
                                 <Badge className="bg-yellow-500">Super Admin</Badge>
                               )}
                               {u.mustChangePassword && (
-                                <Badge variant="outline" className="text-orange-600 border-orange-300">Primeiro acesso</Badge>
+                                <Badge
+                                  variant="outline"
+                                  className="text-orange-600 border-orange-300"
+                                >
+                                  Primeiro acesso
+                                </Badge>
                               )}
                             </div>
                             {u.tenantUsers && u.tenantUsers.length > 0 && (
                               <div className="flex gap-1 mt-2 flex-wrap">
                                 {u.tenantUsers.map((tu) => (
                                   <Badge key={tu.tenantId} variant="outline" className="text-xs">
-                                    {getTenantName(tu.tenantId)} ({tu.role === "manager" ? "Gerente" : "Vendedor"})
+                                    {getTenantName(tu.tenantId)} (
+                                    {tu.role === "manager" ? "Gerente" : "Vendedor"})
                                   </Badge>
                                 ))}
                               </div>
@@ -1013,36 +1172,17 @@ export default function Admin() {
                             <span className="ml-2 sm:hidden">Editar</span>
                           </Button>
                           {u.id !== user?.id && !u.isSuperAdmin && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-blue-500 hover:text-blue-700 flex-1 sm:flex-none"
-                                  title="Resetar Senha"
-                                  data-testid={`button-reset-password-${u.id}`}
-                                >
-                                  <KeyRound className="w-4 h-4 sm:mr-0" />
-                                  <span className="ml-2 sm:hidden">Resetar</span>
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Resetar Senha?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    A senha do usuário "{u.name || u.email}" será resetada para o código de vendedor ou senha padrão.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => resetPasswordMutation.mutate(u.id)}
-                                  >
-                                    Resetar
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-blue-500 hover:text-blue-700 flex-1 sm:flex-none"
+                              title="Resetar Senha"
+                              onClick={() => setResetPasswordUser(u)}
+                              data-testid={`button-reset-password-${u.id}`}
+                            >
+                              <KeyRound className="w-4 h-4 sm:mr-0" />
+                              <span className="ml-2 sm:hidden">Resetar</span>
+                            </Button>
                           )}
                           {u.id !== user?.id && (
                             <AlertDialog>
@@ -1062,7 +1202,8 @@ export default function Admin() {
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Excluir Usuário?</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    Esta ação não pode ser desfeita. O usuário "{u.name || u.email}" será removido permanentemente.
+                                    Esta ação não pode ser desfeita. O usuário "{u.name || u.email}"
+                                    será removido permanentemente.
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
@@ -1092,37 +1233,53 @@ export default function Admin() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
               <Card className="bg-gradient-to-br from-indigo-600/10 to-purple-600/10 border-indigo-200">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Total Clientes</CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total Clientes
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{tenantStats.reduce((acc, t) => acc + t.customersCount, 0)}</div>
+                  <div className="text-3xl font-bold">
+                    {tenantStats.reduce((acc, t) => acc + t.customersCount, 0)}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">em todas as lojas</p>
                 </CardContent>
               </Card>
               <Card className="bg-gradient-to-br from-green-600/10 to-teal-600/10 border-green-200">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Total Pedidos</CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total Pedidos
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{tenantStats.reduce((acc, t) => acc + t.ordersCount, 0)}</div>
+                  <div className="text-3xl font-bold">
+                    {tenantStats.reduce((acc, t) => acc + t.ordersCount, 0)}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">em todas as lojas</p>
                 </CardContent>
               </Card>
               <Card className="bg-gradient-to-br from-orange-600/10 to-red-600/10 border-orange-200">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Total Produtos</CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total Produtos
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{tenantStats.reduce((acc, t) => acc + t.productsCount, 0)}</div>
+                  <div className="text-3xl font-bold">
+                    {tenantStats.reduce((acc, t) => acc + t.productsCount, 0)}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">em todas as lojas</p>
                 </CardContent>
               </Card>
               <Card className="bg-gradient-to-br from-blue-600/10 to-cyan-600/10 border-blue-200">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">Usuários por Loja</CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Usuários por Loja
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{tenantStats.reduce((acc, t) => acc + t.usersCount, 0)}</div>
+                  <div className="text-3xl font-bold">
+                    {tenantStats.reduce((acc, t) => acc + t.usersCount, 0)}
+                  </div>
                   <p className="text-xs text-muted-foreground mt-1">vendedores/gerentes</p>
                 </CardContent>
               </Card>
@@ -1138,7 +1295,9 @@ export default function Admin() {
               </CardHeader>
               <CardContent>
                 {tenantStats.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">Nenhuma empresa cadastrada ainda.</div>
+                  <div className="text-center py-8 text-muted-foreground">
+                    Nenhuma empresa cadastrada ainda.
+                  </div>
                 ) : (
                   <>
                     {/* Desktop table - hidden on mobile */}
@@ -1155,7 +1314,11 @@ export default function Admin() {
                         </thead>
                         <tbody>
                           {tenantStats.map((stat) => (
-                            <tr key={stat.tenantId} className="border-b hover:bg-muted/50" data-testid={`stat-row-${stat.tenantId}`}>
+                            <tr
+                              key={stat.tenantId}
+                              className="border-b hover:bg-muted/50"
+                              data-testid={`stat-row-${stat.tenantId}`}
+                            >
                               <td className="py-3 px-2">
                                 <div className="flex items-center gap-2">
                                   <Store className="w-4 h-4 text-purple-600" />
@@ -1192,10 +1355,18 @@ export default function Admin() {
                         <tfoot>
                           <tr className="bg-muted/30 font-semibold">
                             <td className="py-3 px-2">Total Geral</td>
-                            <td className="text-center py-3 px-2">{tenantStats.reduce((acc, t) => acc + t.usersCount, 0)}</td>
-                            <td className="text-center py-3 px-2">{tenantStats.reduce((acc, t) => acc + t.customersCount, 0)}</td>
-                            <td className="text-center py-3 px-2">{tenantStats.reduce((acc, t) => acc + t.ordersCount, 0)}</td>
-                            <td className="text-center py-3 px-2">{tenantStats.reduce((acc, t) => acc + t.productsCount, 0)}</td>
+                            <td className="text-center py-3 px-2">
+                              {tenantStats.reduce((acc, t) => acc + t.usersCount, 0)}
+                            </td>
+                            <td className="text-center py-3 px-2">
+                              {tenantStats.reduce((acc, t) => acc + t.customersCount, 0)}
+                            </td>
+                            <td className="text-center py-3 px-2">
+                              {tenantStats.reduce((acc, t) => acc + t.ordersCount, 0)}
+                            </td>
+                            <td className="text-center py-3 px-2">
+                              {tenantStats.reduce((acc, t) => acc + t.productsCount, 0)}
+                            </td>
                           </tr>
                         </tfoot>
                       </table>
@@ -1204,7 +1375,11 @@ export default function Admin() {
                     {/* Mobile cards */}
                     <div className="md:hidden space-y-4">
                       {tenantStats.map((stat) => (
-                        <div key={stat.tenantId} className="p-4 border rounded-lg space-y-3" data-testid={`stat-row-${stat.tenantId}`}>
+                        <div
+                          key={stat.tenantId}
+                          className="p-4 border rounded-lg space-y-3"
+                          data-testid={`stat-row-${stat.tenantId}`}
+                        >
                           <div className="flex items-center gap-2 font-medium">
                             <Store className="w-4 h-4 text-purple-600 flex-shrink-0" />
                             <span className="truncate">{stat.tenantName}</span>
@@ -1247,11 +1422,15 @@ export default function Admin() {
                         <div className="font-medium">Total Geral</div>
                         <div className="grid grid-cols-2 gap-3 text-sm">
                           <div>
-                            <div className="text-muted-foreground text-xs font-normal">Usuários</div>
+                            <div className="text-muted-foreground text-xs font-normal">
+                              Usuários
+                            </div>
                             <div>{tenantStats.reduce((acc, t) => acc + t.usersCount, 0)}</div>
                           </div>
                           <div>
-                            <div className="text-muted-foreground text-xs font-normal">Clientes</div>
+                            <div className="text-muted-foreground text-xs font-normal">
+                              Clientes
+                            </div>
                             <div>{tenantStats.reduce((acc, t) => acc + t.customersCount, 0)}</div>
                           </div>
                           <div>
@@ -1259,7 +1438,9 @@ export default function Admin() {
                             <div>{tenantStats.reduce((acc, t) => acc + t.ordersCount, 0)}</div>
                           </div>
                           <div>
-                            <div className="text-muted-foreground text-xs font-normal">Produtos</div>
+                            <div className="text-muted-foreground text-xs font-normal">
+                              Produtos
+                            </div>
                             <div>{tenantStats.reduce((acc, t) => acc + t.productsCount, 0)}</div>
                           </div>
                         </div>
@@ -1276,15 +1457,34 @@ export default function Admin() {
             <Card>
               <CardContent className="pt-6">
                 {contacts.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">Nenhum contato ainda.</div>
+                  <div className="text-center py-8 text-muted-foreground">
+                    Nenhum contato ainda.
+                  </div>
                 ) : (
                   <div className="space-y-4">
                     {contacts.map((contact) => (
-                      <div key={contact.id} className="p-4 border rounded-lg space-y-3" data-testid={`contact-row-${contact.id}`}>
+                      <div
+                        key={contact.id}
+                        className="p-4 border rounded-lg space-y-3"
+                        data-testid={`contact-row-${contact.id}`}
+                      >
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                           <div className="font-medium truncate">{contact.name}</div>
-                          <Badge variant={contact.status === "pending" ? "secondary" : contact.status === "replied" ? "default" : "outline"} className="self-start sm:self-auto">
-                            {contact.status === "pending" ? "Pendente" : contact.status === "replied" ? "Respondido" : contact.status}
+                          <Badge
+                            variant={
+                              contact.status === "pending"
+                                ? "secondary"
+                                : contact.status === "replied"
+                                  ? "default"
+                                  : "outline"
+                            }
+                            className="self-start sm:self-auto"
+                          >
+                            {contact.status === "pending"
+                              ? "Pendente"
+                              : contact.status === "replied"
+                                ? "Respondido"
+                                : contact.status}
                           </Badge>
                         </div>
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-muted-foreground">
@@ -1301,7 +1501,17 @@ export default function Admin() {
                         </div>
                         <p className="text-sm break-words">{contact.message}</p>
                         <div className="flex gap-2 pt-2 border-t sm:border-0 sm:pt-0">
-                          <Button size="sm" variant="outline" onClick={() => updateContactStatusMutation.mutate({ id: contact.id, status: "replied" })} className="flex-1 sm:flex-none">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              updateContactStatusMutation.mutate({
+                                id: contact.id,
+                                status: "replied",
+                              })
+                            }
+                            className="flex-1 sm:flex-none"
+                          >
                             <CheckCircle2 className="w-3 h-3 mr-1" /> Respondido
                           </Button>
                         </div>
@@ -1318,15 +1528,36 @@ export default function Admin() {
             <Card>
               <CardContent className="pt-6">
                 {demos.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">Nenhuma demo agendada.</div>
+                  <div className="text-center py-8 text-muted-foreground">
+                    Nenhuma demo agendada.
+                  </div>
                 ) : (
                   <div className="space-y-4">
                     {demos.map((demo) => (
-                      <div key={demo.id} className="p-4 border rounded-lg space-y-3" data-testid={`demo-row-${demo.id}`}>
+                      <div
+                        key={demo.id}
+                        className="p-4 border rounded-lg space-y-3"
+                        data-testid={`demo-row-${demo.id}`}
+                      >
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                          <div className="font-medium truncate">{demo.name} - {demo.company}</div>
-                          <Badge variant={demo.status === "pending" ? "secondary" : demo.status === "scheduled" ? "default" : "outline"} className="self-start sm:self-auto">
-                            {demo.status === "pending" ? "Pendente" : demo.status === "scheduled" ? "Agendada" : demo.status}
+                          <div className="font-medium truncate">
+                            {demo.name} - {demo.company}
+                          </div>
+                          <Badge
+                            variant={
+                              demo.status === "pending"
+                                ? "secondary"
+                                : demo.status === "scheduled"
+                                  ? "default"
+                                  : "outline"
+                            }
+                            className="self-start sm:self-auto"
+                          >
+                            {demo.status === "pending"
+                              ? "Pendente"
+                              : demo.status === "scheduled"
+                                ? "Agendada"
+                                : demo.status}
                           </Badge>
                         </div>
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-muted-foreground">
@@ -1336,9 +1567,20 @@ export default function Admin() {
                           </span>
                           {demo.storeCount && <span>{demo.storeCount} lojas</span>}
                         </div>
-                        {demo.preferredDate && <p className="text-sm text-muted-foreground">Preferência: {formatDate(demo.preferredDate)}</p>}
+                        {demo.preferredDate && (
+                          <p className="text-sm text-muted-foreground">
+                            Preferência: {formatDate(demo.preferredDate)}
+                          </p>
+                        )}
                         <div className="flex gap-2 pt-2 border-t sm:border-0 sm:pt-0">
-                          <Button size="sm" variant="outline" onClick={() => updateDemoStatusMutation.mutate({ id: demo.id, status: "scheduled" })} className="flex-1 sm:flex-none">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              updateDemoStatusMutation.mutate({ id: demo.id, status: "scheduled" })
+                            }
+                            className="flex-1 sm:flex-none"
+                          >
                             <CheckCircle2 className="w-3 h-3 mr-1" /> Agendar
                           </Button>
                         </div>
@@ -1351,10 +1593,81 @@ export default function Admin() {
           </TabsContent>
         </Tabs>
 
+        <Dialog open={Boolean(resetPasswordUser)} onOpenChange={handleResetPasswordDialogChange}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Redefinir senha temporária</DialogTitle>
+              <DialogDescription>
+                Defina uma senha temporária para "
+                {resetPasswordUser?.name || resetPasswordUser?.email}". O usuário deverá alterá-la
+                no primeiro acesso; compartilhe somente por canal seguro.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="temporary-password">Senha temporária</Label>
+                <Input
+                  id="temporary-password"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={12}
+                  required
+                  value={temporaryPassword}
+                  onChange={(event) => setTemporaryPassword(event.target.value)}
+                  data-testid="input-temporary-password"
+                />
+                <p className="text-xs text-muted-foreground">Use pelo menos 12 caracteres.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="temporary-password-confirmation">Confirmar senha temporária</Label>
+                <Input
+                  id="temporary-password-confirmation"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={12}
+                  required
+                  value={temporaryPasswordConfirmation}
+                  onChange={(event) => setTemporaryPasswordConfirmation(event.target.value)}
+                  aria-invalid={
+                    temporaryPasswordConfirmation.length > 0 &&
+                    temporaryPassword !== temporaryPasswordConfirmation
+                  }
+                  data-testid="input-temporary-password-confirmation"
+                />
+                {temporaryPasswordConfirmation.length > 0 &&
+                  temporaryPassword !== temporaryPasswordConfirmation && (
+                    <p className="text-xs text-destructive" role="alert">
+                      A confirmação da senha não corresponde.
+                    </p>
+                  )}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={closeResetPasswordDialog}>
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    resetPasswordMutation.isPending ||
+                    validateTemporaryPassword(temporaryPassword, temporaryPasswordConfirmation) !==
+                      null
+                  }
+                  data-testid="button-confirm-reset-password"
+                >
+                  {resetPasswordMutation.isPending ? "Redefinindo..." : "Redefinir senha"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Personalizar Loja</DialogTitle>
+              <DialogDescription>
+                Atualize os dados operacionais, o status e a identidade visual da loja selecionada.
+              </DialogDescription>
             </DialogHeader>
             {editingTenant && (
               <form onSubmit={handleUpdateTenant} className="space-y-4">
@@ -1366,7 +1679,7 @@ export default function Admin() {
                     data-testid="input-edit-name"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label>Status</Label>
                   <Select
@@ -1390,13 +1703,17 @@ export default function Admin() {
                       <Input
                         type="color"
                         value={editingTenant.primaryColor || "#9333ea"}
-                        onChange={(e) => setEditingTenant({ ...editingTenant, primaryColor: e.target.value })}
+                        onChange={(e) =>
+                          setEditingTenant({ ...editingTenant, primaryColor: e.target.value })
+                        }
                         className="w-12 h-10 p-1 cursor-pointer flex-shrink-0"
                         data-testid="input-edit-primary-color"
                       />
                       <Input
                         value={editingTenant.primaryColor || "#9333ea"}
-                        onChange={(e) => setEditingTenant({ ...editingTenant, primaryColor: e.target.value })}
+                        onChange={(e) =>
+                          setEditingTenant({ ...editingTenant, primaryColor: e.target.value })
+                        }
                         className="flex-1 min-w-0"
                       />
                     </div>
@@ -1407,13 +1724,17 @@ export default function Admin() {
                       <Input
                         type="color"
                         value={editingTenant.secondaryColor || "#db2777"}
-                        onChange={(e) => setEditingTenant({ ...editingTenant, secondaryColor: e.target.value })}
+                        onChange={(e) =>
+                          setEditingTenant({ ...editingTenant, secondaryColor: e.target.value })
+                        }
                         className="w-12 h-10 p-1 cursor-pointer flex-shrink-0"
                         data-testid="input-edit-secondary-color"
                       />
                       <Input
                         value={editingTenant.secondaryColor || "#db2777"}
-                        onChange={(e) => setEditingTenant({ ...editingTenant, secondaryColor: e.target.value })}
+                        onChange={(e) =>
+                          setEditingTenant({ ...editingTenant, secondaryColor: e.target.value })
+                        }
                         className="flex-1 min-w-0"
                       />
                     </div>
@@ -1434,7 +1755,9 @@ export default function Admin() {
                   <Label>Mensagem de Login (opcional)</Label>
                   <Textarea
                     value={editingTenant.loginMessage || ""}
-                    onChange={(e) => setEditingTenant({ ...editingTenant, loginMessage: e.target.value })}
+                    onChange={(e) =>
+                      setEditingTenant({ ...editingTenant, loginMessage: e.target.value })
+                    }
                     placeholder="Bem-vindo à nossa loja! Entre com suas credenciais."
                     rows={3}
                     data-testid="input-edit-login-message"
@@ -1444,7 +1767,9 @@ export default function Admin() {
                 <div className="p-3 bg-muted rounded-lg">
                   <p className="text-sm text-muted-foreground mb-2">Link de Login da Loja:</p>
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                    <code className="text-xs sm:text-sm flex-1 truncate min-w-0 px-2 py-1 bg-background rounded">{window.location.origin}/loja/{editingTenant.slug}</code>
+                    <code className="text-xs sm:text-sm flex-1 truncate min-w-0 px-2 py-1 bg-background rounded">
+                      {window.location.origin}/loja/{editingTenant.slug}
+                    </code>
                     <div className="flex gap-2 flex-shrink-0">
                       <Button
                         type="button"
@@ -1485,6 +1810,9 @@ export default function Admin() {
           <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Editar Usuário</DialogTitle>
+              <DialogDescription>
+                Atualize os dados de acesso e as permissões administrativas do usuário selecionado.
+              </DialogDescription>
             </DialogHeader>
             {editingUser && (
               <form onSubmit={handleUpdateUser} className="space-y-4">
@@ -1511,15 +1839,18 @@ export default function Admin() {
                     type="password"
                     value={editUserPassword}
                     onChange={(e) => setEditUserPassword(e.target.value)}
-                    placeholder="Nova senha"
+                    placeholder="Minimo 12 caracteres"
+                    minLength={12}
                     data-testid="input-edit-user-password"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Super Admin?</Label>
-                  <Select 
-                    value={editingUser.isSuperAdmin ? "yes" : "no"} 
-                    onValueChange={(value) => setEditingUser({ ...editingUser, isSuperAdmin: value === "yes" })}
+                  <Select
+                    value={editingUser.isSuperAdmin ? "yes" : "no"}
+                    onValueChange={(value) =>
+                      setEditingUser({ ...editingUser, isSuperAdmin: value === "yes" })
+                    }
                   >
                     <SelectTrigger data-testid="select-edit-user-admin">
                       <SelectValue />
@@ -1548,31 +1879,38 @@ export default function Admin() {
             <DialogHeader>
               <DialogTitle>Vincular Usuário a Loja</DialogTitle>
               <DialogDescription>
-                Selecione uma loja e a função para vincular {assigningUser?.name || assigningUser?.email}
+                Selecione uma loja e a função para vincular{" "}
+                {assigningUser?.name || assigningUser?.email}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleAssignTenant} className="space-y-4">
               <div className="space-y-2">
                 <Label>Loja</Label>
-                <Select 
-                  value={assignTenantData.tenantId} 
-                  onValueChange={(value) => setAssignTenantData({ ...assignTenantData, tenantId: value })}
+                <Select
+                  value={assignTenantData.tenantId}
+                  onValueChange={(value) =>
+                    setAssignTenantData({ ...assignTenantData, tenantId: value })
+                  }
                 >
                   <SelectTrigger data-testid="select-assign-tenant">
                     <SelectValue placeholder="Selecione uma loja" />
                   </SelectTrigger>
                   <SelectContent>
                     {tenants.map((t) => (
-                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                      <SelectItem key={t.id} value={String(t.id)}>
+                        {t.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Função</Label>
-                <Select 
-                  value={assignTenantData.role} 
-                  onValueChange={(value) => setAssignTenantData({ ...assignTenantData, role: value })}
+                <Select
+                  value={assignTenantData.role}
+                  onValueChange={(value) =>
+                    setAssignTenantData({ ...assignTenantData, role: value })
+                  }
                 >
                   <SelectTrigger data-testid="select-assign-role">
                     <SelectValue />

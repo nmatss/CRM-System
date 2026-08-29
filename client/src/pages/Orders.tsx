@@ -3,21 +3,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
@@ -44,30 +44,41 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { 
-  ShoppingBag, 
-  Filter, 
-  MoreHorizontal, 
+import {
+  ShoppingBag,
+  MoreHorizontal,
   Download,
   Search,
   Loader2,
-  ShoppingCart
+  ShoppingCart,
+  Plus,
+  X,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import type { Order, Customer } from "@shared/schema";
+import { downloadJsonAsCsv } from "@/lib/csvExport";
+import { fetchPaginatedQuery } from "@/lib/paginatedQuery";
+import { DataPagination } from "@/components/ui/data-pagination";
+import {
+  buildSafeOrderUpdatePayload,
+  buildTransactionalOrderPayload,
+  getOrderPreview,
+  orderActionErrorDescription,
+  orderToSafeUpdateForm,
+  type OrderStatus,
+  type SelectedOrderProduct,
+} from "@/lib/orderTransactions";
+import type { Order, Customer, Product } from "@shared/schema";
 
 interface OrderFormData {
-  orderId: string;
   customer: string;
   customerId?: number;
   orderDate: string;
-  total: string;
-  status: string;
-  items: number;
+  status: OrderStatus;
   method: string;
+  lineItems: SelectedOrderProduct[];
 }
 
 const formatDate = (date: Date | string | null): string => {
@@ -76,85 +87,139 @@ const formatDate = (date: Date | string | null): string => {
   return d.toLocaleDateString("pt-BR");
 };
 
-const formatDateForInput = (date: Date | string | null): string => {
-  if (!date) return new Date().toISOString().split('T')[0];
-  const d = typeof date === "string" ? new Date(date) : date;
-  return d.toISOString().split('T')[0];
-};
-
-const generateOrderId = () => {
-  const prefix = "PED";
-  const number = Math.floor(Math.random() * 900000) + 100000;
-  return `${prefix}${number}`;
-};
-
-const initialFormData: OrderFormData = {
-  orderId: generateOrderId(),
+const createInitialFormData = (): OrderFormData => ({
   customer: "",
-  orderDate: new Date().toISOString().split('T')[0],
-  total: "R$ 0,00",
+  orderDate: new Date().toISOString().split("T")[0],
   status: "Pendente",
-  items: 1,
   method: "Cartão de Crédito",
-};
+  lineItems: [],
+});
+
+const formatCurrency = (cents: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
 
 export default function Orders() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
-  const [formData, setFormData] = useState<OrderFormData>(initialFormData);
+  const [formData, setFormData] = useState<OrderFormData>(createInitialFormData);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [productSearch, setProductSearch] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("Todos");
-  
+  const [page, setPage] = useState(1);
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: orders = [], isLoading } = useQuery<Order[]>({
-    queryKey: ["orders"],
-    queryFn: async () => {
-      const response = await fetch("/api/v1/orders");
-      if (!response.ok) throw new Error("Erro ao carregar pedidos");
-      return response.json();
-    },
+  const pageSize = 20;
+  const normalizedSearch = searchTerm.trim();
+  const ordersQuery = useQuery({
+    queryKey: [
+      "orders",
+      {
+        page,
+        limit: pageSize,
+        search: normalizedSearch,
+        status: statusFilter,
+        sort: "orderDate",
+        order: "desc",
+      },
+    ],
+    queryFn: () =>
+      fetchPaginatedQuery<Order>({
+        endpoint: "/api/v1/orders",
+        page,
+        limit: pageSize,
+        filters: {
+          search: normalizedSearch || undefined,
+          status: statusFilter === "Todos" ? undefined : statusFilter,
+          sort: "orderDate",
+          order: "desc",
+        },
+      }),
   });
+  const orders = ordersQuery.data?.data ?? [];
+  const pagination = ordersQuery.data?.pagination;
 
-  const { data: customers = [] } = useQuery<Customer[]>({
-    queryKey: ["customers"],
-    queryFn: async () => {
-      const response = await fetch("/api/v1/customers");
-      if (!response.ok) throw new Error("Erro ao carregar clientes");
-      return response.json();
-    },
+  const customersQuery = useQuery({
+    queryKey: [
+      "customers",
+      { page: 1, limit: 20, search: customerSearch.trim(), context: "order-form" },
+    ],
+    queryFn: () =>
+      fetchPaginatedQuery<Customer>({
+        endpoint: "/api/v1/customers",
+        page: 1,
+        limit: 20,
+        filters: { search: customerSearch.trim() || undefined, sort: "name", order: "asc" },
+      }),
+    enabled: isModalOpen,
   });
+  const customers = customersQuery.data?.data ?? [];
+
+  const productsQuery = useQuery({
+    queryKey: [
+      "products",
+      { page: 1, limit: 20, search: productSearch.trim(), context: "order-form" },
+    ],
+    queryFn: () =>
+      fetchPaginatedQuery<Product>({
+        endpoint: "/api/v1/products",
+        page: 1,
+        limit: 20,
+        filters: { search: productSearch.trim() || undefined, sort: "name", order: "asc" },
+      }),
+    enabled: isModalOpen && !editingOrder,
+  });
+  const products = productsQuery.data?.data ?? [];
+  const orderPreview = getOrderPreview(formData.lineItems);
 
   const createMutation = useMutation({
-    mutationFn: async (data: OrderFormData) => {
+    mutationFn: async (data: ReturnType<typeof buildTransactionalOrderPayload>) => {
       const response = await apiRequest("POST", "/orders", data);
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["products"] });
       toast({ title: "Sucesso!", description: "Pedido criado com sucesso." });
       closeModal();
     },
-    onError: () => {
-      toast({ title: "Erro", description: "Não foi possível criar o pedido.", variant: "destructive" });
+    onError: (error) => {
+      toast({
+        title: "Erro",
+        description: orderActionErrorDescription(error, "criar"),
+        variant: "destructive",
+      });
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<OrderFormData> }) => {
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: number;
+      data: ReturnType<typeof buildSafeOrderUpdatePayload>;
+    }) => {
       const response = await apiRequest("PUT", `/orders/${id}`, data);
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["products"] });
       toast({ title: "Sucesso!", description: "Pedido atualizado com sucesso." });
       closeModal();
     },
-    onError: () => {
-      toast({ title: "Erro", description: "Não foi possível atualizar o pedido.", variant: "destructive" });
+    onError: (error) => {
+      toast({
+        title: "Erro",
+        description: orderActionErrorDescription(error, "atualizar"),
+        variant: "destructive",
+      });
     },
   });
 
@@ -164,50 +229,98 @@ export default function Orders() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["orders"] });
+      void queryClient.invalidateQueries({ queryKey: ["products"] });
       toast({ title: "Sucesso!", description: "Pedido cancelado com sucesso." });
       setIsDeleteDialogOpen(false);
       setOrderToDelete(null);
     },
-    onError: () => {
-      toast({ title: "Erro", description: "Não foi possível cancelar o pedido.", variant: "destructive" });
+    onError: (error) => {
+      toast({
+        title: "Erro",
+        description: orderActionErrorDescription(error, "cancelar"),
+        variant: "destructive",
+      });
     },
   });
 
   const openCreateModal = () => {
     setEditingOrder(null);
-    setFormData({ ...initialFormData, orderId: generateOrderId() });
+    setFormData(createInitialFormData());
+    setCustomerSearch("");
+    setProductSearch("");
+    setSelectedProductId("");
     setIsModalOpen(true);
   };
 
   const openEditModal = (order: Order) => {
     setEditingOrder(order);
-    setFormData({
-      orderId: order.orderId,
-      customer: order.customer,
-      customerId: order.customerId || undefined,
-      orderDate: formatDateForInput(order.orderDate),
-      total: `R$ ${(order.total ?? 0).toFixed(2).replace('.', ',')}`,
-      status: order.status,
-      items: order.items,
-      method: order.method,
-    });
+    setFormData({ ...orderToSafeUpdateForm(order), lineItems: [] });
+    setCustomerSearch(order.customer);
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingOrder(null);
-    setFormData({ ...initialFormData, orderId: generateOrderId() });
+    setFormData(createInitialFormData());
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingOrder) {
-      updateMutation.mutate({ id: editingOrder.id, data: formData });
-    } else {
-      createMutation.mutate(formData);
+      updateMutation.mutate({
+        id: editingOrder.id,
+        data: buildSafeOrderUpdatePayload(formData),
+      });
+      return;
     }
+    if (!formData.customerId || !formData.customer.trim()) {
+      toast({
+        title: "Revise o pedido",
+        description: "Selecione um cliente válido.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!orderPreview.isValid) {
+      toast({
+        title: "Revise os produtos",
+        description:
+          formData.lineItems.length === 0
+            ? "Adicione ao menos um produto ao pedido."
+            : "As quantidades devem ser positivas e não podem superar o estoque disponível.",
+        variant: "destructive",
+      });
+      return;
+    }
+    createMutation.mutate(buildTransactionalOrderPayload({ ...formData, status: "Pendente" }));
+  };
+
+  const addSelectedProduct = () => {
+    const product = products.find((item) => item.id === Number(selectedProductId));
+    if (!product || formData.lineItems.some((item) => item.product.id === product.id)) return;
+    setFormData((current) => ({
+      ...current,
+      lineItems: [...current.lineItems, { product, quantity: 1 }],
+    }));
+    setSelectedProductId("");
+  };
+
+  const updateLineQuantity = (productId: number, quantity: number) => {
+    setFormData((current) => ({
+      ...current,
+      lineItems: current.lineItems.map((item) =>
+        item.product.id === productId ? { ...item, quantity } : item,
+      ),
+    }));
+  };
+
+  const removeLineItem = (productId: number) => {
+    setFormData((current) => ({
+      ...current,
+      lineItems: current.lineItems.filter((item) => item.product.id !== productId),
+    }));
   };
 
   const openDeleteDialog = (order: Order) => {
@@ -221,27 +334,60 @@ export default function Orders() {
     }
   };
 
-  const filteredOrders = orders.filter(
-    (order) => {
-      const matchesSearch = order.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        String(order.total).includes(searchTerm);
-      const matchesStatus = statusFilter === "Todos" || order.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    }
-  );
-
-  const statusOptions = ["Todos", "Pendente", "Processando", "Pago", "Enviado", "Entregue", "Cancelado"];
+  const statusOptions = [
+    "Todos",
+    "Pendente",
+    "Processando",
+    "Pago",
+    "Enviado",
+    "Entregue",
+    "Cancelado",
+  ];
 
   const isMutating = createMutation.isPending || updateMutation.isPending;
 
+  const handleExport = async () => {
+    try {
+      await downloadJsonAsCsv(
+        "/export/orders",
+        `pedidos_${new Date().toISOString().split("T")[0]}.csv`,
+        [
+          { key: "orderId", label: "Pedido" },
+          { key: "customer", label: "Cliente" },
+          { key: "orderDate", label: "Data" },
+          { key: "total", label: "Total" },
+          { key: "status", label: "Status" },
+          { key: "items", label: "Itens" },
+          { key: "method", label: "Pagamento" },
+        ],
+      );
+      toast({ title: "Sucesso!", description: "Pedidos exportados com sucesso." });
+    } catch {
+      toast({
+        title: "Erro",
+        description: "Não foi possível exportar os pedidos.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const getStatusBadgeProps = (status: string) => {
-    const variant = status === "Pago" ? "default" : 
-                    status === "Entregue" ? "secondary" : 
-                    status === "Cancelado" ? "destructive" : 
-                    status === "Processando" ? "outline" : "default";
-    const className = status === "Pago" ? "bg-emerald-600 hover:bg-emerald-700" :
-                      status === "Processando" ? "bg-amber-500 hover:bg-amber-600 border-transparent text-white" : "";
+    const variant =
+      status === "Pago"
+        ? "default"
+        : status === "Entregue"
+          ? "secondary"
+          : status === "Cancelado"
+            ? "destructive"
+            : status === "Processando"
+              ? "outline"
+              : "default";
+    const className =
+      status === "Pago"
+        ? "bg-emerald-600 hover:bg-emerald-700"
+        : status === "Processando"
+          ? "bg-amber-500 hover:bg-amber-600 border-transparent text-white"
+          : "";
     return { variant, className };
   };
 
@@ -254,11 +400,20 @@ export default function Orders() {
             <p className="text-sm text-muted-foreground">Gerencie e processe os pedidos da loja.</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" className="gap-2 flex-1 sm:flex-none text-xs sm:text-sm" data-testid="button-export">
+            <Button
+              variant="outline"
+              className="gap-2 flex-1 sm:flex-none text-xs sm:text-sm"
+              onClick={handleExport}
+              data-testid="button-export"
+            >
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline">Exportar</span>
             </Button>
-            <Button className="gap-2 flex-1 sm:flex-none text-xs sm:text-sm" onClick={openCreateModal} data-testid="button-new-order">
+            <Button
+              className="gap-2 flex-1 sm:flex-none text-xs sm:text-sm"
+              onClick={openCreateModal}
+              data-testid="button-new-order"
+            >
               <ShoppingBag className="h-4 w-4" />
               <span className="hidden sm:inline">Novo Pedido</span>
               <span className="sm:hidden">Novo</span>
@@ -274,7 +429,10 @@ export default function Orders() {
                 placeholder="Buscar pedido, cliente ou valor..."
                 className="w-full pl-9"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setPage(1);
+                }}
                 data-testid="input-search"
               />
             </div>
@@ -286,7 +444,10 @@ export default function Orders() {
                 key={status}
                 variant={statusFilter === status ? "default" : "outline"}
                 size="sm"
-                onClick={() => setStatusFilter(status)}
+                onClick={() => {
+                  setStatusFilter(status);
+                  setPage(1);
+                }}
                 className="whitespace-nowrap text-xs sm:text-sm px-3 py-1.5 flex-shrink-0"
                 data-testid={`filter-${status.toLowerCase()}`}
               >
@@ -298,7 +459,7 @@ export default function Orders() {
 
         <Card>
           <CardContent className="p-0">
-            {isLoading ? (
+            {ordersQuery.isLoading ? (
               <div className="space-y-4 p-6">
                 {[...Array(5)].map((_, i) => (
                   <div key={i} className="flex items-center gap-4">
@@ -310,14 +471,33 @@ export default function Orders() {
                   </div>
                 ))}
               </div>
-            ) : filteredOrders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-center" data-testid="empty-state">
+            ) : ordersQuery.isError ? (
+              <div
+                className="flex h-64 flex-col items-center justify-center gap-3 text-center"
+                role="alert"
+              >
+                <p className="text-destructive">Não foi possível carregar os pedidos.</p>
+                <Button variant="outline" onClick={() => ordersQuery.refetch()}>
+                  Tentar novamente
+                </Button>
+              </div>
+            ) : orders.length === 0 ? (
+              <div
+                className="flex flex-col items-center justify-center h-64 text-center"
+                data-testid="empty-state"
+              >
                 <ShoppingCart className="h-12 w-12 text-muted-foreground mb-4" />
                 <p className="text-muted-foreground mb-2">
-                  {searchTerm ? "Nenhum pedido encontrado para a busca." : "Nenhum pedido cadastrado ainda."}
+                  {searchTerm
+                    ? "Nenhum pedido encontrado para a busca."
+                    : "Nenhum pedido cadastrado ainda."}
                 </p>
                 {!searchTerm && (
-                  <Button variant="outline" onClick={openCreateModal} data-testid="button-add-first-order">
+                  <Button
+                    variant="outline"
+                    onClick={openCreateModal}
+                    data-testid="button-add-first-order"
+                  >
                     Criar primeiro pedido
                   </Button>
                 )}
@@ -338,13 +518,22 @@ export default function Orders() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredOrders.map((order) => {
+                      {orders.map((order) => {
                         const badgeProps = getStatusBadgeProps(order.status);
                         return (
                           <TableRow key={order.id} data-testid={`row-order-${order.id}`}>
-                            <TableCell className="font-medium" data-testid={`text-order-id-${order.id}`}>{order.orderId}</TableCell>
-                            <TableCell data-testid={`text-customer-${order.id}`}>{order.customer}</TableCell>
-                            <TableCell data-testid={`text-date-${order.id}`}>{formatDate(order.orderDate)}</TableCell>
+                            <TableCell
+                              className="font-medium"
+                              data-testid={`text-order-id-${order.id}`}
+                            >
+                              {order.orderId}
+                            </TableCell>
+                            <TableCell data-testid={`text-customer-${order.id}`}>
+                              {order.customer}
+                            </TableCell>
+                            <TableCell data-testid={`text-date-${order.id}`}>
+                              {formatDate(order.orderDate)}
+                            </TableCell>
                             <TableCell>
                               <Badge
                                 variant={badgeProps.variant as any}
@@ -354,27 +543,38 @@ export default function Orders() {
                                 {order.status}
                               </Badge>
                             </TableCell>
-                            <TableCell data-testid={`text-total-${order.id}`}>{order.total}</TableCell>
-                            <TableCell className="text-muted-foreground text-sm" data-testid={`text-method-${order.id}`}>{order.method}</TableCell>
+                            <TableCell data-testid={`text-total-${order.id}`}>
+                              {formatCurrency(order.totalCents ?? Math.round(order.total * 100))}
+                            </TableCell>
+                            <TableCell
+                              className="text-muted-foreground text-sm"
+                              data-testid={`text-method-${order.id}`}
+                            >
+                              {order.method}
+                            </TableCell>
                             <TableCell className="text-right">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" className="h-8 w-8 p-0" data-testid={`button-actions-${order.id}`}>
+                                  <Button
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0"
+                                    data-testid={`button-actions-${order.id}`}
+                                  >
                                     <span className="sr-only">Abrir menu</span>
                                     <MoreHorizontal className="h-4 w-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => openEditModal(order)} data-testid={`button-edit-${order.id}`}>
-                                    Ver Detalhes
+                                  <DropdownMenuItem
+                                    onClick={() => openEditModal(order)}
+                                    data-testid={`button-edit-${order.id}`}
+                                  >
+                                    Editar dados operacionais
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => openEditModal(order)}>
-                                    Atualizar Status
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem>Imprimir Etiqueta</DropdownMenuItem>
-                                  <DropdownMenuItem 
+                                  <DropdownMenuItem
                                     className="text-destructive"
                                     onClick={() => openDeleteDialog(order)}
+                                    disabled={order.status === "Cancelado"}
                                     data-testid={`button-delete-${order.id}`}
                                   >
                                     Cancelar Pedido
@@ -388,12 +588,16 @@ export default function Orders() {
                     </TableBody>
                   </Table>
                 </div>
-                
+
                 <div className="md:hidden space-y-4 p-4">
-                  {filteredOrders.map((order) => {
+                  {orders.map((order) => {
                     const badgeProps = getStatusBadgeProps(order.status);
                     return (
-                      <div key={order.id} className="border rounded-lg p-4 space-y-3" data-testid={`card-order-${order.id}`}>
+                      <div
+                        key={order.id}
+                        className="border rounded-lg p-4 space-y-3"
+                        data-testid={`card-order-${order.id}`}
+                      >
                         <div className="flex items-center justify-between">
                           <div>
                             <p className="font-medium">{order.orderId}</p>
@@ -406,10 +610,14 @@ export default function Orders() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => openEditModal(order)}>Ver Detalhes</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => openEditModal(order)}>Atualizar Status</DropdownMenuItem>
-                              <DropdownMenuItem>Imprimir Etiqueta</DropdownMenuItem>
-                              <DropdownMenuItem className="text-destructive" onClick={() => openDeleteDialog(order)}>
+                              <DropdownMenuItem onClick={() => openEditModal(order)}>
+                                Editar dados operacionais
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => openDeleteDialog(order)}
+                                disabled={order.status === "Cancelado"}
+                              >
                                 Cancelar Pedido
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -422,7 +630,9 @@ export default function Orders() {
                           >
                             {order.status}
                           </Badge>
-                          <p className="font-semibold text-sm sm:text-base">{order.total}</p>
+                          <p className="font-semibold text-sm sm:text-base">
+                            {formatCurrency(order.totalCents ?? Math.round(order.total * 100))}
+                          </p>
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-sm">
                           <div>
@@ -438,6 +648,17 @@ export default function Orders() {
                     );
                   })}
                 </div>
+                {pagination && (
+                  <div className="p-4 pt-0">
+                    <DataPagination
+                      page={pagination.page}
+                      totalPages={pagination.totalPages}
+                      total={pagination.total}
+                      label="pedidos"
+                      onPageChange={setPage}
+                    />
+                  </div>
+                )}
               </>
             )}
           </CardContent>
@@ -445,26 +666,26 @@ export default function Orders() {
       </div>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto" data-testid="order-modal">
+        <DialogContent
+          className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto"
+          data-testid="order-modal"
+        >
           <DialogHeader>
             <DialogTitle>{editingOrder ? "Editar Pedido" : "Novo Pedido"}</DialogTitle>
             <DialogDescription>
               {editingOrder
-                ? "Atualize as informações do pedido abaixo."
-                : "Preencha os dados do novo pedido."}
+                ? "Atualize somente os dados operacionais permitidos. Totais e itens são controlados pelo servidor."
+                : "Selecione cliente e produtos. Preços, estoque e total serão confirmados pelo servidor."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="orderId">Número do Pedido</Label>
-                <Input
-                  id="orderId"
-                  value={formData.orderId}
-                  disabled
-                  data-testid="input-order-id"
-                />
-              </div>
+              {editingOrder && (
+                <div className="space-y-2">
+                  <Label>Número do Pedido</Label>
+                  <Input value={editingOrder.orderId} disabled data-testid="input-order-id" />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="orderDate">Data</Label>
                 <Input
@@ -479,15 +700,47 @@ export default function Orders() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="customer">Cliente *</Label>
-              {customers.length > 0 ? (
+              <Input
+                id="customer-search"
+                value={customerSearch}
+                onChange={(event) => setCustomerSearch(event.target.value)}
+                placeholder="Buscar cliente..."
+                aria-label="Buscar cliente"
+              />
+              {customersQuery.isLoading ? (
+                <div
+                  className="flex items-center gap-2 text-sm text-muted-foreground"
+                  role="status"
+                >
+                  <Loader2 className="h-4 w-4 animate-spin" /> Carregando clientes...
+                </div>
+              ) : customersQuery.isError ? (
+                <div
+                  className="flex items-center justify-between gap-2 text-sm text-destructive"
+                  role="alert"
+                >
+                  <span>Não foi possível carregar os clientes.</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => customersQuery.refetch()}
+                  >
+                    Tentar novamente
+                  </Button>
+                </div>
+              ) : customers.length > 0 ? (
                 <Select
-                  value={formData.customer}
+                  value={formData.customerId ? String(formData.customerId) : ""}
                   onValueChange={(value) => {
-                    const selectedCustomer = customers.find(c => c.name === value);
-                    setFormData({ 
-                      ...formData, 
-                      customer: value, 
-                      customerId: selectedCustomer?.id 
+                    const selectedCustomer = customers.find(
+                      (customer) => customer.id === Number(value),
+                    );
+                    if (!selectedCustomer) return;
+                    setFormData({
+                      ...formData,
+                      customer: selectedCustomer.name,
+                      customerId: selectedCustomer.id,
                     });
                   }}
                 >
@@ -496,66 +749,187 @@ export default function Orders() {
                   </SelectTrigger>
                   <SelectContent>
                     {customers.map((customer) => (
-                      <SelectItem key={customer.id} value={customer.name}>
+                      <SelectItem key={customer.id} value={String(customer.id)}>
                         {customer.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               ) : (
-                <Input
-                  id="customer"
-                  value={formData.customer}
-                  onChange={(e) => setFormData({ ...formData, customer: e.target.value })}
-                  placeholder="Nome do cliente"
-                  required
-                  data-testid="input-order-customer"
-                />
+                <p className="text-sm text-muted-foreground" role="status">
+                  Nenhum cliente encontrado. Cadastre ou refine a busca antes de criar o pedido.
+                </p>
               )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="total">Total *</Label>
+            {!editingOrder ? (
+              <div className="space-y-3 rounded-lg border p-4">
+                <div>
+                  <Label htmlFor="product-search">Produtos *</Label>
+                  <p className="text-xs text-muted-foreground">
+                    A disponibilidade exibida é uma prévia; o servidor revalida estoque e preço ao
+                    criar.
+                  </p>
+                </div>
                 <Input
-                  id="total"
-                  value={formData.total}
-                  onChange={(e) => setFormData({ ...formData, total: e.target.value })}
-                  placeholder="R$ 0,00"
-                  required
-                  data-testid="input-order-total"
+                  id="product-search"
+                  value={productSearch}
+                  onChange={(event) => setProductSearch(event.target.value)}
+                  placeholder="Buscar produto..."
                 />
+                {productsQuery.isLoading ? (
+                  <div
+                    className="flex items-center gap-2 text-sm text-muted-foreground"
+                    role="status"
+                  >
+                    <Loader2 className="h-4 w-4 animate-spin" /> Carregando produtos...
+                  </div>
+                ) : productsQuery.isError ? (
+                  <div
+                    className="flex items-center justify-between gap-2 text-sm text-destructive"
+                    role="alert"
+                  >
+                    <span>Não foi possível carregar os produtos.</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => productsQuery.refetch()}
+                    >
+                      Tentar novamente
+                    </Button>
+                  </div>
+                ) : products.length === 0 ? (
+                  <p className="text-sm text-muted-foreground" role="status">
+                    Nenhum produto encontrado para esta busca.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Select value={selectedProductId} onValueChange={setSelectedProductId}>
+                      <SelectTrigger className="flex-1" data-testid="select-product">
+                        <SelectValue placeholder="Selecione um produto..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {products.map((product) => {
+                          const alreadyAdded = formData.lineItems.some(
+                            (item) => item.product.id === product.id,
+                          );
+                          return (
+                            <SelectItem
+                              key={product.id}
+                              value={String(product.id)}
+                              disabled={product.stock <= 0 || alreadyAdded}
+                            >
+                              {product.name} · {formatCurrency(Math.round(product.price * 100))} ·{" "}
+                              {product.stock} em estoque
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={addSelectedProduct}
+                      disabled={!selectedProductId}
+                    >
+                      <Plus className="mr-2 h-4 w-4" /> Adicionar
+                    </Button>
+                  </div>
+                )}
+
+                {orderPreview.rows.length === 0 ? (
+                  <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                    Nenhum produto adicionado ao pedido.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {orderPreview.rows.map((row) => (
+                      <div
+                        key={row.productId}
+                        className="grid grid-cols-[1fr_90px_auto] items-end gap-2 rounded-md bg-muted/50 p-3"
+                      >
+                        <div className="min-w-0 text-sm">
+                          <p className="truncate font-medium">{row.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatCurrency(row.unitPriceCents)} cada · estoque {row.stock} ·
+                            subtotal {formatCurrency(row.lineTotalCents)}
+                          </p>
+                          {row.hasInsufficientStock && (
+                            <p className="text-xs text-destructive" role="alert">
+                              Quantidade superior ao estoque disponível.
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <Label className="text-xs" htmlFor={`quantity-${row.productId}`}>
+                            Quantidade
+                          </Label>
+                          <Input
+                            id={`quantity-${row.productId}`}
+                            type="number"
+                            min={1}
+                            max={row.stock}
+                            value={row.quantity}
+                            onChange={(event) =>
+                              updateLineQuantity(row.productId, Number(event.target.value))
+                            }
+                            aria-invalid={row.hasInvalidQuantity || row.hasInsufficientStock}
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => removeLineItem(row.productId)}
+                          aria-label={`Remover ${row.name}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                    <div
+                      className="flex justify-between border-t pt-3 font-medium"
+                      aria-live="polite"
+                    >
+                      <span>{orderPreview.totalItems} item(ns)</span>
+                      <span>Total previsto: {formatCurrency(orderPreview.totalCents)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="items">Qtd. Itens</Label>
-                <Input
-                  id="items"
-                  type="number"
-                  value={formData.items}
-                  onChange={(e) => setFormData({ ...formData, items: parseInt(e.target.value) || 1 })}
-                  min={1}
-                  data-testid="input-order-items"
-                />
+            ) : (
+              <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                Itens, quantidades e total são imutáveis nesta edição. O endpoint de consulta ainda
+                não expõe os itens detalhados do pedido.
               </div>
-            </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(value) => setFormData({ ...formData, status: value })}
-                >
-                  <SelectTrigger data-testid="select-status">
-                    <SelectValue placeholder="Selecione..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Pendente">Pendente</SelectItem>
-                    <SelectItem value="Processando">Processando</SelectItem>
-                    <SelectItem value="Pago">Pago</SelectItem>
-                    <SelectItem value="Enviado">Enviado</SelectItem>
-                    <SelectItem value="Entregue">Entregue</SelectItem>
-                    <SelectItem value="Cancelado">Cancelado</SelectItem>
-                  </SelectContent>
-                </Select>
+                {editingOrder ? (
+                  <Select
+                    value={formData.status}
+                    onValueChange={(value: OrderStatus) =>
+                      setFormData({ ...formData, status: value })
+                    }
+                  >
+                    <SelectTrigger data-testid="select-status">
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Pendente">Pendente</SelectItem>
+                      <SelectItem value="Processando">Processando</SelectItem>
+                      <SelectItem value="Pago">Pago</SelectItem>
+                      <SelectItem value="Enviado">Enviado</SelectItem>
+                      <SelectItem value="Entregue">Entregue</SelectItem>
+                      {editingOrder.status === "Cancelado" && (
+                        <SelectItem value="Cancelado">Cancelado</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input id="status" value="Pendente" disabled data-testid="input-status" />
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="method">Pagamento</Label>
@@ -577,10 +951,32 @@ export default function Orders() {
               </div>
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
-              <Button type="button" variant="outline" onClick={closeModal} className="w-full sm:w-auto" data-testid="button-cancel">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeModal}
+                className="w-full sm:w-auto"
+                data-testid="button-cancel"
+              >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isMutating} className="w-full sm:w-auto" data-testid="button-save-order">
+              <Button
+                type="submit"
+                disabled={
+                  isMutating ||
+                  !formData.customer.trim() ||
+                  (!editingOrder &&
+                    (customersQuery.isLoading ||
+                      customersQuery.isError ||
+                      !formData.customerId ||
+                      !orderPreview.isValid ||
+                      productsQuery.isLoading ||
+                      productsQuery.isError)) ||
+                  editingOrder?.status === "Cancelado"
+                }
+                className="w-full sm:w-auto"
+                data-testid="button-save-order"
+              >
                 {isMutating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {editingOrder ? "Salvar" : "Criar Pedido"}
               </Button>
@@ -594,11 +990,14 @@ export default function Orders() {
           <AlertDialogHeader>
             <AlertDialogTitle>Cancelar pedido?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. O pedido "{orderToDelete?.orderId}" será cancelado permanentemente.
+              O pedido "{orderToDelete?.orderId}" será marcado como cancelado. Quando houver itens
+              transacionais, o servidor devolverá suas quantidades ao estoque.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
-            <AlertDialogCancel className="w-full sm:w-auto" data-testid="button-cancel-delete">Voltar</AlertDialogCancel>
+            <AlertDialogCancel className="w-full sm:w-auto" data-testid="button-cancel-delete">
+              Voltar
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="w-full sm:w-auto bg-destructive text-destructive-foreground hover:bg-destructive/90"

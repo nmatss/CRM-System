@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">CRM-System</h1>
-  <p align="center">CRM completo para varejo com cashback, relatorios, automacoes e integracoes nativas com ERPs</p>
+  <p align="center">CRM completo para varejo com cashback, relatorios, automacoes, agenda comercial e operacao multi-tenant</p>
 </p>
 
 <p align="center">
@@ -18,6 +18,8 @@
 
 CRM-System e um sistema de gestao de relacionamento com clientes voltado para o varejo. Possui suporte multi-tenant, programa de cashback, automacoes, campanhas para vendedores, relatorios avancados e design responsivo com tema claro/escuro.
 
+O banco oficial atual do runtime e SQLite via `better-sqlite3`. PostgreSQL e integrações ERP devem ser tratados como evolucoes futuras, nao como dependencias operacionais atuais.
+
 ## Arquitetura
 
 Aplicacao fullstack com frontend React e backend Express servidos pelo mesmo processo:
@@ -31,23 +33,37 @@ migrations/    # Migrations do banco de dados
 
 ## Funcionalidades
 
-- **Multi-tenant** - Multiplas empresas com login isolado
-- **Gestao de Clientes** - Cadastro completo com segmentacao
-- **Pedidos e Vendas** - Controle de pedidos e historico
-- **Produtos** - Catalogo com gestao de estoque
-- **Programa de Cashback** - Fidelizacao de clientes
-- **Campanhas para Vendedores** - Metas e incentivos
-- **Automacoes** - Fluxos automatizados de comunicacao
-- **Relatorios** - Dashboards interativos com graficos
-- **Agenda do Vendedor** - Gestao de atividades e follow-ups
-- **Painel Administrativo** - Gestao de tenants e usuarios
-- **Autenticacao Segura** - Passport.js com CSRF protection
+- **Multi-tenant** - Empresas isoladas, com o tenant e a membership revalidados a cada requisicao
+- **Gestao de Clientes** - Cadastro, segmentacao, importacao/exportacao e visao 360 com dados reais
+- **Pedidos e Vendas** - Itens com snapshot de preco e baixa de estoque na mesma transacao
+- **Produtos** - Catalogo com estoque, busca, filtros e paginacao no servidor
+- **Programa de Cashback** - Ledger em centavos com credito, debito FIFO, expiracao, reversao e reconciliacao
+- **Campanhas** - Envio por outbox duravel, com status por destinatario e respeito a opt-out
+- **Automacoes** - Definicao versionada, execucao idempotente por evento e historico auditavel
+- **Relatorios** - Agregacao a partir dos itens de pedido, em centavos e com timezone explicito
+- **Agenda do Vendedor** - Tarefas, metas, interacoes e ranking
+- **Painel Administrativo** - Gestao de tenants e usuarios com audit log imutavel
+- **Autenticacao Segura** - Sessao HTTP-only, bcrypt, rate limit, CSRF e senha de 12+ caracteres
 - **Design Responsivo** - Tema claro/escuro com Shadcn/UI
-- **Testes Automatizados** - Vitest com coverage
+- **Testes Automatizados** - Vitest com cobertura sob threshold na CI
+
+### Ainda nao disponivel
+
+Estas capacidades nao estao operacionais e o sistema declara isso em vez de
+simular sucesso:
+
+- envio real por email, SMS ou WhatsApp: enquanto nao houver provedor
+  configurado, cada destinatario e registrado como `not_configured` e nada e
+  enviado;
+- metricas de abertura, conversao e receita de campanha, que dependem de
+  eventos de atribuicao ainda nao coletados;
+- testes end-to-end de navegador, auditoria de acessibilidade e regressao
+  visual;
+- error tracking, metricas e alertas de producao.
 
 ## Stack Tecnologica
 
-**Backend:** TypeScript, Express, Drizzle ORM, SQLite (better-sqlite3), Passport.js, Zod, bcrypt
+**Backend:** TypeScript, Express, Drizzle ORM, SQLite (better-sqlite3), sessoes server-side, Zod, bcrypt
 
 **Frontend:** React 19, Vite, Tailwind CSS 4, React Query, Wouter, Recharts, React Hook Form, Radix UI, Framer Motion, Lucide Icons
 
@@ -59,7 +75,10 @@ migrations/    # Migrations do banco de dados
 
 ### Pre-requisitos
 
-- Node.js 18+
+- Node.js **20.19.x** e npm **10.8.x**, fixados em `package.json`, `.nvmrc` e
+  `.node-version`. O modulo nativo `better-sqlite3` e compilado para essa ABI:
+  em outra versao de Node os testes falham ao carregar o banco. Com `fnm` ou
+  `nvm`, rode `fnm use` (ou `nvm use`) na raiz do repositorio antes de instalar.
 
 ### Instalacao
 
@@ -72,8 +91,8 @@ cd CRM-System
 cp .env.example .env
 # Editar o .env com suas credenciais
 
-# Instalar dependencias
-npm install
+# Instalar dependencias reproduziveis
+npm ci
 
 # Criar banco de dados
 npm run db:push
@@ -92,14 +111,18 @@ docker compose up -d
 
 ## Variaveis de Ambiente
 
-| Variavel | Descricao |
-|----------|-----------|
-| `DATABASE_PATH` | Caminho do banco SQLite (padrao: `./data/zippcrm.db`) |
-| `PORT` | Porta do servidor (padrao: 5000) |
-| `NODE_ENV` | Ambiente (`development` / `production`) |
-| `SESSION_SECRET` | Segredo para sessoes (obrigatorio em producao) |
-| `ADMIN_EMAIL` | Email do super admin inicial |
-| `ADMIN_PASSWORD` | Senha do super admin inicial |
+| Variavel                                                | Descricao                                                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `DATABASE_PATH`                                         | Caminho do banco SQLite (padrao: `./data/zippcrm.db`)                                             |
+| `PORT`                                                  | Porta do servidor (padrao: 5000)                                                                  |
+| `NODE_ENV`                                              | Ambiente (`development` / `production`)                                                           |
+| `TRUST_PROXY`                                           | Defina `1` apenas atras de proxy/PaaS confiavel; deixe vazio em Docker direto                     |
+| `SESSION_SECRET`                                        | Segredo para sessoes; obrigatorio em producao, minimo 32 caracteres, nao usar placeholder         |
+| `ADMIN_EMAIL`                                           | Email valido do super admin inicial; obrigatorio em producao                                      |
+| `ADMIN_PASSWORD`                                        | Senha do super admin inicial; obrigatoria em producao, minimo 12 caracteres, nao usar placeholder |
+| `ALLOW_EMPTY_DATABASE_BOOTSTRAP`                        | `true` apenas no primeiro boot controlado de um volume vazio; volte para `false` em seguida       |
+| `EMAIL_PROVIDER` / `SMS_PROVIDER` / `WHATSAPP_PROVIDER` | Habilitam cada canal de entrega. Vazio significa canal indisponivel e nenhuma mensagem enviada    |
+| `OUTBOX_WORKER_ENABLED`                                 | `false` para o processo parar de reivindicar jobs; os jobs continuam persistidos                  |
 
 Consulte o arquivo `.env.example` para a lista completa e guias de deploy.
 
@@ -110,6 +133,9 @@ npm run dev              # Inicia servidor em modo dev
 npm run build            # Build de producao
 npm run start            # Inicia em producao
 npm run check            # Verificacao de tipos TypeScript
+npm run lint             # ESLint sem warnings tolerados
+npm run format:check     # Prettier em modo verificacao
+npm run docs:check       # Valida os links da documentacao
 npm run test             # Rodar testes
 npm run test:coverage    # Testes com cobertura
 npm run db:push          # Sincronizar schema com banco
@@ -123,7 +149,14 @@ O projeto suporta deploy em:
 
 - **Render.com** - Configuracao via `render.yaml`
 - **Railway** - Configuracao via `railway.toml`
-- **Docker** - Via `Dockerfile` e `docker-compose.yml`
+- **Docker** - Via `Dockerfile` e `docker-compose.yml`, com volume persistente para `/app/data`
+
+Documentos operacionais:
+
+- `DEPLOY.md`
+- `BACKUP_RESTORE.md`
+- `RUNBOOK_PRODUCAO.md`
+- `GO_LIVE_CHECKLIST.md`
 
 ## Licenca
 

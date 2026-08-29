@@ -2,6 +2,13 @@
 -- Description: Adds CHECK constraints to ensure data integrity across key tables
 -- Compatible with: SQLite
 -- Generated: 2024-12-15
+--
+-- WARNING:
+-- This is a legacy destructive migration that rebuilds tables using DROP TABLE.
+-- Do not execute this SQL file directly against production or any database with
+-- real data. Use the guarded wrapper only after a verified backup:
+--
+--   ALLOW_DESTRUCTIVE_CONSTRAINT_MIGRATION=true BACKUP_CONFIRMED=true npm run db:migrate:constraints
 
 -- Note: SQLite does not support adding CHECK constraints to existing tables via ALTER TABLE.
 -- We need to recreate tables with CHECK constraints.

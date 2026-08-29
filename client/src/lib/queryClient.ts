@@ -49,13 +49,37 @@ export function clearCsrfToken() {
   csrfToken = null;
 }
 
+export function normalizeApiUrl(url: string): string {
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+
+  if (url.startsWith("/api/health")) {
+    return url;
+  }
+
+  if (url === "/api/v1" || url.startsWith("/api/v1/")) {
+    return url;
+  }
+
+  if (url === "/api") {
+    return "/api/v1";
+  }
+
+  if (url.startsWith("/api/")) {
+    return url.replace(/^\/api(?=\/)/, "/api/v1");
+  }
+
+  const path = url.startsWith("/") ? url : `/${url}`;
+  return `/api/v1${path}`;
+}
+
 export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  // Add /api/v1 prefix if not already present and not /api/health
-  const apiUrl = url.startsWith("/api/health") ? url : url.replace(/^\/api\//, "/api/v1/");
+  const apiUrl = normalizeApiUrl(url);
 
   const headers: HeadersInit = data ? { "Content-Type": "application/json" } : {};
 
@@ -108,14 +132,11 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
+export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    // Add /api/v1 prefix to all query keys except /api/health
     const url = queryKey.join("/");
-    const apiUrl = url.startsWith("/api/health") ? url : url.replace(/^\/api\//, "/api/v1/");
+    const apiUrl = normalizeApiUrl(url);
 
     const res = await fetch(apiUrl as string, {
       credentials: "include",
@@ -141,7 +162,7 @@ export const queryClient = new QueryClient({
       retryDelay: 1000, // Wait 1 second before retry
     },
     mutations: {
-      retry: 1, // Retry mutations once on network errors
+      retry: false,
     },
   },
 });

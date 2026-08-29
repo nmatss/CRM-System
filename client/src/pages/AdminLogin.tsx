@@ -21,14 +21,17 @@ export default function AdminLogin() {
     try {
       const result = await login(loginForm);
       if (!result.user.isSuperAdmin) {
-        toast({ 
-          title: "Acesso Negado", 
-          description: "Esta área é restrita a administradores do sistema.", 
-          variant: "destructive" 
+        toast({
+          title: "Acesso Negado",
+          description: "Esta área é restrita a administradores do sistema.",
+          variant: "destructive",
         });
         return;
       }
-      toast({ title: "Bem-vindo, Admin!", description: "Acesso autorizado ao painel de controle." });
+      toast({
+        title: "Bem-vindo, Admin!",
+        description: "Acesso autorizado ao painel de controle.",
+      });
       setLocation("/admin");
     } catch (error: any) {
       toast({ title: "Erro no login", description: error.message, variant: "destructive" });
@@ -50,7 +53,10 @@ export default function AdminLogin() {
       >
         <div className="absolute inset-0 bg-gradient-to-r from-red-500/20 to-orange-600/20 rounded-3xl blur-3xl" />
 
-        <Card className="relative bg-[#0F172A]/90 backdrop-blur-xl border-red-500/20 shadow-2xl" data-testid="admin-login-card">
+        <Card
+          className="relative bg-[#0F172A]/90 backdrop-blur-xl border-red-500/20 shadow-2xl"
+          data-testid="admin-login-card"
+        >
           <CardHeader className="text-center pb-2 px-4 sm:px-6 pt-6 sm:pt-8">
             <motion.div
               className="flex justify-center mb-3 sm:mb-4"
@@ -79,7 +85,9 @@ export default function AdminLogin() {
 
             <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="admin-email" className="text-gray-300 text-sm sm:text-base">Email do Administrador</Label>
+                <Label htmlFor="admin-email" className="text-gray-300 text-sm sm:text-base">
+                  Email do Administrador
+                </Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-gray-500" />
                   <Input
@@ -95,7 +103,9 @@ export default function AdminLogin() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="admin-password" className="text-gray-300 text-sm sm:text-base">Senha</Label>
+                <Label htmlFor="admin-password" className="text-gray-300 text-sm sm:text-base">
+                  Senha
+                </Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-gray-500" />
                   <Input
@@ -128,9 +138,7 @@ export default function AdminLogin() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4, duration: 0.6 }}
         >
-          <p className="text-gray-600 text-xs sm:text-sm">
-            Zippi CRM - Painel Administrativo v1.0
-          </p>
+          <p className="text-gray-600 text-xs sm:text-sm">Zippi CRM - Painel Administrativo v1.0</p>
         </motion.div>
       </motion.div>
 

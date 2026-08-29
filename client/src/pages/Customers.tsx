@@ -1,5 +1,4 @@
 import { Layout } from "@/components/layout/Layout";
-import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,14 +9,14 @@ import {
   TableCell,
   TableHead,
   TableHeader,
-  TableRow
+  TableRow,
 } from "@/components/ui/table";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
@@ -48,11 +47,25 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CustomerDetail } from "@/components/customers/CustomerDetail";
-import { MoreHorizontal, Plus, Filter, Tag, Search, UserPlus, Loader2, Upload, Download, FileSpreadsheet, Eye } from "lucide-react";
+import {
+  MoreHorizontal,
+  Plus,
+  Tag,
+  Search,
+  UserPlus,
+  Loader2,
+  Upload,
+  Download,
+  FileSpreadsheet,
+  Eye,
+} from "lucide-react";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { downloadJsonAsCsv } from "@/lib/csvExport";
+import { fetchPaginatedQuery } from "@/lib/paginatedQuery";
+import { DataPagination } from "@/components/ui/data-pagination";
 import type { Customer } from "@shared/schema";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -64,9 +77,9 @@ const formatDate = (date: Date | string | null): string => {
 };
 
 const formatDateForInput = (date: Date | string | null): string => {
-  if (!date) return new Date().toISOString().split('T')[0];
+  if (!date) return new Date().toISOString().split("T")[0];
   const d = typeof date === "string" ? new Date(date) : date;
-  return d.toISOString().split('T')[0];
+  return d.toISOString().split("T")[0];
 };
 
 interface CustomerFormData {
@@ -85,32 +98,36 @@ const initialFormData: CustomerFormData = {
   phone: "",
   segment: "Novo",
   ltv: "0",
-  lastPurchase: new Date().toISOString().split('T')[0],
+  lastPurchase: new Date().toISOString().split("T")[0],
   favoriteCategory: "",
 };
 
+const MAX_IMPORT_FILE_BYTES = 1024 * 1024;
+const MAX_IMPORT_ROWS = 1000;
+
 function parseCSV(csvText: string): any[] {
-  const lines = csvText.trim().split('\n');
+  const lines = csvText.trim().split("\n");
   if (lines.length < 2) return [];
-  
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+
+  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/"/g, ""));
   const data: any[] = [];
-  
+
   for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+    const values = lines[i].split(",").map((v) => v.trim().replace(/"/g, ""));
     const row: any = {};
     headers.forEach((header, index) => {
-      row[header] = values[index] || '';
+      row[header] = values[index] || "";
     });
     if ((row.name || row.nome) && (row.email || row.e_mail)) {
       data.push({
         name: row.name || row.nome,
         email: row.email || row.e_mail,
-        phone: row.phone || row.telefone || '',
-        segment: row.segment || row.segmento || 'Novo',
-        ltv: row.ltv || 'R$ 0,00',
-        lastPurchase: row.lastpurchase || row.ultimacompra || new Date().toLocaleDateString("pt-BR"),
-        favoriteCategory: row.favoritecategory || row.categoriafavorita || '',
+        phone: row.phone || row.telefone || "",
+        segment: row.segment || row.segmento || "Novo",
+        ltv: row.ltv || "R$ 0,00",
+        lastPurchase:
+          row.lastpurchase || row.ultimacompra || new Date().toLocaleDateString("pt-BR"),
+        favoriteCategory: row.favoritecategory || row.categoriafavorita || "",
       });
     }
   }
@@ -127,6 +144,8 @@ export default function Customers() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [formData, setFormData] = useState<CustomerFormData>(initialFormData);
   const [searchTerm, setSearchTerm] = useState("");
+  const [segmentFilter, setSegmentFilter] = useState("all");
+  const [page, setPage] = useState(1);
   const [importData, setImportData] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -134,14 +153,28 @@ export default function Customers() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: customers = [], isLoading } = useQuery<Customer[]>({
-    queryKey: ["customers"],
-    queryFn: async () => {
-      const response = await fetch("/api/v1/customers");
-      if (!response.ok) throw new Error("Erro ao carregar clientes");
-      return response.json();
-    },
+  const pageSize = 20;
+  const normalizedSearch = searchTerm.trim();
+  const customersQuery = useQuery({
+    queryKey: [
+      "customers",
+      { page, limit: pageSize, search: normalizedSearch, segment: segmentFilter },
+    ],
+    queryFn: () =>
+      fetchPaginatedQuery<Customer>({
+        endpoint: "/api/v1/customers",
+        page,
+        limit: pageSize,
+        filters: {
+          search: normalizedSearch || undefined,
+          segment: segmentFilter === "all" ? undefined : segmentFilter,
+          sort: "name",
+          order: "asc",
+        },
+      }),
   });
+  const customers = customersQuery.data?.data ?? [];
+  const pagination = customersQuery.data?.pagination;
 
   const createMutation = useMutation({
     mutationFn: async (data: CustomerFormData) => {
@@ -154,7 +187,11 @@ export default function Customers() {
       closeModal();
     },
     onError: () => {
-      toast({ title: "Erro", description: "Não foi possível adicionar o cliente.", variant: "destructive" });
+      toast({
+        title: "Erro",
+        description: "Não foi possível adicionar o cliente.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -169,7 +206,11 @@ export default function Customers() {
       closeModal();
     },
     onError: () => {
-      toast({ title: "Erro", description: "Não foi possível atualizar o cliente.", variant: "destructive" });
+      toast({
+        title: "Erro",
+        description: "Não foi possível atualizar o cliente.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -185,24 +226,47 @@ export default function Customers() {
       setCustomerToDelete(null);
     },
     onError: () => {
-      toast({ title: "Erro", description: "Não foi possível excluir o cliente.", variant: "destructive" });
+      toast({
+        title: "Erro",
+        description: "Não foi possível excluir o cliente.",
+        variant: "destructive",
+      });
     },
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      toast({
+        title: "Arquivo muito grande",
+        description: "Importe arquivos CSV de até 1 MB.",
+        variant: "destructive",
+      });
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
       const parsed = parseCSV(text);
+      if (parsed.length > MAX_IMPORT_ROWS) {
+        toast({
+          title: "Muitas linhas",
+          description: `Importe no máximo ${MAX_IMPORT_ROWS} clientes por vez.`,
+          variant: "destructive",
+        });
+        return;
+      }
       setImportData(parsed);
       setIsImportDialogOpen(true);
     };
     reader.readAsText(file);
     if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      fileInputRef.current.value = "";
     }
   };
 
@@ -213,14 +277,18 @@ export default function Customers() {
       const response = await apiRequest("POST", "/import/customers", { customers: importData });
       const result = await response.json();
       queryClient.invalidateQueries({ queryKey: ["customers"] });
-      toast({ 
-        title: "Sucesso!", 
-        description: `${result.imported || importData.length} clientes importados.` 
+      toast({
+        title: "Sucesso!",
+        description: `${result.imported ?? result.success ?? importData.length} clientes importados.`,
       });
       setIsImportDialogOpen(false);
       setImportData([]);
-    } catch (error) {
-      toast({ title: "Erro", description: "Não foi possível importar os clientes.", variant: "destructive" });
+    } catch {
+      toast({
+        title: "Erro",
+        description: "Não foi possível importar os clientes.",
+        variant: "destructive",
+      });
     } finally {
       setIsImporting(false);
     }
@@ -228,25 +296,26 @@ export default function Customers() {
 
   const handleExport = async () => {
     try {
-      const response = await fetch("/api/v1/export/customers");
-      if (!response.ok) throw new Error("Export failed");
-      const data = await response.json();
-      
-      const headers = ["name", "email", "phone", "segment", "ltv", "lastPurchase", "favoriteCategory"];
-      const csvContent = [
-        headers.join(","),
-        ...data.map((c: any) => headers.map(h => `"${c[h] || ''}"`).join(","))
-      ].join("\n");
-      
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `clientes_${new Date().toISOString().split('T')[0]}.csv`;
-      link.click();
-      
+      await downloadJsonAsCsv(
+        "/export/customers",
+        `clientes_${new Date().toISOString().split("T")[0]}.csv`,
+        [
+          { key: "name", label: "Nome" },
+          { key: "email", label: "E-mail" },
+          { key: "phone", label: "Telefone" },
+          { key: "segment", label: "Segmento" },
+          { key: "ltv", label: "LTV" },
+          { key: "lastPurchase", label: "Última compra" },
+          { key: "favoriteCategory", label: "Categoria favorita" },
+        ],
+      );
       toast({ title: "Sucesso!", description: "Clientes exportados com sucesso." });
-    } catch (error) {
-      toast({ title: "Erro", description: "Não foi possível exportar os clientes.", variant: "destructive" });
+    } catch {
+      toast({
+        title: "Erro",
+        description: "Não foi possível exportar os clientes.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -301,13 +370,6 @@ export default function Customers() {
     setIsDetailOpen(true);
   };
 
-  const filteredCustomers = customers.filter(
-    (customer) =>
-      customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (customer.favoriteCategory || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const isMutating = createMutation.isPending || updateMutation.isPending;
 
   return (
@@ -342,7 +404,11 @@ export default function Customers() {
               <Download className="h-4 w-4" />
               Exportar
             </Button>
-            <Button className="gap-2 w-full sm:w-auto" onClick={openCreateModal} data-testid="button-add-customer">
+            <Button
+              className="gap-2 w-full sm:w-auto"
+              onClick={openCreateModal}
+              data-testid="button-add-customer"
+            >
               <Plus className="h-4 w-4" />
               Adicionar Cliente
             </Button>
@@ -355,22 +421,42 @@ export default function Customers() {
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Buscar por nome, email ou estilo..." 
-                  className="h-8 w-full sm:w-[250px] pl-9" 
+                <Input
+                  placeholder="Buscar por nome, email ou estilo..."
+                  className="h-8 w-full sm:w-[250px] pl-9"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setPage(1);
+                  }}
                   data-testid="input-search-customers"
                 />
               </div>
-              <Button variant="outline" size="sm" className="h-8 gap-2 w-full sm:w-auto" data-testid="button-filter">
-                <Filter className="h-3.5 w-3.5" />
-                Filtrar
-              </Button>
+              <Select
+                value={segmentFilter}
+                onValueChange={(value) => {
+                  setSegmentFilter(value);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger
+                  className="h-8 w-full sm:w-[150px]"
+                  data-testid="select-segment-filter"
+                >
+                  <SelectValue placeholder="Segmento" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="VIP">VIP</SelectItem>
+                  <SelectItem value="Novo">Novo</SelectItem>
+                  <SelectItem value="Regular">Regular</SelectItem>
+                  <SelectItem value="Em Risco">Em Risco</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {customersQuery.isLoading ? (
               <div className="space-y-4">
                 {[...Array(5)].map((_, i) => (
                   <div key={i} className="flex items-center gap-4">
@@ -383,14 +469,33 @@ export default function Customers() {
                   </div>
                 ))}
               </div>
-            ) : filteredCustomers.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-center" data-testid="empty-state">
+            ) : customersQuery.isError ? (
+              <div
+                className="flex h-64 flex-col items-center justify-center gap-3 text-center"
+                role="alert"
+              >
+                <p className="text-destructive">Não foi possível carregar os clientes.</p>
+                <Button variant="outline" onClick={() => customersQuery.refetch()}>
+                  Tentar novamente
+                </Button>
+              </div>
+            ) : customers.length === 0 ? (
+              <div
+                className="flex flex-col items-center justify-center h-64 text-center"
+                data-testid="empty-state"
+              >
                 <UserPlus className="h-12 w-12 text-muted-foreground mb-4" />
                 <p className="text-muted-foreground mb-2">
-                  {searchTerm ? "Nenhum cliente encontrado para a busca." : "Nenhum cliente cadastrado ainda."}
+                  {searchTerm
+                    ? "Nenhum cliente encontrado para a busca."
+                    : "Nenhum cliente cadastrado ainda."}
                 </p>
                 {!searchTerm && (
-                  <Button variant="outline" onClick={openCreateModal} data-testid="button-add-first-customer">
+                  <Button
+                    variant="outline"
+                    onClick={openCreateModal}
+                    data-testid="button-add-first-customer"
+                  >
                     Adicionar primeiro cliente
                   </Button>
                 )}
@@ -410,7 +515,7 @@ export default function Customers() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredCustomers.map((customer) => (
+                      {customers.map((customer) => (
                         <TableRow
                           key={customer.id}
                           data-testid={`row-customer-${customer.id}`}
@@ -420,23 +525,46 @@ export default function Customers() {
                           <TableCell>
                             <div className="flex items-center gap-3">
                               <Avatar className="h-9 w-9">
-                                <AvatarImage src={customer.image || undefined} alt={customer.name} />
-                                <AvatarFallback>{customer.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                                <AvatarImage
+                                  src={customer.image || undefined}
+                                  alt={customer.name}
+                                />
+                                <AvatarFallback>
+                                  {customer.name.slice(0, 2).toUpperCase()}
+                                </AvatarFallback>
                               </Avatar>
                               <div className="flex flex-col">
-                                <span className="font-medium" data-testid={`text-customer-name-${customer.id}`}>{customer.name}</span>
-                                <span className="text-xs text-muted-foreground" data-testid={`text-customer-email-${customer.id}`}>{customer.email}</span>
+                                <span
+                                  className="font-medium"
+                                  data-testid={`text-customer-name-${customer.id}`}
+                                >
+                                  {customer.name}
+                                </span>
+                                <span
+                                  className="text-xs text-muted-foreground"
+                                  data-testid={`text-customer-email-${customer.id}`}
+                                >
+                                  {customer.email}
+                                </span>
                               </div>
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge 
+                            <Badge
                               variant={
-                                customer.segment === "VIP" ? "default" : 
-                                customer.segment === "Em Risco" ? "destructive" : 
-                                customer.segment === "Novo" ? "secondary" : "outline"
+                                customer.segment === "VIP"
+                                  ? "default"
+                                  : customer.segment === "Em Risco"
+                                    ? "destructive"
+                                    : customer.segment === "Novo"
+                                      ? "secondary"
+                                      : "outline"
                               }
-                              className={customer.segment === "VIP" ? "bg-purple-600 hover:bg-purple-700" : ""}
+                              className={
+                                customer.segment === "VIP"
+                                  ? "bg-purple-600 hover:bg-purple-700"
+                                  : ""
+                              }
                               data-testid={`badge-segment-${customer.id}`}
                             >
                               {customer.segment}
@@ -448,12 +576,26 @@ export default function Customers() {
                               {customer.favoriteCategory || "N/A"}
                             </div>
                           </TableCell>
-                          <TableCell className="font-medium" data-testid={`text-ltv-${customer.id}`}>{customer.ltv}</TableCell>
-                          <TableCell className="text-muted-foreground text-sm" data-testid={`text-last-purchase-${customer.id}`}>{formatDate(customer.lastPurchase)}</TableCell>
+                          <TableCell
+                            className="font-medium"
+                            data-testid={`text-ltv-${customer.id}`}
+                          >
+                            {customer.ltv}
+                          </TableCell>
+                          <TableCell
+                            className="text-muted-foreground text-sm"
+                            data-testid={`text-last-purchase-${customer.id}`}
+                          >
+                            {formatDate(customer.lastPurchase)}
+                          </TableCell>
                           <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" className="h-8 w-8 p-0" data-testid={`button-actions-${customer.id}`}>
+                                <Button
+                                  variant="ghost"
+                                  className="h-8 w-8 p-0"
+                                  data-testid={`button-actions-${customer.id}`}
+                                >
                                   <span className="sr-only">Abrir menu</span>
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
@@ -465,7 +607,10 @@ export default function Customers() {
                                   Visão 360°
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => openEditModal(customer)} data-testid={`button-edit-${customer.id}`}>
+                                <DropdownMenuItem
+                                  onClick={() => openEditModal(customer)}
+                                  data-testid={`button-edit-${customer.id}`}
+                                >
                                   Editar Cliente
                                 </DropdownMenuItem>
                                 <DropdownMenuItem>Criar Pedido</DropdownMenuItem>
@@ -486,9 +631,9 @@ export default function Customers() {
                     </TableBody>
                   </Table>
                 </div>
-                
+
                 <div className="md:hidden space-y-4">
-                  {filteredCustomers.map((customer) => (
+                  {customers.map((customer) => (
                     <div
                       key={customer.id}
                       className="border rounded-lg p-4 space-y-3 cursor-pointer hover:bg-accent/50 transition-colors"
@@ -499,7 +644,9 @@ export default function Customers() {
                         <div className="flex items-center gap-3">
                           <Avatar className="h-10 w-10">
                             <AvatarImage src={customer.image || undefined} alt={customer.name} />
-                            <AvatarFallback>{customer.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                            <AvatarFallback>
+                              {customer.name.slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
                           </Avatar>
                           <div>
                             <p className="font-medium">{customer.name}</p>
@@ -519,24 +666,35 @@ export default function Customers() {
                               Visão 360°
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => openEditModal(customer)}>Editar Cliente</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => openEditModal(customer)}>
+                              Editar Cliente
+                            </DropdownMenuItem>
                             <DropdownMenuItem>Criar Pedido</DropdownMenuItem>
                             <DropdownMenuItem>Registrar Interação</DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive" onClick={() => openDeleteDialog(customer)}>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => openDeleteDialog(customer)}
+                            >
                               Excluir Cliente
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <Badge 
+                        <Badge
                           variant={
-                            customer.segment === "VIP" ? "default" : 
-                            customer.segment === "Em Risco" ? "destructive" : 
-                            customer.segment === "Novo" ? "secondary" : "outline"
+                            customer.segment === "VIP"
+                              ? "default"
+                              : customer.segment === "Em Risco"
+                                ? "destructive"
+                                : customer.segment === "Novo"
+                                  ? "secondary"
+                                  : "outline"
                           }
-                          className={customer.segment === "VIP" ? "bg-purple-600 hover:bg-purple-700" : ""}
+                          className={
+                            customer.segment === "VIP" ? "bg-purple-600 hover:bg-purple-700" : ""
+                          }
                         >
                           {customer.segment}
                         </Badge>
@@ -554,12 +712,23 @@ export default function Customers() {
                         </div>
                         <div>
                           <p className="text-muted-foreground text-xs">Última Compra</p>
-                          <p className="text-muted-foreground">{formatDate(customer.lastPurchase)}</p>
+                          <p className="text-muted-foreground">
+                            {formatDate(customer.lastPurchase)}
+                          </p>
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
+                {pagination && (
+                  <DataPagination
+                    page={pagination.page}
+                    totalPages={pagination.totalPages}
+                    total={pagination.total}
+                    label="clientes"
+                    onPageChange={setPage}
+                  />
+                )}
               </>
             )}
           </CardContent>
@@ -567,7 +736,10 @@ export default function Customers() {
       </div>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="w-full max-w-[95vw] sm:max-w-[500px] max-h-[90vh] overflow-y-auto" data-testid="customer-modal">
+        <DialogContent
+          className="w-full max-w-[95vw] sm:max-w-[500px] max-h-[90vh] overflow-y-auto"
+          data-testid="customer-modal"
+        >
           <DialogHeader>
             <DialogTitle>{editingCustomer ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
             <DialogDescription>
@@ -665,10 +837,21 @@ export default function Customers() {
               />
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button type="button" variant="outline" onClick={closeModal} className="w-full sm:w-auto" data-testid="button-cancel">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeModal}
+                className="w-full sm:w-auto"
+                data-testid="button-cancel"
+              >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isMutating} className="w-full sm:w-auto" data-testid="button-save-customer">
+              <Button
+                type="submit"
+                disabled={isMutating}
+                className="w-full sm:w-auto"
+                data-testid="button-save-customer"
+              >
                 {isMutating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {editingCustomer ? "Salvar" : "Adicionar"}
               </Button>
@@ -682,11 +865,14 @@ export default function Customers() {
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir cliente?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. O cliente "{customerToDelete?.name}" será removido permanentemente.
+              Esta ação não pode ser desfeita. O cliente "{customerToDelete?.name}" será removido
+              permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-            <AlertDialogCancel className="w-full sm:w-auto" data-testid="button-cancel-delete">Cancelar</AlertDialogCancel>
+            <AlertDialogCancel className="w-full sm:w-auto" data-testid="button-cancel-delete">
+              Cancelar
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="w-full sm:w-auto bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -700,15 +886,16 @@ export default function Customers() {
       </AlertDialog>
 
       <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-        <DialogContent className="w-full max-w-[95vw] sm:max-w-[600px] max-h-[90vh] overflow-y-auto" data-testid="import-dialog">
+        <DialogContent
+          className="w-full max-w-[95vw] sm:max-w-[600px] max-h-[90vh] overflow-y-auto"
+          data-testid="import-dialog"
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5" />
               Importar Clientes
             </DialogTitle>
-            <DialogDescription>
-              Revise os dados do arquivo CSV antes de importar.
-            </DialogDescription>
+            <DialogDescription>Revise os dados do arquivo CSV antes de importar.</DialogDescription>
           </DialogHeader>
           {importData.length > 0 ? (
             <div className="overflow-x-auto -mx-6 sm:mx-0">

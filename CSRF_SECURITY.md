@@ -20,19 +20,19 @@ A custom CSRF protection middleware was implemented with the following features:
 #### 2. Protected Routes
 
 All authenticated API endpoints are protected except:
-- `/api/v1/csrf-token` - Token generation endpoint
+
 - `/api/health` - Health check endpoint
-- `/api/auth/login` - Login endpoint (no session yet)
-- `/api/auth/register` - Registration endpoint (no session yet)
-- `/api/tenants/by-slug/*` - Public tenant lookup
-- `/api/contact` - Public contact form
-- `/api/demo` - Public demo request
+- `/api/v1/auth/login` - Login endpoint (no session yet)
+- `/api/v1/auth/register` - Registration endpoint (no session yet)
+- `/api/v1/tenants/by-slug/*` - Public tenant lookup
+- `/api/v1/contact` - Public contact form
+- `/api/v1/demo` - Public demo request
 
 #### 3. Token Endpoint
 
 **GET /api/v1/csrf-token**
 
-Returns a fresh CSRF token for the current session:
+Returns a fresh CSRF token for the current authenticated session. Anonymous requests return `401` and must not create server-side sessions.
 
 ```json
 {
@@ -94,29 +94,29 @@ No changes needed! The existing `apiRequest` function handles everything:
 
 ```typescript
 // This automatically includes CSRF token
-await apiRequest('POST', '/api/customers', customerData);
-await apiRequest('PUT', '/api/products/123', productData);
-await apiRequest('DELETE', '/api/orders/456');
+await apiRequest("POST", "/api/v1/customers", customerData);
+await apiRequest("PUT", "/api/v1/products/123", productData);
+await apiRequest("DELETE", "/api/v1/orders/456");
 ```
 
 ### Manual Fetch Requests
 
-If making manual fetch requests, include the CSRF token:
+If making authenticated manual fetch requests, include the CSRF token:
 
 ```typescript
-const tokenRes = await fetch('/api/v1/csrf-token', {
-  credentials: 'include'
+const tokenRes = await fetch("/api/v1/csrf-token", {
+  credentials: "include",
 });
 const { csrfToken } = await tokenRes.json();
 
-const response = await fetch('/api/customers', {
-  method: 'POST',
+const response = await fetch("/api/v1/customers", {
+  method: "POST",
   headers: {
-    'Content-Type': 'application/json',
-    'X-CSRF-Token': csrfToken
+    "Content-Type": "application/json",
+    "X-CSRF-Token": csrfToken,
   },
-  credentials: 'include',
-  body: JSON.stringify(customerData)
+  credentials: "include",
+  body: JSON.stringify(customerData),
 });
 ```
 
@@ -132,6 +132,7 @@ const response = await fetch('/api/customers', {
 ```
 
 The frontend automatically:
+
 1. Detects CSRF errors
 2. Clears cached token
 3. Fetches fresh token
@@ -143,7 +144,7 @@ The frontend automatically:
 
 ```bash
 # 1. Login and get session cookie
-curl -c cookies.txt -X POST http://localhost:5000/api/auth/login \
+curl -c cookies.txt -X POST http://localhost:5000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"user@example.com","password":"password"}'
 
@@ -151,7 +152,7 @@ curl -c cookies.txt -X POST http://localhost:5000/api/auth/login \
 curl -b cookies.txt http://localhost:5000/api/v1/csrf-token
 
 # 3. Make protected request with token
-curl -b cookies.txt -X POST http://localhost:5000/api/customers \
+curl -b cookies.txt -X POST http://localhost:5000/api/v1/customers \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: YOUR_TOKEN_HERE" \
   -d '{"name":"Test Customer"}'
@@ -161,7 +162,7 @@ curl -b cookies.txt -X POST http://localhost:5000/api/customers \
 
 ```bash
 # Try making request without CSRF token
-curl -b cookies.txt -X POST http://localhost:5000/api/customers \
+curl -b cookies.txt -X POST http://localhost:5000/api/v1/customers \
   -H "Content-Type: application/json" \
   -d '{"name":"Test Customer"}'
 
@@ -187,7 +188,7 @@ curl -b cookies.txt -X POST http://localhost:5000/api/customers \
 
 ### Environment Variables
 
-No additional environment variables needed. CSRF protection uses existing session configuration.
+No additional environment variables needed. CSRF protection uses existing authenticated session configuration.
 
 ### Production Considerations
 
@@ -210,7 +211,7 @@ const publicEndpoints = [
   "/tenants/by-slug",
   "/contact",
   "/demo",
-  "/your-new-endpoint"  // Add here
+  "/your-new-endpoint", // Add here
 ];
 ```
 
@@ -220,9 +221,9 @@ Enable CSRF debug logging by adding to `/server/csrf.ts`:
 
 ```typescript
 export function csrfProtection(req: Request, res: Response, next: NextFunction) {
-  console.log('[CSRF] Checking request:', req.method, req.path);
-  console.log('[CSRF] Token:', req.headers["x-csrf-token"]);
-  console.log('[CSRF] Session:', req.session.csrfSecret);
+  console.log("[CSRF] Checking request:", req.method, req.path);
+  console.log("[CSRF] Token:", req.headers["x-csrf-token"]);
+  console.log("[CSRF] Session:", req.session.csrfSecret);
   // ... rest of function
 }
 ```

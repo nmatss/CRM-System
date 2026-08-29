@@ -8,8 +8,8 @@ services:
     name: zippcrm
     runtime: node
     region: oregon
-    plan: free
-    buildCommand: npm ci && npm run build
+    plan: starter
+    buildCommand: npm ci && npm run build && npm prune --omit=dev
     startCommand: npm run start
     disk:
       name: zippcrm-data
@@ -20,9 +20,20 @@ services:
         value: production
       - key: PORT
         value: 6000
+      - key: TRUST_PROXY
+        value: "1"
       - key: DATABASE_PATH
         value: /app/data/zippcrm.db
+      - key: SESSION_DATABASE_PATH
+        value: /app/data/sessions.db
       - key: SESSION_SECRET
         generateValue: true
-    healthCheckPath: /api/health
-    autoDeploy: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ALLOW_EMPTY_DATABASE_BOOTSTRAP
+        value: "false"
+    healthCheckPath: /api/ready
+    # Keep releases manual until every go-live gate and branch protection rule is verified.
+    autoDeploy: false

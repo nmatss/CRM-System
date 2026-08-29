@@ -36,7 +36,7 @@ import {
   Play,
   Trash2,
   Filter,
-  X
+  X,
 } from "lucide-react";
 import type { CashbackRule } from "@shared/schema";
 
@@ -47,38 +47,33 @@ interface CashbackRulesTableProps {
   onDelete: (rule: CashbackRule) => void;
   onDuplicate?: (rule: CashbackRule) => void;
   onToggleStatus?: (rule: CashbackRule) => void;
+  canManage?: boolean;
 }
 
-// Dados mockados para demonstração
-const mockImpactData = [
-  { ruleId: 1, clientsImpacted: 234, revenueGenerated: 45670 },
-  { ruleId: 2, clientsImpacted: 189, revenueGenerated: 38920 },
-  { ruleId: 3, clientsImpacted: 567, revenueGenerated: 123450 },
-  { ruleId: 4, clientsImpacted: 89, revenueGenerated: 15780 },
-  { ruleId: 5, clientsImpacted: 145, revenueGenerated: 28900 },
-];
-
-const getImpactData = (ruleId: number) => {
-  const data = mockImpactData.find(d => d.ruleId === ruleId);
-  return data || { clientsImpacted: 0, revenueGenerated: 0 };
-};
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(value);
-};
-
-const formatDate = (days: number): string => {
-  const now = new Date();
-  const startDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-  const endDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-  return `${startDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} - ${endDate.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`;
-};
-
-type SortField = "name" | "condition" | "value" | "dateStart" | "dateEnd" | "status" | "clients" | "revenue";
+type SortField = "name" | "condition" | "value" | "status";
 type SortDirection = "asc" | "desc";
+
+function SortButton({
+  field,
+  label,
+  onSort,
+}: {
+  field: SortField;
+  label: string;
+  onSort: (field: SortField) => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="-ml-3 h-8 data-[state=open]:bg-accent"
+      onClick={() => onSort(field)}
+    >
+      {label}
+      <ArrowUpDown className="ml-2 h-4 w-4" />
+    </Button>
+  );
+}
 
 export function CashbackRulesTable({
   rules,
@@ -87,6 +82,7 @@ export function CashbackRulesTable({
   onDelete,
   onDuplicate,
   onToggleStatus,
+  canManage = false,
 }: CashbackRulesTableProps) {
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -103,10 +99,12 @@ export function CashbackRulesTable({
   };
 
   const filteredAndSortedRules = rules
-    .filter(rule => {
-      const matchesStatus = statusFilter === "all" || rule.status.toLowerCase() === statusFilter.toLowerCase();
-      const matchesSearch = rule.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           rule.trigger.toLowerCase().includes(searchTerm.toLowerCase());
+    .filter((rule) => {
+      const matchesStatus =
+        statusFilter === "all" || rule.status.toLowerCase() === statusFilter.toLowerCase();
+      const matchesSearch =
+        rule.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        rule.trigger.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesStatus && matchesSearch;
     })
     .sort((a, b) => {
@@ -121,32 +119,10 @@ export function CashbackRulesTable({
           return direction * (a.value - b.value);
         case "status":
           return direction * a.status.localeCompare(b.status);
-        case "clients": {
-          const aData = getImpactData(a.id);
-          const bData = getImpactData(b.id);
-          return direction * (aData.clientsImpacted - bData.clientsImpacted);
-        }
-        case "revenue": {
-          const aData = getImpactData(a.id);
-          const bData = getImpactData(b.id);
-          return direction * (aData.revenueGenerated - bData.revenueGenerated);
-        }
         default:
           return 0;
       }
     });
-
-  const SortButton = ({ field, label }: { field: SortField; label: string }) => (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="-ml-3 h-8 data-[state=open]:bg-accent"
-      onClick={() => handleSort(field)}
-    >
-      {label}
-      <ArrowUpDown className="ml-2 h-4 w-4" />
-    </Button>
-  );
 
   const clearFilters = () => {
     setStatusFilter("all");
@@ -161,7 +137,9 @@ export function CashbackRulesTable({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <CardTitle className="text-base sm:text-lg">Regras de Cashback Ativas</CardTitle>
-            <CardDescription className="text-sm">Gerencie e monitore o desempenho de suas regras</CardDescription>
+            <CardDescription className="text-sm">
+              Gerencie a configuração e o status de suas regras
+            </CardDescription>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <div className="relative w-full sm:w-[200px]">
@@ -187,12 +165,7 @@ export function CashbackRulesTable({
                 </SelectContent>
               </Select>
               {hasActiveFilters && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearFilters}
-                  className="h-10 px-3"
-                >
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="h-10 px-3">
                   <X className="h-4 w-4 sm:mr-2" />
                   <span className="hidden sm:inline">Limpar</span>
                 </Button>
@@ -231,33 +204,23 @@ export function CashbackRulesTable({
                 <TableHeader>
                   <TableRow>
                     <TableHead>
-                      <SortButton field="name" label="Nome" />
+                      <SortButton field="name" label="Nome" onSort={handleSort} />
                     </TableHead>
                     <TableHead>
-                      <SortButton field="condition" label="Condição" />
+                      <SortButton field="condition" label="Condição" onSort={handleSort} />
                     </TableHead>
                     <TableHead>
-                      <SortButton field="value" label="Percentual" />
+                      <SortButton field="value" label="Percentual" onSort={handleSort} />
                     </TableHead>
-                    <TableHead>Data Início</TableHead>
-                    <TableHead>Data Fim</TableHead>
+                    <TableHead>Validade</TableHead>
                     <TableHead>
-                      <SortButton field="status" label="Status" />
+                      <SortButton field="status" label="Status" onSort={handleSort} />
                     </TableHead>
-                    <TableHead className="text-right">
-                      <SortButton field="clients" label="Clientes" />
-                    </TableHead>
-                    <TableHead className="text-right">
-                      <SortButton field="revenue" label="Receita" />
-                    </TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
+                    {canManage && <TableHead className="text-right">Ações</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredAndSortedRules.map((rule) => {
-                    const impactData = getImpactData(rule.id);
-                    const dateRange = formatDate(rule.validity);
-
                     return (
                       <TableRow key={rule.id}>
                         <TableCell className="font-medium">{rule.name}</TableCell>
@@ -268,74 +231,69 @@ export function CashbackRulesTable({
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {dateRange.split(" - ")[0]}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {dateRange.split(" - ")[1]}
+                          {rule.validity === 0 ? "Sem expiração" : `${rule.validity} dias`}
                         </TableCell>
                         <TableCell>
                           <Badge
                             variant={
-                              rule.status === "Ativo" ? "default" :
-                              rule.status === "Pausado" ? "secondary" :
-                              "destructive"
+                              rule.status === "Ativo"
+                                ? "default"
+                                : rule.status === "Pausado"
+                                  ? "secondary"
+                                  : "destructive"
                             }
                           >
                             {rule.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {impactData.clientsImpacted.toLocaleString("pt-BR")}
-                        </TableCell>
-                        <TableCell className="text-right font-medium text-emerald-600">
-                          {formatCurrency(impactData.revenueGenerated)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => onEdit(rule)}>
-                                <Pencil className="mr-2 h-4 w-4" />
-                                Editar
-                              </DropdownMenuItem>
-                              {onToggleStatus && (
-                                <DropdownMenuItem onClick={() => onToggleStatus(rule)}>
-                                  {rule.status === "Ativo" ? (
-                                    <>
-                                      <Pause className="mr-2 h-4 w-4" />
-                                      Pausar
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Play className="mr-2 h-4 w-4" />
-                                      Ativar
-                                    </>
-                                  )}
+                        {canManage && (
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => onEdit(rule)}>
+                                  <Pencil className="mr-2 h-4 w-4" />
+                                  Editar
                                 </DropdownMenuItem>
-                              )}
-                              {onDuplicate && (
-                                <DropdownMenuItem onClick={() => onDuplicate(rule)}>
-                                  <Copy className="mr-2 h-4 w-4" />
-                                  Duplicar
+                                {onToggleStatus && (
+                                  <DropdownMenuItem onClick={() => onToggleStatus(rule)}>
+                                    {rule.status === "Ativo" ? (
+                                      <>
+                                        <Pause className="mr-2 h-4 w-4" />
+                                        Pausar
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Play className="mr-2 h-4 w-4" />
+                                        Ativar
+                                      </>
+                                    )}
+                                  </DropdownMenuItem>
+                                )}
+                                {onDuplicate && (
+                                  <DropdownMenuItem onClick={() => onDuplicate(rule)}>
+                                    <Copy className="mr-2 h-4 w-4" />
+                                    Duplicar
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => onDelete(rule)}
+                                  className="text-destructive"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Excluir
                                 </DropdownMenuItem>
-                              )}
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => onDelete(rule)}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Excluir
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })}
@@ -346,60 +304,65 @@ export function CashbackRulesTable({
             {/* Mobile View */}
             <div className="lg:hidden space-y-4">
               {filteredAndSortedRules.map((rule) => {
-                const impactData = getImpactData(rule.id);
-                const dateRange = formatDate(rule.validity);
-
                 return (
                   <div key={rule.id} className="border rounded-lg p-4 space-y-3 bg-card">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-sm sm:text-base truncate">{rule.name}</h4>
-                        <p className="text-xs sm:text-sm text-muted-foreground mt-1 line-clamp-2">{rule.trigger}</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground mt-1 line-clamp-2">
+                          {rule.trigger}
+                        </p>
                       </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0 -mt-1">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => onEdit(rule)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Editar
-                          </DropdownMenuItem>
-                          {onToggleStatus && (
-                            <DropdownMenuItem onClick={() => onToggleStatus(rule)}>
-                              {rule.status === "Ativo" ? (
-                                <>
-                                  <Pause className="mr-2 h-4 w-4" />
-                                  Pausar
-                                </>
-                              ) : (
-                                <>
-                                  <Play className="mr-2 h-4 w-4" />
-                                  Ativar
-                                </>
-                              )}
+                      {canManage && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9 flex-shrink-0 -mt-1"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => onEdit(rule)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Editar
                             </DropdownMenuItem>
-                          )}
-                          {onDuplicate && (
-                            <DropdownMenuItem onClick={() => onDuplicate(rule)}>
-                              <Copy className="mr-2 h-4 w-4" />
-                              Duplicar
+                            {onToggleStatus && (
+                              <DropdownMenuItem onClick={() => onToggleStatus(rule)}>
+                                {rule.status === "Ativo" ? (
+                                  <>
+                                    <Pause className="mr-2 h-4 w-4" />
+                                    Pausar
+                                  </>
+                                ) : (
+                                  <>
+                                    <Play className="mr-2 h-4 w-4" />
+                                    Ativar
+                                  </>
+                                )}
+                              </DropdownMenuItem>
+                            )}
+                            {onDuplicate && (
+                              <DropdownMenuItem onClick={() => onDuplicate(rule)}>
+                                <Copy className="mr-2 h-4 w-4" />
+                                Duplicar
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => onDelete(rule)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Excluir
                             </DropdownMenuItem>
-                          )}
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => onDelete(rule)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Excluir
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -408,9 +371,11 @@ export function CashbackRulesTable({
                       </Badge>
                       <Badge
                         variant={
-                          rule.status === "Ativo" ? "default" :
-                          rule.status === "Pausado" ? "secondary" :
-                          "destructive"
+                          rule.status === "Ativo"
+                            ? "default"
+                            : rule.status === "Pausado"
+                              ? "secondary"
+                              : "destructive"
                         }
                         className="text-xs sm:text-sm"
                       >
@@ -418,18 +383,12 @@ export function CashbackRulesTable({
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 pt-3 border-t text-sm">
+                    <div className="pt-3 border-t text-sm">
                       <div className="min-w-0">
-                        <p className="text-muted-foreground text-xs mb-1">Período</p>
-                        <p className="font-medium text-xs break-words">{dateRange}</p>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-muted-foreground text-xs mb-1">Clientes</p>
-                        <p className="font-medium text-xs">{impactData.clientsImpacted.toLocaleString("pt-BR")}</p>
-                      </div>
-                      <div className="col-span-2 min-w-0">
-                        <p className="text-muted-foreground text-xs mb-1">Receita Gerada</p>
-                        <p className="font-medium text-sm text-emerald-600 truncate">{formatCurrency(impactData.revenueGenerated)}</p>
+                        <p className="text-muted-foreground text-xs mb-1">Validade</p>
+                        <p className="font-medium text-xs break-words">
+                          {rule.validity === 0 ? "Sem expiração" : `${rule.validity} dias`}
+                        </p>
                       </div>
                     </div>
                   </div>
