@@ -1,8 +1,8 @@
 # Plano mestre de conclusao do CRM-System
 
-**Status:** Fases 0 a 6 concluidas; Fases 7 a 10 parciais. Nenhum P0 de seguranca ou de integridade permanece aberto.
+**Status:** Fases 0 a 9 concluidas; Fase 10 executada ate o limite do que nao exige o ambiente final. Nenhum P0 permanece aberto.
 
-**Checkpoint:** 2026-08-29 (revisado apos a implementacao das Fases 0-6)
+**Checkpoint:** 2026-08-29 (revisado apos a implementacao das Fases 0-9)
 
 > A secao 2 preserva a auditoria original de 2026-08-29 09:42 como registro
 > historico. O estado atual verificado esta na secao 2.1.
@@ -66,30 +66,32 @@ As contagens sao do snapshot auditado e devem ganhar uma verificacao automatica 
 
 Gates executados no runtime fixado (Node 20.19.0, npm 10.8.2):
 
-| Gate                                      | Resultado | Evidencia                                                                       |
-| ----------------------------------------- | --------- | ------------------------------------------------------------------------------- |
-| `npm run check`                           | passou    | TypeScript sem erros                                                            |
-| `npm run lint`                            | passou    | `eslint . --max-warnings=0`                                                     |
-| `npm run format:check`                    | passou    | Prettier limpo em todo o repositorio                                            |
-| `npm run docs:check`                      | passou    | 69 links validados                                                              |
-| `npm test -- --run`                       | passou    | 32 arquivos, 195 testes                                                         |
-| `npm run test:coverage -- --run`          | passou    | 27,04% statements; thresholds em 26/21/19/26                                    |
-| `npm run build`                           | passou    | cliente e servidor gerados                                                      |
-| `npm audit --omit=dev --audit-level=high` | passou    | 0 vulnerabilidades                                                              |
-| smoke de producao com banco descartavel   | passou    | health, ready, 401, 404 JSON, headers CSP/HSTS, shutdown gracioso               |
-| guard de bootstrap com banco vazio        | passou    | processo recusa iniciar sem `ALLOW_EMPTY_DATABASE_BOOTSTRAP=true`               |
-| backup + restore descartavel              | passou    | integridade `ok`, 0 FKs invalidas, app sobe a partir do backup                  |
-| `docker build --check` e build da imagem  | passou    | imagem `zippcrm:<sha>` de 513 MB                                                |
-| ciclo de container                        | passou    | primeiro boot com flag, stop gracioso, restart com flag `false` no mesmo volume |
-| migration 0008 em copia descartavel       | passou    | upgrade aditivo, guards cross-tenant e caminho de contencao                     |
+| Gate                                      | Resultado | Evidencia                                                                         |
+| ----------------------------------------- | --------- | --------------------------------------------------------------------------------- |
+| `npm run check`                           | passou    | TypeScript sem erros                                                              |
+| `npm run lint`                            | passou    | `eslint . --max-warnings=0`                                                       |
+| `npm run format:check`                    | passou    | Prettier limpo em todo o repositorio                                              |
+| `npm run docs:check`                      | passou    | 70 links validados                                                                |
+| `npm test -- --run`                       | passou    | 34 arquivos, 210 testes                                                           |
+| `npm run test:coverage -- --run`          | passou    | 27,8% statements; thresholds em 27/22/20/27                                       |
+| `npx playwright test`                     | passou    | 40 testes de navegador                                                            |
+| `npm run build`                           | passou    | cliente e servidor gerados                                                        |
+| `npm audit --omit=dev --audit-level=high` | passou    | 0 vulnerabilidades                                                                |
+| smoke de producao com banco descartavel   | passou    | health com identidade de build, ready, 401, 404 JSON, CSP/HSTS, shutdown gracioso |
+| guard de bootstrap com banco vazio        | passou    | processo recusa iniciar e nao abre porta                                          |
+| backup + restore descartavel              | passou    | integridade `ok`, manifesto com SHA-256, retencao aplicada, app sobe do backup    |
+| `docker build --check` e build da imagem  | passou    | imagem com a tag do commit                                                        |
+| ciclo de container                        | passou    | boot com flag, stop gracioso, restart com flag `false` no mesmo volume            |
+| migrations 0004-0008 em copia descartavel | passou    | upgrade aditivo, guards cross-tenant e contencao                                  |
+| carga com 4.000 clientes e 4.000 pedidos  | passou    | listagem 1,1 ms; relatorio do mes 32 ms; dashboard 27 ms                          |
 
 Inventario atual:
 
-- 82 paths e 100% das operacoes publicadas documentadas em `docs/openapi.yaml`,
-  com teste de paridade bidirecional na CI;
+- 83 paths no OpenAPI e 100% das operacoes publicadas documentadas, com teste de
+  paridade bidirecional na CI;
 - 28 tabelas no schema SQLite, migrations 0004 a 0008 aplicadas;
-- `server/routes.ts` continua acima do tamanho sustentavel e a divisao por
-  dominio permanece pendente.
+- `server/routes.ts` reduzido de 4.045 para 102 linhas, com 25 modulos por
+  dominio; contrato de storage extraido para `server/storage/contracts.ts`.
 
 ## 3. Estado do produto por modulo
 
@@ -502,67 +504,72 @@ Gate final:
 
 ## 10. Checkpoint de retomada
 
-**Checkpoint:** 2026-08-29, sessao de implementacao das Fases 0 a 6
-**Branch:** `feat/completion-program` (a partir de `main`, commit base `6fe93a0`)
+**Checkpoint:** 2026-08-29, sessao de implementacao das Fases 0 a 9
+**Branch:** `feat/e2e-and-observability`, a partir do release `b921fb3` em `main`
 **Runtime:** Node 20.19.0, npm 10.8.2 (o shell padrao da maquina e Node 24; use
 `fnm use 20.19.0` antes de qualquer gate, senao `better-sqlite3` falha por ABI)
 
 ### Situacao por fase
 
-| Fase                          | Estado                      | Observacao                                                                                                                                           |
-| ----------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F0 baseline                   | concluida                   | runtime fixado, CI, lint/format, baseline commitada em 9 unidades                                                                                    |
-| F1 tenant e autenticacao      | concluida                   | todos os P0 de seguranca fechados com regressao                                                                                                      |
-| F2 contratos e banco          | concluida no contrato       | OpenAPI 100% com gate de paridade; **divisao de `routes.ts`/`storage.ts` por dominio continua pendente**                                             |
-| F3 pedidos e estoque          | concluida                   | itens, estoque transacional, cancelamento idempotente, listagem server-side                                                                          |
-| F4 cliente 360 e cashback     | concluida                   | ledger em centavos com reconciliacao; UI sem mock                                                                                                    |
-| F5 notificacoes e campanhas   | concluida na infraestrutura | outbox, destinatarios, consentimento e adapters fail-closed; **providers reais, webhooks e agendamento futuro pendentes**                            |
-| F6 automacoes                 | concluida                   | definicao versionada, execucoes idempotentes, historico real                                                                                         |
-| F7 frontend e acessibilidade  | parcial                     | UI sem mock e sem acao sem efeito; **sem E2E, axe ou regressao visual**                                                                              |
-| F8 QA e performance           | parcial                     | 195 testes e thresholds ativos; **sem E2E e sem teste de carga**                                                                                     |
-| F9 observabilidade e operacao | parcial                     | health/ready, logs correlacionados, shutdown gracioso, backup/restore e runbook da outbox ensaiados; **sem error tracking, metricas, alertas e SLO** |
-| F10 go-live                   | nao iniciada                | release candidate construida e validada localmente; deploy remoto nao executado                                                                      |
+| Fase                          | Estado                       | Observacao                                                                                                                                                                  |
+| ----------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F0 baseline                   | concluida                    | runtime fixado, CI com gate de E2E, lint/format, baseline commitada                                                                                                         |
+| F1 tenant e autenticacao      | concluida                    | P0 de seguranca fechados, com regressao de unidade e de navegador                                                                                                           |
+| F2 contratos e banco          | concluida                    | OpenAPI 100% com gate de paridade; `routes.ts` dividido em 25 modulos e contrato de storage extraido. **A classe `DatabaseStorage` continua unica, por decisao registrada** |
+| F3 pedidos e estoque          | concluida                    | itens, estoque transacional, cancelamento idempotente, listagem server-side                                                                                                 |
+| F4 cliente 360 e cashback     | concluida                    | ledger em centavos com reconciliacao; UI sem mock                                                                                                                           |
+| F5 notificacoes e campanhas   | concluida na infraestrutura  | outbox, destinatarios, consentimento e adapters fail-closed. **Providers reais, webhooks e agendamento futuro pendentes**                                                   |
+| F6 automacoes                 | concluida                    | definicao versionada, execucoes idempotentes, historico real                                                                                                                |
+| F7 frontend e acessibilidade  | concluida                    | 40 testes de navegador, axe sem violacao critica ou seria em 10 telas, breakpoints 375/768/1280/1920, gate de console sem erros                                             |
+| F8 QA e performance           | concluida                    | 210 testes, thresholds ativos, teste de carga com orcamentos versionados                                                                                                    |
+| F9 observabilidade e operacao | concluida                    | identidade de build em log/health/metricas, endpoint Prometheus, SLOs, regras de alerta e retencao de backup. **Sem error tracking integrado, por decisao registrada**      |
+| F10 go-live                   | executada ate o limite local | checklist preenchido com evidencia; itens de ambiente final permanecem com o operador e o deploy segue manual por decisao (`autoDeploy: false`)                             |
 
-### Concluido nesta sessao
+### Defeitos reais encontrados pela Fase 7 e corrigidos
 
-- baseline do worktree commitada em unidades coerentes na branch de trabalho;
-- `format:check` corrigido, deixando todos os gates da CI verdes;
-- migration 0008 com outbox, execucoes de campanha e automacao, consentimento
-  de marketing e definicao versionada de automacao;
-- `server/outbox.ts`, `services/delivery.ts`, `services/campaignDispatch.ts` e
-  `services/automationEngine.ts`;
-- eventos de dominio `customer.created` e `order.created` emitidos dentro da
-  transacao da mutacao;
-- paginas de Campanhas e Automacoes reescritas para o contrato real;
-- `server/routeInventory.ts` e teste de paridade com o OpenAPI;
-- OpenAPI de 24 para 82 paths;
-- thresholds de cobertura de 8/5/3/8 para 26/21/19/26;
-- correcao do 404 de API e do grupo do usuario do container;
-- runbook, ADR 0001, `.env.example` e este plano atualizados.
+1. Os tokens `--spacing-xs..3xl` sombreavam a escala de container do Tailwind v4,
+   transformando todo `max-w-xs..xl` da aplicacao em caixas de 8 a 32 px.
+2. `Layout` aplicava `lg:ml-64` enquanto o `Sidebar` virava `lg:static`: a linha
+   flex estourava e o menu inteiro ficava invisivel no desktop, com 8 px de
+   largura.
+3. A tela de Relatorios enviava instante ISO completo e recebia 400 do servidor,
+   entao nunca carregava dados.
+4. Acessibilidade: contraste insuficiente em badges, KPIs, titulos de secao e
+   texto muted; `<span class="contents">` quebrando a semantica do breadcrumb;
+   comboboxes e botao de icone sem nome acessivel; barra de progresso sem
+   rotulo; graficos sem alternativa textual.
+5. Rota `/api` inexistente respondia 200 com o HTML da SPA.
+6. O passo de verificacao de runtime da propria CI estava quebrado.
 
-### Nao concluido
+Cada um tem teste de regressao.
 
-- deploy remoto: nenhuma operacao em producao, push ou migracao remota foi
-  executada nesta sessao;
-- divisao de `server/routes.ts` e `server/storage.ts` por dominio;
-- E2E (Playwright), axe, Lighthouse e regressao visual;
-- error tracking, metricas, alertas e SLO;
-- providers reais de email/SMS/WhatsApp, webhooks e supressao global;
-- metricas de atribuicao de campanha.
+### Nao concluido, com motivo
+
+- **Deploy remoto**: nao executado. `render.yaml` mantem `autoDeploy: false` por
+  decisao explicita e as credenciais de producao sao `sync: false`, isto e,
+  vivem apenas no painel da plataforma.
+- **Divisao de `DatabaseStorage` em repositorios**: os metodos compartilham
+  helpers privados e escopos de transacao via `this`, e o codigo de maior risco
+  do sistema vive ali. E mudanca arquitetural, nao movimentacao de arquivo.
+- **Providers de mensagem, webhooks e atribuicao de campanha**: dependem de
+  decisao de produto sobre fornecedor, consentimento e regra de atribuicao.
+- **Error tracking integrado**: mecanismo oficial hoje e log estruturado mais
+  alerta de taxa de erro.
+- **Backup offsite e ensaio periodico de restauracao**: o script produz copia
+  verificada com retencao; enviar para fora do volume e agendar o ensaio sao
+  passos do operador.
 
 ### Proximo passo seguro
 
-1. Abrir PR de `feat/completion-program` para `main` e confirmar a CI verde no
-   commit da release.
-2. Executar a Fase 7 comecando por E2E de `seller`, `manager` e `super_admin`,
-   porque e a evidencia que falta para afirmar que os fluxos funcionam ponta a
-   ponta no navegador.
-3. So depois dividir `routes.ts`/`storage.ts` por dominio, com os E2E ja
-   protegendo contra regressao.
-4. Decidir providers de mensagem antes de habilitar qualquer canal em
-   producao; enquanto `EMAIL_PROVIDER`, `SMS_PROVIDER` e `WHATSAPP_PROVIDER`
-   estiverem vazios, o sistema registra `not_configured` e nao envia nada, que
-   e o comportamento correto.
+1. Abrir PR desta branch, confirmar CI verde (inclui o job de E2E) e mergear.
+2. Publicar manualmente no Render a partir do commit da release e executar os
+   itens do checklist marcados como **operador**.
+3. Apos o primeiro boot, voltar `ALLOW_EMPTY_DATABASE_BOOTSTRAP` para `false` e
+   agendar `npm run db:backup` com copia offsite.
+4. Decidir providers de mensagem antes de habilitar qualquer canal: enquanto
+   `EMAIL_PROVIDER`, `SMS_PROVIDER` e `WHATSAPP_PROVIDER` estiverem vazios, o
+   sistema registra `not_configured` e nao envia nada, que e o comportamento
+   correto.
 
 ### Bloqueios que exigem decisao de produto/arquitetura
 
@@ -572,4 +579,4 @@ Gate final:
 - quais RPO/RTO, volume, concorrencia, retencao e requisitos LGPD se aplicam?
 - qual regra de atribuicao libera abertura, conversao e receita de campanha?
 
-Essas decisoes nao bloqueiam nenhum item ja implementado.
+Nenhuma dessas decisoes bloqueia o que ja esta implementado.

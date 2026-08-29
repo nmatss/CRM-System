@@ -42,6 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { toReportDate } from "@/lib/reportPresentation";
 import { serializeCsv } from "@/lib/csvExport";
 
 interface ReportsData {
@@ -99,13 +100,20 @@ export default function Reports() {
   });
 
   const { data: reports, isLoading } = useQuery<ReportsData>({
-    queryKey: ["reports", dateRange.from?.toISOString(), dateRange.to?.toISOString()],
+    queryKey: [
+      "reports",
+      dateRange.from ? toReportDate(dateRange.from) : null,
+      dateRange.to ? toReportDate(dateRange.to) : null,
+    ],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (dateRange.from) params.append("startDate", dateRange.from.toISOString());
-      if (dateRange.to) params.append("endDate", dateRange.to.toISOString());
+      // The API takes a calendar-day range; a full ISO instant is refused.
+      if (dateRange.from) params.append("startDate", toReportDate(dateRange.from));
+      if (dateRange.to) params.append("endDate", toReportDate(dateRange.to));
 
-      const response = await fetch(`/api/v1/reports?${params.toString()}`);
+      const response = await fetch(`/api/v1/reports?${params.toString()}`, {
+        credentials: "include",
+      });
       if (!response.ok) throw new Error("Erro ao carregar relatórios");
       return response.json();
     },
