@@ -1,92 +1,86 @@
-# Moda CRM
+# ZippiCRM — contexto do projeto
 
-## Overview
+> Este arquivo substitui o contexto legado do protótipo "Moda CRM". As referências antigas a React 18, PostgreSQL, `connect-pg-simple` e integrações prontas com OpenAI, Stripe ou Nodemailer não correspondem ao código atual.
 
-Moda CRM is a retail Customer Relationship Management system designed for fashion/clothing stores. It provides tools for customer management, sales tracking, marketing automation, cashback/loyalty programs, and seller productivity through features like the "Agenda do Vendedor" (Seller's Agenda) for clienteling tasks.
+## Visão geral
 
-The application is built as a full-stack TypeScript project with a React frontend and Express backend, using PostgreSQL for data persistence.
+ZippiCRM é um CRM multi-tenant para varejo. O produto reúne cadastro de clientes, catálogo, vendas, cashback, campanhas, automações, agenda e metas de vendedores, relatórios, importação e exportação.
 
-## User Preferences
+O repositório é um monorepo TypeScript. Frontend, backend e contratos compartilhados ficam no mesmo projeto.
 
-Preferred communication style: Simple, everyday language.
+## Preferência de comunicação
 
-## System Architecture
+Use linguagem simples e direta.
 
-### Frontend Architecture
-- **Framework**: React 18 with TypeScript
-- **Routing**: Wouter (lightweight React router)
-- **State Management**: TanStack React Query for server state
-- **UI Components**: shadcn/ui component library built on Radix UI primitives
-- **Styling**: Tailwind CSS with custom theme configuration
-- **Build Tool**: Vite with custom plugins for Replit integration
-- **Animations**: Framer Motion for UI animations
+## Stack verificada
 
-### Backend Architecture
-- **Framework**: Express.js with TypeScript
-- **API Pattern**: RESTful API endpoints under `/api/*`
-- **Database ORM**: Drizzle ORM with PostgreSQL dialect
-- **Schema Validation**: Zod with drizzle-zod integration
-- **Development**: tsx for TypeScript execution, hot module replacement via Vite
+### Frontend
 
-### Project Structure
+- React 19 e TypeScript;
+- Vite 8;
+- Wouter para rotas;
+- TanStack Query para estado remoto;
+- Tailwind CSS 4;
+- componentes shadcn/ui baseados em Radix UI;
+- React Hook Form e Zod;
+- Recharts e Framer Motion.
+
+### Backend
+
+- Node.js 20 e npm 10;
+- Express 4 e TypeScript executado com `tsx` em desenvolvimento;
+- API REST principal sob `/api/v1/*` e health check em `/api/health`;
+- autenticação por sessão com cookie HTTP-only;
+- autorização por papéis e associação ao tenant no servidor;
+- proteção CSRF nas rotas privadas e limitadores de requisição;
+- Drizzle ORM com SQLite via `better-sqlite3`;
+- sessões persistidas em SQLite por `better-sqlite3-session-store`.
+
+### Qualidade e build
+
+- TypeScript para verificação estática;
+- ESLint e Prettier;
+- Vitest e Testing Library;
+- esbuild para o bundle do servidor;
+- GitHub Actions para instalação reproduzível, typecheck, testes com cobertura, build e auditoria das dependências de runtime.
+
+## Estrutura principal
+
+```text
+client/src/          frontend React
+server/              API, autenticação, persistência e serviços
+shared/              schemas e contratos compartilhados
+migrations/          migrations incrementais do SQLite
+script/              build
+scripts/             utilitários operacionais
+docs/                documentação técnica e operacional
 ```
-├── client/src/          # React frontend
-│   ├── components/      # Reusable UI components
-│   ├── pages/           # Route page components
-│   ├── hooks/           # Custom React hooks
-│   └── lib/             # Utilities and query client
-├── server/              # Express backend
-│   ├── routes.ts        # API route definitions
-│   ├── storage.ts       # Data access layer
-│   └── db.ts            # Database connection
-├── shared/              # Shared types and schemas
-│   └── schema.ts        # Drizzle database schema
-└── migrations/          # Database migration files
-```
 
-### Data Models
-The system manages these core entities:
-- **Users**: Authentication and user management
-- **Customers**: Customer profiles with segmentation, LTV tracking
-- **Products**: Product catalog with stock management
-- **Orders**: Sales transactions
-- **Cashback Rules**: Loyalty program configurations
-- **Campaigns**: Marketing campaigns (WhatsApp, Email, SMS)
-- **Automations**: IFTTT-style automation rules
+## Decisões observadas no código
 
-### Key Design Decisions
-1. **Monorepo Structure**: Frontend and backend share TypeScript types through the `shared/` directory
-2. **Path Aliases**: `@/` for client code, `@shared/` for shared code
-3. **Component Library**: shadcn/ui provides consistent, accessible UI components
-4. **API Pattern**: Simple REST endpoints with Zod validation for request/response
-5. **Development Mode**: Vite dev server with HMR proxied through Express
+1. Frontend e backend compartilham tipos por `shared/`.
+2. Os aliases `@/` e `@shared/` apontam para o frontend e os contratos compartilhados.
+3. O armazenamento de dados e o armazenamento de sessões usam arquivos SQLite separados e configuráveis.
+4. Recursos de negócio autenticados devem derivar usuário, papel e tenant da sessão; valores enviados pelo cliente não substituem a autorização do servidor.
+5. A aplicação de desenvolvimento integra o Vite ao Express; a produção serve os artefatos compilados.
 
-## External Dependencies
+## Limites atuais e protótipos
 
-### Database
-- **PostgreSQL**: Primary database (connection via `DATABASE_URL` environment variable)
-- **Drizzle ORM**: Type-safe database queries and migrations
-- **connect-pg-simple**: Session storage in PostgreSQL
+- Os canais de notificação por email, SMS e WhatsApp não possuem provedor configurado. O serviço falha de forma explícita, sem simular entrega.
+- Campanhas e automações possuem cadastro e operações de domínio, mas não equivalem a uma plataforma externa de envio ou a um worker de execução em produção.
+- O atalho `wa.me` no frontend apenas abre uma conversa no WhatsApp; não é uma integração de API.
+- Componentes apresentados como assistente de IA devem ser tratados como interface/protótipo enquanto não houver um serviço verificável no backend.
+- O pacote atual não configura integrações operacionais com OpenAI, Stripe ou Nodemailer.
 
-### UI Framework
-- **Radix UI**: Accessible component primitives (dialogs, dropdowns, etc.)
-- **Tailwind CSS**: Utility-first CSS framework
-- **Lucide React**: Icon library
-- **Recharts**: Charting library for reports/dashboard
+## Fontes de consulta
 
-### Third-Party Integrations (Configured in dependencies)
-- **WhatsApp**: Deep linking for seller messaging (`wa.me` protocol)
-- **Potential integrations**: OpenAI, Stripe, Nodemailer (dependencies present but implementation varies)
+- [README principal](./README.md): instalação e visão geral do repositório.
+- [Índice de documentação](./docs/README.md): estado e escopo dos documentos técnicos.
+- [Banco de dados](./docs/DATABASE.md): snapshot documentado do modelo de dados.
+- [API](./docs/API_README.md): guia parcial para consumidores.
+- [Deploy](./DEPLOY.md): implantação e variáveis operacionais.
+- [Backup e restauração](./BACKUP_RESTORE.md): procedimentos para SQLite.
+- [Runbook](./RUNBOOK_PRODUCAO.md): operação e resposta a incidentes.
+- [Segurança](./SECURITY.md): controles implementados e checklist de produção.
 
-### Build & Development
-- **Vite**: Frontend bundler with React plugin
-- **esbuild**: Server bundling for production
-- **tsx**: TypeScript execution for development
-
-## Documentation
-
-- **Database Schema**: See `docs/DATABASE.md` for complete database documentation including:
-  - Table definitions and relationships
-  - ERD diagram
-  - Data import API specifications (future)
-  - Multi-tenant architecture details
+O código e os testes são a fonte de verdade para o comportamento executável. Documentos de API e banco podem representar snapshots parciais e devem ser atualizados junto com mudanças de contrato.

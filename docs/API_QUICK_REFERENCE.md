@@ -1,10 +1,12 @@
 # ZippiCRM API Quick Reference
 
 ## Base URL
+
 - Development: `http://localhost:5000`
 - Production: `https://api.zippi.crm`
 
 ## Authentication
+
 Session-based (cookie: `connect.sid`)
 
 ---
@@ -12,49 +14,56 @@ Session-based (cookie: `connect.sid`)
 ## Endpoints Overview
 
 ### Health Check
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | `/api/health` | No | System health check |
+
+| Method | Endpoint      | Auth | Description              |
+| ------ | ------------- | ---- | ------------------------ |
+| GET    | `/api/health` | No   | Cheap process liveness   |
+| GET    | `/api/ready`  | No   | Cheap database readiness |
 
 ### Authentication
-| Method | Endpoint | Auth | Role | Description |
-|--------|----------|------|------|-------------|
-| POST | `/api/auth/login` | No | - | User login |
-| POST | `/api/auth/logout` | No | - | User logout |
-| GET | `/api/auth/me` | Yes | Any | Get current user |
-| POST | `/api/auth/register` | No | - | Register new account |
+
+| Method | Endpoint                | Auth | Role | Description          |
+| ------ | ----------------------- | ---- | ---- | -------------------- |
+| POST   | `/api/v1/auth/login`    | No   | -    | User login           |
+| POST   | `/api/v1/auth/logout`   | No   | -    | User logout          |
+| GET    | `/api/v1/auth/me`       | Yes  | Any  | Get current user     |
+| POST   | `/api/v1/auth/register` | No   | -    | Register new account |
 
 ### Customers
-| Method | Endpoint | Auth | Role | Description |
-|--------|----------|------|------|-------------|
-| GET | `/api/customers` | Yes | Any | List all customers |
-| POST | `/api/customers` | Yes | Manager/Seller | Create customer |
-| PUT | `/api/customers/{id}` | Yes | Manager/Seller | Update customer |
-| DELETE | `/api/customers/{id}` | Yes | Manager/Seller | Delete customer |
+
+| Method | Endpoint                 | Auth | Role           | Description        |
+| ------ | ------------------------ | ---- | -------------- | ------------------ |
+| GET    | `/api/v1/customers`      | Yes  | Any            | List all customers |
+| POST   | `/api/v1/customers`      | Yes  | Manager/Seller | Create customer    |
+| PUT    | `/api/v1/customers/{id}` | Yes  | Manager/Seller | Update customer    |
+| DELETE | `/api/v1/customers/{id}` | Yes  | Manager/Seller | Delete customer    |
 
 ### Products
-| Method | Endpoint | Auth | Role | Description |
-|--------|----------|------|------|-------------|
-| GET | `/api/products` | Yes | Any | List all products |
-| POST | `/api/products` | Yes | Manager | Create product |
-| PUT | `/api/products/{id}` | Yes | Manager | Update product |
-| DELETE | `/api/products/{id}` | Yes | Manager | Delete product |
+
+| Method | Endpoint                | Auth | Role    | Description       |
+| ------ | ----------------------- | ---- | ------- | ----------------- |
+| GET    | `/api/v1/products`      | Yes  | Any     | List all products |
+| POST   | `/api/v1/products`      | Yes  | Manager | Create product    |
+| PUT    | `/api/v1/products/{id}` | Yes  | Manager | Update product    |
+| DELETE | `/api/v1/products/{id}` | Yes  | Manager | Delete product    |
 
 ### Orders
-| Method | Endpoint | Auth | Role | Description |
-|--------|----------|------|------|-------------|
-| GET | `/api/orders` | Yes | Any | List all orders |
-| POST | `/api/orders` | Yes | Manager/Seller | Create order |
-| PUT | `/api/orders/{id}` | Yes | Manager/Seller | Update order |
-| DELETE | `/api/orders/{id}` | Yes | Manager/Seller | Delete order |
+
+| Method | Endpoint              | Auth | Role           | Description               |
+| ------ | --------------------- | ---- | -------------- | ------------------------- |
+| GET    | `/api/v1/orders`      | Yes  | Any            | List all orders           |
+| POST   | `/api/v1/orders`      | Yes  | Manager/Seller | Create order              |
+| PUT    | `/api/v1/orders/{id}` | Yes  | Manager/Seller | Update order              |
+| DELETE | `/api/v1/orders/{id}` | Yes  | Manager/Seller | Idempotently cancel order |
 
 ---
 
 ## Request/Response Examples
 
 ### Login
+
 ```bash
-POST /api/auth/login
+POST /api/v1/auth/login
 {
   "username": "user@example.com",
   "password": "SecurePass123!"
@@ -75,8 +84,9 @@ Response: 200 OK
 ```
 
 ### Create Customer
+
 ```bash
-POST /api/customers
+POST /api/v1/customers
 {
   "name": "Maria Silva",
   "email": "maria@example.com",
@@ -100,8 +110,9 @@ Response: 201 Created
 ```
 
 ### Create Product
+
 ```bash
-POST /api/products
+POST /api/v1/products
 {
   "name": "Wireless Headphones",
   "category": "Electronics",
@@ -125,8 +136,9 @@ Response: 201 Created
 ```
 
 ### Create Order
+
 ```bash
-POST /api/orders
+POST /api/v1/orders
 {
   "orderId": "ORD-2024-001",
   "customer": "Maria Silva",
@@ -159,6 +171,7 @@ Response: 201 Created
 ## Common Error Responses
 
 ### 401 Unauthorized
+
 ```json
 {
   "error": "Não autenticado"
@@ -166,6 +179,7 @@ Response: 201 Created
 ```
 
 ### 403 Forbidden
+
 ```json
 {
   "error": "Permissão insuficiente"
@@ -173,6 +187,7 @@ Response: 201 Created
 ```
 
 ### 404 Not Found
+
 ```json
 {
   "error": "Cliente não encontrado"
@@ -180,6 +195,7 @@ Response: 201 Created
 ```
 
 ### 400 Bad Request
+
 ```json
 {
   "error": "Dados inválidos"
@@ -190,17 +206,18 @@ Response: 201 Created
 
 ## User Roles & Permissions
 
-| Role | Customers | Products | Orders |
-|------|-----------|----------|--------|
-| **super_admin** | Full Access | Full Access | Full Access |
-| **manager** | Full Access | Full Access | Full Access |
-| **seller** | Create/Update | Read Only | Create/Update |
+| Role            | Customers     | Products    | Orders        |
+| --------------- | ------------- | ----------- | ------------- |
+| **super_admin** | Full Access   | Full Access | Full Access   |
+| **manager**     | Full Access   | Full Access | Full Access   |
+| **seller**      | Create/Update | Read Only   | Create/Update |
 
 ---
 
 ## Data Enums
 
 ### Customer Segments
+
 - `Novo` - New customer
 - `Regular` - Regular customer
 - `VIP` - VIP customer
@@ -208,12 +225,14 @@ Response: 201 Created
 - `Inativo` - Inactive customer
 
 ### Order Status
+
 - `pending` - Pending
 - `processing` - Processing
 - `completed` - Completed
 - `cancelled` - Cancelled
 
 ### Product Status
+
 - `active` - Active
 - `inactive` - Inactive
 

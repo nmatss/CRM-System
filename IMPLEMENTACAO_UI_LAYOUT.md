@@ -1,5 +1,7 @@
 # Implementação UI/Layout - ZippiCRM
 
+> **Documento histórico (2025-12-17).** Não representa o produto atual. AITOPIA e seus arquivos simulados foram removidos em 2026-08-29. Use `DOCS_INDEX.md`, o código e `docs/PROJECT_COMPLETION_PLAN.md` como fontes atuais.
+
 **Agente**: Agente 1 - Core UI/Layout
 **Data**: 2025-12-17
 **Status**: ✅ Concluído
@@ -11,10 +13,12 @@
 ### TAREFA 1: Chat de IA (AITOPIA) - Painel Colapsável ✅
 
 #### Arquivos Criados
+
 - `/client/src/components/ui/AIChatDrawer.tsx` - Componente do drawer de IA
 - `/client/src/hooks/use-ai-drawer.ts` - Hook para gerenciamento de estado
 
 #### Características Implementadas
+
 - ✅ Painel lateral direito colapsável
 - ✅ Botão flutuante (FAB) no canto inferior direito
 - ✅ Estado persistido em localStorage
@@ -26,11 +30,12 @@
 - ✅ Tema escuro compatível
 
 #### Como Usar
+
 ```tsx
 // Já está integrado no Layout - não precisa adicionar manualmente
 
 // Para controlar programaticamente:
-import { useAIDrawer } from '@/hooks/use-ai-drawer';
+import { useAIDrawer } from "@/hooks/use-ai-drawer";
 
 function MyComponent() {
   const aiDrawer = useAIDrawer();
@@ -43,11 +48,13 @@ function MyComponent() {
 ### TAREFA 2: Design System Padronizado ✅
 
 #### Arquivo Atualizado
+
 - `/client/src/index.css` - Design tokens e variáveis CSS
 
 #### Tokens Implementados
 
 ##### 🎨 Cores
+
 - **Primary**: Purple (#7c3aed / hsl(271 91% 55%))
   - Substituiu Cyan como cor primária
   - Todos os botões principais agora usam roxo
@@ -57,26 +64,19 @@ function MyComponent() {
 - **Danger**: Vermelho (hsl(0 84% 60%))
 
 ##### 📏 Espaçamento
+
 ```css
---spacing-xs: 0.5rem    /* 8px */
---spacing-sm: 0.75rem   /* 12px */
---spacing-md: 1rem      /* 16px */
---spacing-lg: 1.5rem    /* 24px */
---spacing-xl: 2rem      /* 32px */
---spacing-2xl: 3rem     /* 48px */
---spacing-3xl: 4rem     /* 64px */
+--spacing-xs: 0.5rem /* 8px */ --spacing-sm: 0.75rem /* 12px */ --spacing-md: 1rem /* 16px */
+  --spacing-lg: 1.5rem /* 24px */ --spacing-xl: 2rem /* 32px */ --spacing-2xl: 3rem /* 48px */
+  --spacing-3xl: 4rem /* 64px */;
 ```
 
 ##### 📝 Tipografia
+
 ```css
---text-xs: 0.75rem      /* 12px */
---text-sm: 0.875rem     /* 14px */
---text-base: 1rem       /* 16px */
---text-lg: 1.125rem     /* 18px */
---text-xl: 1.25rem      /* 20px */
---text-2xl: 1.5rem      /* 24px */
---text-3xl: 1.875rem    /* 30px */
---text-4xl: 2.25rem     /* 36px */
+--text-xs: 0.75rem /* 12px */ --text-sm: 0.875rem /* 14px */ --text-base: 1rem /* 16px */
+  --text-lg: 1.125rem /* 18px */ --text-xl: 1.25rem /* 20px */ --text-2xl: 1.5rem /* 24px */
+  --text-3xl: 1.875rem /* 30px */ --text-4xl: 2.25rem /* 36px */;
 ```
 
 #### Classes Utilitárias Criadas
@@ -112,6 +112,7 @@ function MyComponent() {
 ### TAREFA 3: Responsividade Mobile-First ✅
 
 #### Arquivos Atualizados
+
 - `/client/src/components/layout/Layout.tsx`
 - `/client/src/components/layout/Header.tsx`
 
@@ -121,6 +122,7 @@ function MyComponent() {
 **Depois**: Header totalmente responsivo
 
 ##### Mobile (< 768px)
+
 - Altura reduzida: 56px (14 units)
 - Ícones menores: 16px
 - Gaps reduzidos
@@ -128,12 +130,14 @@ function MyComponent() {
 - Badge "Super Admin" oculto
 
 ##### Tablet (768px - 1024px)
+
 - Altura padrão: 64px (16 units)
 - Busca visível
 - Ícones padrão: 20px
 - Badge "Super Admin" oculto
 
 ##### Desktop (> 1024px)
+
 - Todos os elementos visíveis
 - Badge "Super Admin" visível
 - Espaçamento completo
@@ -141,11 +145,13 @@ function MyComponent() {
 #### Melhorias no Layout
 
 **Padding Responsivo**:
+
 - Mobile: `p-3` (12px)
 - Tablet: `p-4` (16px)
 - Desktop: `p-6` (24px)
 
 **Sidebar**:
+
 - Mobile: Overlay modal (full width)
 - Desktop: Sidebar fixa (256px)
 - Animação suave de entrada/saída
@@ -154,24 +160,26 @@ function MyComponent() {
 
 ## 📱 Breakpoints Testados
 
-| Viewport | Resolução | Status | Notas |
-|----------|-----------|--------|-------|
-| **Mobile** | 375px | ✅ | iPhone SE/12 Mini |
-| **Tablet** | 768px | ✅ | iPad Mini/Air |
-| **Desktop** | 1280px | ✅ | MacBook/Desktop |
-| **XL** | 1920px | ✅ | Desktop grande |
+| Viewport    | Resolução | Status | Notas             |
+| ----------- | --------- | ------ | ----------------- |
+| **Mobile**  | 375px     | ✅     | iPhone SE/12 Mini |
+| **Tablet**  | 768px     | ✅     | iPad Mini/Air     |
+| **Desktop** | 1280px    | ✅     | MacBook/Desktop   |
+| **XL**      | 1920px    | ✅     | Desktop grande    |
 
 ---
 
 ## 📦 Arquivos Criados/Modificados
 
 ### Novos Arquivos
+
 1. ✅ `/client/src/components/ui/AIChatDrawer.tsx`
 2. ✅ `/client/src/hooks/use-ai-drawer.ts`
 3. ✅ `/DESIGN_SYSTEM.md` (Documentação completa)
 4. ✅ `/IMPLEMENTACAO_UI_LAYOUT.md` (Este arquivo)
 
 ### Arquivos Modificados
+
 1. ✅ `/client/src/components/layout/Layout.tsx`
    - Integração do AIChatDrawer
    - Botão flutuante de IA
@@ -201,7 +209,7 @@ function MyComponent() {
 // Botão flutuante aparece automaticamente
 
 // Controle programático:
-import { useAIDrawer } from '@/hooks/use-ai-drawer';
+import { useAIDrawer } from "@/hooks/use-ai-drawer";
 
 function Component() {
   const ai = useAIDrawer();
@@ -265,6 +273,7 @@ function Component() {
 ## 🔍 Testes Realizados
 
 ### Build do Projeto
+
 ```bash
 npm run build
 # ✅ Build concluído com sucesso
@@ -274,6 +283,7 @@ npm run build
 ```
 
 ### Compatibilidade
+
 - ✅ Tema claro
 - ✅ Tema escuro
 - ✅ Todas as páginas mantêm funcionalidade
@@ -287,7 +297,9 @@ npm run build
 ## 📚 Documentação
 
 ### Design System Completo
+
 Veja `/DESIGN_SYSTEM.md` para:
+
 - Guia completo de cores
 - Escalas de espaçamento
 - Tipografia
@@ -300,11 +312,13 @@ Veja `/DESIGN_SYSTEM.md` para:
 ## 🚀 Próximos Passos (Sugestões)
 
 ### Integração com Backend
+
 1. Conectar AIChatDrawer com API de IA real
 2. Implementar histórico de conversas
 3. Adicionar sugestões contextuais
 
 ### Melhorias Futuras
+
 1. Adicionar mais variantes de botões
 2. Criar componentes de formulário padronizados
 3. Implementar sistema de notificações toast
@@ -312,6 +326,7 @@ Veja `/DESIGN_SYSTEM.md` para:
 5. Criar biblioteca de ícones personalizados
 
 ### Otimizações
+
 1. Implementar code splitting mais agressivo
 2. Lazy loading de imagens
 3. Service Worker para cache
@@ -341,6 +356,7 @@ Veja `/DESIGN_SYSTEM.md` para:
 ## 🎯 Resultado
 
 Sistema de UI/Layout completamente renovado com:
+
 - **Chat de IA integrado** e sempre acessível
 - **Design system padronizado** com tokens reutilizáveis
 - **100% responsivo** em todos os dispositivos

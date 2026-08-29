@@ -1,532 +1,176 @@
-# Moda CRM - Documentacao do Banco de Dados
-
-## Visao Geral
-
-O Moda CRM utiliza PostgreSQL como banco de dados principal, com Drizzle ORM para gerenciamento de schemas e queries. A arquitetura e multi-tenant, onde cada empresa (tenant) possui seus dados isolados.
-
----
-
-## Arquitetura Multi-Tenant
-
-```
-                    +------------------+
-                    |     TENANTS      |
-                    +------------------+
-                           |
-          +----------------+----------------+
-          |                |                |
-    +-----------+    +-----------+    +-----------+
-    | Customers |    | Products  |    |  Orders   |
-    +-----------+    +-----------+    +-----------+
-          |                                  |
-    +-----------+                      +-----------+
-    |SellerTasks|                      |OrderItems*|
-    +-----------+                      +-----------+
-```
-
-**Isolamento por Tenant**: Todas as tabelas de negocio possuem `tenant_id` como chave estrangeira, garantindo que cada empresa acesse apenas seus proprios dados.
-
----
-
-## Tabelas do Sistema
-
-### 1. TENANTS (Empresas)
-
-Armazena informacoes das empresas/lojas que utilizam o sistema.
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico |
-| name | TEXT | NOT NULL | Nome da empresa |
-| slug | TEXT | NOT NULL, UNIQUE | URL amigavel (ex: "loja-moda") |
-| plan | TEXT | NOT NULL, DEFAULT 'free' | Plano: free, basic, premium, enterprise |
-| status | TEXT | NOT NULL, DEFAULT 'active' | Status: active, suspended, cancelled |
-| logo | TEXT | NULL | URL do logo |
-| primary_color | TEXT | DEFAULT '#9333ea' | Cor primaria da marca |
-| secondary_color | TEXT | DEFAULT '#db2777' | Cor secundaria |
-| login_message | TEXT | NULL | Mensagem personalizada na tela de login |
-| created_at | TIMESTAMP | DEFAULT NOW() | Data de criacao |
-
-**Valores de Status:**
-- `active`: Empresa ativa
-- `suspended`: Conta suspensa (pendencia pagamento)
-- `cancelled`: Conta cancelada
-
-**Valores de Plano:**
-- `free`: Plano gratuito (limitacoes de usuarios/clientes)
-- `basic`: Plano basico
-- `premium`: Plano premium
-- `enterprise`: Plano empresarial
-
----
-
-### 2. USERS (Usuarios)
-
-Usuarios do sistema (administradores, gerentes, vendedores).
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | VARCHAR | PK, UUID | Identificador unico (UUID) |
-| email | TEXT | NULL | Email do usuario |
-| cpf | TEXT | UNIQUE | CPF (usado para login) |
-| seller_code | TEXT | NULL | Codigo do vendedor |
-| password | TEXT | NOT NULL | Senha criptografada (bcrypt) |
-| name | TEXT | NOT NULL | Nome completo |
-| phone | TEXT | NULL | Telefone |
-| is_super_admin | BOOLEAN | NOT NULL, DEFAULT false | E super administrador? |
-| must_change_password | BOOLEAN | NOT NULL, DEFAULT true | Deve trocar senha no proximo login? |
-| email_verified | BOOLEAN | NOT NULL, DEFAULT false | Email verificado? |
-| status | TEXT | NOT NULL, DEFAULT 'active' | Status: active, inactive, blocked |
-| last_password_change | TIMESTAMP | NULL | Ultima troca de senha |
-| last_login | TIMESTAMP | NULL | Ultimo acesso |
-| created_at | TIMESTAMP | DEFAULT NOW() | Data de criacao |
-
-**Observacoes:**
-- O login pode ser feito por CPF ou email
-- Senha padrao inicial: codigo do vendedor ou "123456"
-- Super admins tem acesso a todos os tenants
-
----
-
-### 3. TENANT_USERS (Vinculo Usuario-Empresa)
-
-Relacionamento N:N entre usuarios e empresas com papel (role).
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico |
-| tenant_id | INTEGER | NOT NULL, FK(tenants) | ID da empresa |
-| user_id | VARCHAR | NOT NULL, FK(users) | ID do usuario |
-| role | TEXT | NOT NULL, DEFAULT 'seller' | Papel: manager, seller |
-| is_active | BOOLEAN | NOT NULL, DEFAULT true | Vinculo ativo? |
-| created_at | TIMESTAMP | DEFAULT NOW() | Data de criacao |
-
-**Papeis (Roles):**
-- `manager`: Gerente - acesso total ao tenant
-- `seller`: Vendedor - acesso restrito (clientes, tarefas, vendas)
-
----
-
-### 4. PASSWORD_RESETS (Recuperacao de Senha)
-
-Tokens para recuperacao de senha.
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico |
-| user_id | VARCHAR | NOT NULL, FK(users) | ID do usuario |
-| token | TEXT | NOT NULL, UNIQUE | Token de recuperacao |
-| expires_at | TIMESTAMP | NOT NULL | Data de expiracao |
-| used_at | TIMESTAMP | NULL | Data de uso |
-| created_by_admin | BOOLEAN | NOT NULL, DEFAULT false | Criado por admin? |
-| created_at | TIMESTAMP | DEFAULT NOW() | Data de criacao |
-
----
-
-## Tabelas de Negocio (Tenant-Scoped)
-
-### 5. CUSTOMERS (Clientes)
-
-Cadastro de clientes da loja.
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico |
-| tenant_id | INTEGER | NOT NULL, FK(tenants) | ID da empresa |
-| name | TEXT | NOT NULL | Nome completo |
-| email | TEXT | NOT NULL | Email |
-| phone | TEXT | NULL | Telefone (formato: 5511999999999) |
-| segment | TEXT | NOT NULL | Segmento: new, regular, vip, premium, inactive |
-| ltv | TEXT | NOT NULL | Lifetime Value (formato: "R$ 1.234,56") |
-| last_purchase | TEXT | NOT NULL | Data ultima compra (formato: YYYY-MM-DD) |
-| favorite_category | TEXT | NULL | Categoria favorita |
-| image | TEXT | NULL | URL da foto |
-| birth_date | TEXT | NULL | Data de nascimento (formato: YYYY-MM-DD) |
-
-**Segmentos:**
-- `new`: Cliente novo (primeira compra)
-- `regular`: Cliente regular
-- `vip`: Cliente VIP (alto valor)
-- `premium`: Cliente premium
-- `inactive`: Cliente inativo (sem compras ha muito tempo)
-
-**Observacoes sobre LTV:**
-- Armazenado como texto no formato brasileiro "R$ X.XXX,XX"
-- Para calculos, usar funcao de parsing que remove simbolos e converte virgula
-
----
-
-### 6. PRODUCTS (Produtos)
-
-Catalogo de produtos.
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico |
-| tenant_id | INTEGER | NOT NULL, FK(tenants) | ID da empresa |
-| name | TEXT | NOT NULL | Nome do produto |
-| category | TEXT | NOT NULL | Categoria |
-| price | TEXT | NOT NULL | Preco (formato: "R$ 199,90") |
-| stock | INTEGER | NOT NULL | Quantidade em estoque |
-| status | TEXT | NOT NULL | Status: active, inactive, out_of_stock |
-| image | TEXT | NULL | URL da imagem |
-
----
-
-### 7. ORDERS (Pedidos)
-
-Registro de vendas/pedidos.
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico interno |
-| tenant_id | INTEGER | NOT NULL, FK(tenants) | ID da empresa |
-| order_id | TEXT | NOT NULL | Codigo do pedido (ex: "PED-2024-001") |
-| customer_id | INTEGER | FK(customers) | ID do cliente (opcional) |
-| customer | TEXT | NOT NULL | Nome do cliente (denormalizado) |
-| date | TEXT | NOT NULL | Data do pedido (formato: YYYY-MM-DD) |
-| total | TEXT | NOT NULL | Valor total (formato: "R$ 599,90") |
-| status | TEXT | NOT NULL | Status: pending, confirmed, shipped, delivered, cancelled |
-| items | INTEGER | NOT NULL | Quantidade de itens |
-| method | TEXT | NOT NULL | Metodo pagamento: pix, credit, debit, cash |
-
-**Status do Pedido:**
-- `pending`: Pendente
-- `confirmed`: Confirmado
-- `shipped`: Enviado
-- `delivered`: Entregue
-- `cancelled`: Cancelado
-
----
-
-### 8. CASHBACK_RULES (Regras de Cashback)
-
-Configuracao do programa de fidelidade/cashback.
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico |
-| tenant_id | INTEGER | NOT NULL, FK(tenants) | ID da empresa |
-| name | TEXT | NOT NULL | Nome da regra |
-| trigger | TEXT | NOT NULL | Gatilho: purchase, birthday, referral, first_purchase |
-| value | TEXT | NOT NULL | Valor (ex: "5%", "R$ 20,00") |
-| validity | TEXT | NOT NULL | Validade (ex: "30 dias", "90 dias") |
-| status | TEXT | NOT NULL | Status: active, inactive |
-| usage | INTEGER | NOT NULL, DEFAULT 0 | Quantidade de usos |
-
----
-
-### 9. CAMPAIGNS (Campanhas de Marketing)
-
-Campanhas de comunicacao com clientes.
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico |
-| tenant_id | INTEGER | NOT NULL, FK(tenants) | ID da empresa |
-| name | TEXT | NOT NULL | Nome da campanha |
-| channel | TEXT | NOT NULL | Canal: whatsapp, email, sms |
-| audience | TEXT | NOT NULL | Publico-alvo (segmento) |
-| sent | INTEGER | NOT NULL, DEFAULT 0 | Quantidade enviada |
-| open_rate | TEXT | NOT NULL | Taxa de abertura (ex: "45%") |
-| conversion | TEXT | NOT NULL | Taxa de conversao (ex: "12%") |
-| revenue | TEXT | NOT NULL | Receita gerada (formato monetario) |
-| status | TEXT | NOT NULL | Status: draft, scheduled, running, completed |
-| date | TEXT | NOT NULL | Data da campanha |
-
----
-
-### 10. AUTOMATIONS (Automacoes)
-
-Regras de automacao IFTTT-style.
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico |
-| tenant_id | INTEGER | NOT NULL, FK(tenants) | ID da empresa |
-| title | TEXT | NOT NULL | Titulo da automacao |
-| description | TEXT | NOT NULL | Descricao |
-| icon | TEXT | NOT NULL | Icone (nome do Lucide icon) |
-| active | INTEGER | NOT NULL, DEFAULT 1 | Ativa? (1=sim, 0=nao) |
-| stats | TEXT | NOT NULL | Estatisticas (JSON ou texto) |
-
----
-
-### 11. SELLER_TASKS (Tarefas do Vendedor)
-
-Agenda do vendedor com tarefas de clienteling.
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico |
-| tenant_id | INTEGER | NOT NULL, FK(tenants) | ID da empresa |
-| customer_id | INTEGER | FK(customers), ON DELETE CASCADE | ID do cliente |
-| seller_id | VARCHAR | FK(users), ON DELETE SET NULL | ID do vendedor |
-| type | TEXT | NOT NULL | Tipo da tarefa |
-| status | TEXT | NOT NULL, DEFAULT 'pending' | Status: pending, completed, cancelled |
-| due_date | TEXT | NOT NULL | Data de vencimento (YYYY-MM-DD) |
-| script | TEXT | NULL | Script de mensagem sugerido |
-| notes | TEXT | NULL | Observacoes |
-| completed_at | TIMESTAMP | NULL | Data de conclusao |
-| created_at | TIMESTAMP | DEFAULT NOW() | Data de criacao |
-
-**Tipos de Tarefa:**
-- `aniversario`: Parabenizar cliente aniversariante
-- `carrinho_abandonado`: Follow-up de carrinho abandonado
-- `recompra`: Sugestao de recompra (baseado em ciclo)
-- `vip_sumido`: Cliente VIP sem comprar ha muito tempo
-- `manual`: Tarefa criada manualmente
-
----
-
-## Tabelas Globais (Sem Tenant)
-
-### 12. CONTACT_REQUESTS (Solicitacoes de Contato)
-
-Formulario de contato do site institucional.
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico |
-| name | TEXT | NOT NULL | Nome |
-| email | TEXT | NOT NULL | Email |
-| phone | TEXT | NULL | Telefone |
-| message | TEXT | NOT NULL | Mensagem |
-| status | TEXT | NOT NULL, DEFAULT 'pending' | Status: pending, contacted, closed |
-| created_at | TIMESTAMP | DEFAULT NOW() | Data de criacao |
-
----
-
-### 13. DEMO_REQUESTS (Solicitacoes de Demo)
-
-Agendamento de demonstracoes.
-
-| Coluna | Tipo | Restricoes | Descricao |
-|--------|------|------------|-----------|
-| id | SERIAL | PK | Identificador unico |
-| name | TEXT | NOT NULL | Nome do contato |
-| email | TEXT | NOT NULL | Email |
-| phone | TEXT | NULL | Telefone |
-| company | TEXT | NOT NULL | Nome da empresa |
-| store_count | TEXT | NULL | Quantidade de lojas |
-| preferred_date | TEXT | NULL | Data preferida |
-| message | TEXT | NULL | Mensagem adicional |
-| status | TEXT | NOT NULL, DEFAULT 'pending' | Status |
-| created_at | TIMESTAMP | DEFAULT NOW() | Data de criacao |
-
----
-
-## Diagrama de Relacionamentos (ERD)
-
-```
-USERS ─────────────────┐
-  │                    │
-  │ 1:N                │ 1:N
-  ▼                    ▼
-TENANT_USERS ◄──── TENANTS
-  │                    │
-  │                    │ 1:N (todas as tabelas abaixo)
-  │                    ├──────────────────────────────┐
-  │                    │                              │
-  │               CUSTOMERS ◄───────────────────┐     │
-  │                    │                        │     │
-  │                    │ 1:N                    │     │
-  │                    ▼                        │     │
-  │              SELLER_TASKS                   │     │
-  │                    │                        │     │
-  │                    │                        │     │
-  └────────────────────┘                        │     │
-                                                │     │
-                                           ORDERS     │
-                                                │     │
-                                                │     │
-  PRODUCTS ◄────────────────────────────────────┼─────┤
-                                                │     │
-  CASHBACK_RULES ◄──────────────────────────────┼─────┤
-                                                │     │
-  CAMPAIGNS ◄───────────────────────────────────┼─────┤
-                                                │     │
-  AUTOMATIONS ◄─────────────────────────────────┴─────┘
+# CRM-System Database
+
+## Decisao Atual
+
+O banco oficial atual do CRM-System e SQLite, acessado por `better-sqlite3` e Drizzle ORM.
+
+- Configuracao runtime: `server/db.ts`
+- Schema fonte: `shared/schema.ts`
+- Configuracao Drizzle: `drizzle.config.ts`
+- Caminho padrao local: `./data/zippcrm.db`
+- Caminho padrao container/producao: `/app/data/zippcrm.db`
+- Sessoes server-side podem usar arquivo separado via `SESSION_DATABASE_PATH`, recomendado em producao: `/app/data/sessions.db`
+
+PostgreSQL nao e dependencia operacional atual. Qualquer migracao para PostgreSQL deve ser tratada como projeto separado, com plano de migracao, validacao de dados, janela de rollback e aceite tecnico.
+
+## Persistencia
+
+SQLite grava em arquivo unico. Em producao, o diretorio de dados precisa estar em volume persistente:
+
+- Docker: volume montado em `/app/data`
+- Render: disk montado em `/app/data`
+- Railway: volume manual montado em `/app/data`
+
+O runtime habilita:
+
+- `PRAGMA foreign_keys = ON`
+- `PRAGMA journal_mode = WAL`
+- Criacao idempotente das tabelas e indices principais no startup para volumes SQLite vazios
+- Registro de versao em `schema_migrations`
+- Validacao de tabelas, colunas e indices criticos no startup
+
+Em producao, a criacao de um banco vazio e bloqueada por padrao. Para o primeiro boot controlado de um volume persistente vazio, use `ALLOW_EMPTY_DATABASE_BOOTSTRAP=true`, valide o ambiente e volte para `false`.
+
+## Modelo Logico
+
+```text
+tenants
+├── tenant_users ── users
+├── customers
+│   ├── orders
+│   ├── cashback_transactions
+│   └── customer_interactions
+├── products
+├── orders
+│   └── order_items ── products
+├── cashback_rules
+│   └── cashback_transactions
+├── cashback_accounts
+│   └── cashback_credit_lots
+│       └── cashback_debit_allocations
+├── campaigns
+├── automations
+├── seller_tasks
+├── seller_goals
+└── notifications
+
+global
+├── audit_events (tenant/actor IDs preservados como snapshots)
+├── contact_requests
+├── demo_requests
+├── password_resets
+├── schema_migrations
+└── sessions (em `SESSION_DATABASE_PATH` quando configurado)
 ```
 
----
+## Tabelas Principais
 
-## Indices Recomendados
+| Tabela                       | Escopo        | Finalidade                                                |
+| ---------------------------- | ------------- | --------------------------------------------------------- |
+| `tenants`                    | Global        | Lojas/empresas do ambiente multi-tenant                   |
+| `users`                      | Global        | Usuarios autenticaveis e super admins                     |
+| `tenant_users`               | Global        | Vinculo N:N entre usuarios e tenants com role             |
+| `customers`                  | Tenant        | Cadastro e segmentacao de clientes                        |
+| `products`                   | Tenant        | Catalogo e estoque                                        |
+| `orders`                     | Tenant        | Pedidos e historico comercial                             |
+| `order_items`                | Tenant        | Itens, quantidade e snapshot monetario imutavel do pedido |
+| `cashback_rules`             | Tenant        | Regras de cashback                                        |
+| `cashback_transactions`      | Tenant        | Creditos/debitos e saldo de cashback                      |
+| `cashback_accounts`          | Tenant        | Saldo atual reconciliavel em centavos por cliente         |
+| `cashback_credit_lots`       | Tenant        | Lotes de credito, saldo remanescente e expiracao          |
+| `cashback_debit_allocations` | Tenant        | Alocacao FIFO dos debitos aos lotes                       |
+| `campaigns`                  | Tenant        | Campanhas comerciais                                      |
+| `automations`                | Tenant        | Automacoes configuradas                                   |
+| `seller_tasks`               | Tenant        | Agenda e tarefas do vendedor                              |
+| `seller_goals`               | Tenant        | Metas por vendedor                                        |
+| `customer_interactions`      | Tenant        | Historico de interacoes                                   |
+| `notifications`              | Tenant        | Notificacoes internas                                     |
+| `audit_events`               | Global/Tenant | Eventos de seguranca append-only com metadata allowlisted |
+| `contact_requests`           | Global        | Formulario publico de contato                             |
+| `demo_requests`              | Global        | Solicitacoes publicas de demo                             |
+| `schema_migrations`          | Global        | Registro de versao do schema SQLite bootstrap             |
+| `sessions`                   | Global        | Sessoes server-side                                       |
 
-```sql
--- Busca por tenant (todas as tabelas)
-CREATE INDEX idx_customers_tenant ON customers(tenant_id);
-CREATE INDEX idx_products_tenant ON products(tenant_id);
-CREATE INDEX idx_orders_tenant ON orders(tenant_id);
-CREATE INDEX idx_seller_tasks_tenant ON seller_tasks(tenant_id);
+## Indices E Constraints
 
--- Busca de tarefas por vendedor e status
-CREATE INDEX idx_seller_tasks_seller ON seller_tasks(seller_id, status);
-CREATE INDEX idx_seller_tasks_due_date ON seller_tasks(tenant_id, due_date);
+Os indices e constraints ficam definidos em `shared/schema.ts`. Os principais padroes sao:
 
--- Busca de clientes por segmento
-CREATE INDEX idx_customers_segment ON customers(tenant_id, segment);
+- Indices por `tenant_id` em tabelas tenant-scoped
+- Indices por status, datas e chaves de relacionamento
+- `uniqueIndex` em `tenant_users(tenant_id, user_id)`
+- `uniqueIndex` em `orders(tenant_id, order_id)`
+- `uniqueIndex` em `order_items(tenant_id, order_id, product_id)`
+- Checks de quantidade positiva e totais exatos em centavos em `order_items`
+- Triggers impedem referencias de pedido/produto de outro tenant em `order_items`
+- Indice composto em `orders(tenant_id, customer_id, order_date)`
+- Indice composto em `cashback_transactions(tenant_id, customer_id, created_at)`
+- Indice composto em `cashback_transactions(tenant_id, expires_at)`
+- Checks de valores nao negativos em produtos, pedidos, clientes e cashback
+- Produtos mantêm `price_cents` como preço autoritativo; `price` é projeção decimal de compatibilidade
+- Itens de pedido preservam `category_snapshot` imutável para relatórios históricos
+- Checks de percentual entre 0 e 100 em campanhas
 
--- Login por CPF
-CREATE INDEX idx_users_cpf ON users(cpf) WHERE cpf IS NOT NULL;
-```
+## Migrations
 
----
+Scripts disponiveis:
 
-## Tabelas Futuras (Importacao de Dados)
-
-### IMPORT_JOBS (Jobs de Importacao)
-
-Para rastrear importacoes de dados externos.
-
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | SERIAL | PK |
-| tenant_id | INTEGER | FK(tenants) |
-| source | TEXT | Origem: csv, api, erp_name |
-| entity_type | TEXT | Tipo: customers, products, orders |
-| status | TEXT | pending, processing, completed, failed |
-| total_rows | INTEGER | Total de linhas |
-| processed_rows | INTEGER | Linhas processadas |
-| error_rows | INTEGER | Linhas com erro |
-| error_log | JSONB | Log de erros detalhado |
-| started_at | TIMESTAMP | Inicio do processamento |
-| completed_at | TIMESTAMP | Fim do processamento |
-| created_at | TIMESTAMP | Data de criacao |
-
-### EXTERNAL_ID_MAPPING (Mapeamento de IDs Externos)
-
-Para vincular IDs do sistema externo com IDs internos.
-
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | SERIAL | PK |
-| tenant_id | INTEGER | FK(tenants) |
-| entity_type | TEXT | customers, products, orders |
-| external_id | TEXT | ID no sistema externo |
-| internal_id | INTEGER | ID interno |
-| source | TEXT | Origem do dado |
-| created_at | TIMESTAMP | Data de criacao |
-
-**Indice Unico:** (tenant_id, entity_type, external_id, source)
-
----
-
-## API de Importacao (Especificacao Futura)
-
-### Endpoint: POST /api/import/{entity}
-
-**Headers:**
-```
-Authorization: Bearer {api_key}
-X-Tenant-ID: {tenant_id}
-Content-Type: application/json
-```
-
-**Estrutura do Payload (Clientes):**
-```json
-{
-  "source": "erp_totvs",
-  "data": [
-    {
-      "external_id": "CLI001",
-      "name": "Maria Silva",
-      "email": "maria@email.com",
-      "phone": "5511999999999",
-      "birth_date": "1990-05-15",
-      "segment": "vip",
-      "ltv": 8530.40,
-      "last_purchase": "2024-12-01"
-    }
-  ]
-}
-```
-
-**Estrutura do Payload (Pedidos):**
-```json
-{
-  "source": "ecommerce_vtex",
-  "data": [
-    {
-      "external_id": "ORD-2024-12345",
-      "external_customer_id": "CLI001",
-      "date": "2024-12-10",
-      "total": 599.90,
-      "status": "delivered",
-      "items": [
-        {
-          "external_product_id": "PROD001",
-          "name": "Vestido Floral",
-          "quantity": 1,
-          "unit_price": 299.90
-        }
-      ],
-      "payment_method": "credit"
-    }
-  ]
-}
-```
-
----
-
-## Regras de Integridade
-
-1. **Cascade Delete por Tenant**: Ao deletar um tenant, todos os dados relacionados sao removidos automaticamente.
-
-2. **Set Null em Seller**: Ao deletar um vendedor, as tarefas permanecem mas seller_id vira NULL.
-
-3. **Cascade Delete em Customer**: Ao deletar um cliente, suas tarefas sao removidas.
-
-4. **CPF Unico Global**: Nao podem existir dois usuarios com mesmo CPF.
-
-5. **Slug Unico de Tenant**: Cada empresa tem URL unica.
-
----
-
-## Consideracoes de Seguranca
-
-1. **Senhas**: Armazenadas com bcrypt (hash irreversivel)
-
-2. **Isolamento Multi-Tenant**: Todas as queries filtram por tenant_id
-
-3. **Tokens de Reset**: Expiram apos 24 horas
-
-4. **Dados Sensiveis**: CPF, email e telefone sao dados pessoais (LGPD)
-
-5. **Auditoria**: Campos created_at para rastreabilidade
-
----
-
-## Migracao e Sincronizacao
-
-### Comando para sincronizar schema:
 ```bash
 npm run db:push
-```
-
-### Forcado (cuidado com dados):
-```bash
-npm run db:push --force
-```
-
-### Visualizar schema atual:
-```bash
+npm run db:generate
 npm run db:studio
+npm run db:backup
+npm run db:migrate:constraints
 ```
 
----
+O startup cria o schema base quando o arquivo SQLite esta vazio. Ainda assim, use `npm run db:push` em desenvolvimento e antes de validar mudancas estruturais de schema.
 
-## Observacoes Tecnicas
+`npm run db:migrate:constraints` e um script legado reconstrutivo. Ele falha por padrao e so deve ser executado com backup validado:
 
-1. **Campos Monetarios**: Armazenados como TEXT no formato brasileiro. Para calculos, usar funcao de parsing.
+```bash
+ALLOW_DESTRUCTIVE_CONSTRAINT_MIGRATION=true BACKUP_CONFIRMED=true npm run db:migrate:constraints
+```
 
-2. **Datas**: Armazenadas como TEXT no formato ISO (YYYY-MM-DD) para simplicidade.
+Antes de qualquer migracao em ambiente com dados reais:
 
-3. **UUIDs**: Usuarios usam UUID gerado pelo PostgreSQL (gen_random_uuid).
+1. Parar writes ou colocar o sistema em manutencao.
+2. Fazer backup via `npm run db:backup` e registrar SHA-256/tamanho.
+3. Testar restore em outro diretorio.
+4. Rodar migracao em staging ou copia local.
+5. Validar healthcheck e fluxos criticos.
+6. So entao executar em producao.
 
-4. **Timestamps**: Usam tipo TIMESTAMP do PostgreSQL com timezone do servidor.
+`0004_order_items.sql` e aditiva. Novos pedidos com `lineItems` geram o identificador publico no servidor,
+capturam o preco em centavos e baixam estoque na mesma transacao. Cancelamento e idempotente e restaura o
+estoque uma unica vez. Pedidos legados sem itens continuam legiveis, mas novas criacoes exigem `lineItems`.
 
----
+`0005_cashback_ledger.sql` preserva as colunas decimais legadas, mas novas operacoes usam centavos inteiros,
+idempotencia, lotes FIFO e transacoes SQLite. Reversao de credito ja consumido e recusada; reversao de debito
+restaura exatamente suas alocacoes. Expiracao consome somente o remanescente e pode ser repetida com seguranca.
+A interpretacao automatica das regras textuais de cashback em pedidos ainda nao foi implementada; creditos ligados
+a pedido/regra precisam ser comandados explicitamente ate existir uma especificacao de calculo aprovada.
 
-*Documentacao gerada para Moda CRM v1.0*
-*Ultima atualizacao: Dezembro 2024*
+`0006_normalized_email_audit_events.sql` cria unicidade estrutural de identidade por
+`LOWER(TRIM(users.email))`. O preflight falha sem alterar dados quando encontra colisões legadas; não há merge
+automático. A mesma migration cria `audit_events`, append-only por triggers. `tenant_id` e `actor_user_id` são
+snapshots deliberadamente sem FK para preservar a evidência após exclusões. Metadados aceitam apenas chaves
+primitivas allowlisted por ação; email, CPF, IP bruto, senhas, tokens e payloads arbitrários não são persistidos.
+Mutações privilegiadas suportadas gravam domínio e auditoria na mesma transação SQLite. Login só registra sucesso
+depois da sessão persistida; falha de auditoria invalida a sessão e fecha a autenticação.
+
+`0007_integer_money_reports.sql` faz o cutover aditivo de catálogo e relatórios para dinheiro inteiro.
+O upgrade usa `ROUND(valor * 100)` para preencher `products.price_cents` e `customers.ltv_cents`, preserva
+as colunas decimais e sincroniza escritores legados por triggers. `order_items.category_snapshot` recebe a
+categoria conhecida no upgrade e não pode ser alterado depois. Novos pedidos capturam preço e categoria na
+transação de criação. O LTV persistido é apenas projeção de compatibilidade: relatórios, Customer 360 e KPIs
+derivam gasto de `orders.total_cents`, sempre excluindo `Cancelado`. Relatórios aceitam intervalo completo em
+`YYYY-MM-DD` e timezone `UTC`; categorias de pedidos legados sem itens não são inventadas. Métricas de campanha
+dependentes de atribuição retornam zero com `metricsAvailable=false` até existir uma fonte de eventos aprovada.
+
+## Gargalos Conhecidos
+
+- SQLite e adequado para go-live inicial, mas limita escrita concorrente e escala horizontal.
+- Alguns dashboards e relatorios agregam dados em memoria.
+- Distribuicao de cashback ainda pode gerar N+1 queries em volumes altos.
+- Paginação por offset pode degradar com bases grandes.
+
+Esses pontos devem ir para backlog tecnico antes de aumento relevante de volume.

@@ -1,5 +1,7 @@
 # Guia Visual Rápido - ZippiCRM Design System
 
+> **Documento parcialmente histórico.** As referências ao drawer AITOPIA não fazem parte do produto atual; o recurso simulado foi removido em 2026-08-29. Confirme exemplos contra os componentes atuais.
+
 > **5 minutos para dominar o novo design system**
 
 ---
@@ -7,6 +9,7 @@
 ## 🎨 Cores - Copie e Cole
 
 ### Botões
+
 ```tsx
 // Primário (Roxo) - Use para ações principais
 <Button>Salvar</Button>
@@ -27,6 +30,7 @@
 ```
 
 ### Badges
+
 ```tsx
 // Sucesso (Verde)
 <Badge className="bg-[hsl(var(--color-success-500))] text-white">
@@ -54,6 +58,7 @@
 ## 📐 Layout - Templates Prontos
 
 ### Template 1: Dashboard Simples
+
 ```tsx
 import { Layout } from "@/components/layout/Layout";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -63,18 +68,31 @@ import { Button } from "@/components/ui/button";
 export default function Dashboard() {
   return (
     <Layout>
-      <PageHeader
-        title="Dashboard"
-        description="Visão geral"
-      >
+      <PageHeader title="Dashboard" description="Visão geral">
         <Button>Nova Ação</Button>
       </PageHeader>
 
       <div className="grid-responsive-cards">
-        <Card><CardHeader><CardTitle>1.234</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardTitle>R$ 45K</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardTitle>89</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardTitle>4.8</CardTitle></CardHeader></Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>1.234</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>R$ 45K</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>89</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>4.8</CardTitle>
+          </CardHeader>
+        </Card>
       </div>
     </Layout>
   );
@@ -82,6 +100,7 @@ export default function Dashboard() {
 ```
 
 ### Template 2: Lista com Tabela
+
 ```tsx
 export default function Lista() {
   return (
@@ -101,9 +120,7 @@ export default function Lista() {
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
-                {/* Suas linhas aqui */}
-              </TableBody>
+              <TableBody>{/* Suas linhas aqui */}</TableBody>
             </Table>
           </div>
         </CardContent>
@@ -114,6 +131,7 @@ export default function Lista() {
 ```
 
 ### Template 3: Formulário
+
 ```tsx
 export default function Formulario() {
   return (
@@ -148,6 +166,7 @@ export default function Formulario() {
 ## 📱 Responsividade - Regras de Ouro
 
 ### ✅ FAÇA
+
 ```tsx
 // 1. Use classes responsivas do Tailwind
 <div className="text-sm sm:text-base lg:text-lg">Texto</div>
@@ -168,6 +187,7 @@ export default function Formulario() {
 ```
 
 ### ❌ NÃO FAÇA
+
 ```tsx
 // 1. NÃO use tamanhos fixos em pixels
 <div className="w-[500px]">  // ❌ Ruim
@@ -204,14 +224,16 @@ export default function Formulario() {
 ## 🤖 Chat de IA - Como Usar
 
 ### Já está integrado!
+
 ```tsx
 // O chat JÁ está disponível em TODAS as páginas
 // Procure o botão roxo/cyan flutuante no canto inferior direito
 ```
 
 ### Para abrir programaticamente
+
 ```tsx
-import { useAIDrawer } from '@/hooks/use-ai-drawer';
+import { useAIDrawer } from "@/hooks/use-ai-drawer";
 
 function MeuComponente() {
   const ai = useAIDrawer();
@@ -231,6 +253,7 @@ function MeuComponente() {
 ## 📊 Grids - Exemplos Visuais
 
 ### Grid de 4 colunas (responsivo)
+
 ```
 Mobile (375px):    Tablet (768px):    Desktop (1280px):
 ┌─────────────┐    ┌──────┬──────┐    ┌───┬───┬───┬───┐
@@ -254,6 +277,7 @@ Mobile (375px):    Tablet (768px):    Desktop (1280px):
 ```
 
 ### Grid de 2 colunas (responsivo)
+
 ```
 Mobile (375px):    Desktop (1024px):
 ┌─────────────┐    ┌──────────┬──────────┐
@@ -274,21 +298,21 @@ Mobile (375px):    Desktop (1024px):
 
 ## 🔍 Busca Rápida - Tabela de Referência
 
-| Preciso de... | Use isto |
-|---------------|----------|
-| Botão roxo (primário) | `<Button>Texto</Button>` |
-| Botão cinza (secundário) | `<Button variant="secondary">` |
-| Botão vermelho (excluir) | `<Button variant="destructive">` |
-| Grid de cards | `<div className="grid-responsive-cards">` |
-| Grid 2 colunas | `<div className="grid-responsive-2col">` |
-| Texto responsivo grande | `className="text-responsive-xl"` |
-| Tabela em mobile | `<div className="table-responsive">` |
-| Badge verde | `bg-[hsl(var(--color-success-500))]` |
-| Badge amarelo | `bg-[hsl(var(--color-warning-500))]` |
-| Badge vermelho | `bg-[hsl(var(--color-danger-500))]` |
-| Abrir chat de IA | `useAIDrawer().open()` |
-| Padding responsivo | `className="container-padding"` |
-| Gap entre elementos | `className="spacing-md"` |
+| Preciso de...            | Use isto                                  |
+| ------------------------ | ----------------------------------------- |
+| Botão roxo (primário)    | `<Button>Texto</Button>`                  |
+| Botão cinza (secundário) | `<Button variant="secondary">`            |
+| Botão vermelho (excluir) | `<Button variant="destructive">`          |
+| Grid de cards            | `<div className="grid-responsive-cards">` |
+| Grid 2 colunas           | `<div className="grid-responsive-2col">`  |
+| Texto responsivo grande  | `className="text-responsive-xl"`          |
+| Tabela em mobile         | `<div className="table-responsive">`      |
+| Badge verde              | `bg-[hsl(var(--color-success-500))]`      |
+| Badge amarelo            | `bg-[hsl(var(--color-warning-500))]`      |
+| Badge vermelho           | `bg-[hsl(var(--color-danger-500))]`       |
+| Abrir chat de IA         | `useAIDrawer().open()`                    |
+| Padding responsivo       | `className="container-padding"`           |
+| Gap entre elementos      | `className="spacing-md"`                  |
 
 ---
 
@@ -345,7 +369,9 @@ Secundário (Cyan)  ████ #06b6d4  hsl(187 94% 43%)
 ## 🆘 Problemas Comuns - Soluções Rápidas
 
 ### Problema: Cores não aparecem
+
 **Solução**: Use variáveis CSS, não cores fixas
+
 ```tsx
 // ❌ Errado
 <div className="bg-purple-500">
@@ -355,7 +381,9 @@ Secundário (Cyan)  ████ #06b6d4  hsl(187 94% 43%)
 ```
 
 ### Problema: Layout quebra em mobile
+
 **Solução**: Use classes responsivas
+
 ```tsx
 // ❌ Errado
 <div className="grid grid-cols-4">
@@ -365,7 +393,9 @@ Secundário (Cyan)  ████ #06b6d4  hsl(187 94% 43%)
 ```
 
 ### Problema: Texto muito pequeno em mobile
+
 **Solução**: Use classes responsivas de texto
+
 ```tsx
 // ❌ Errado
 <h1 className="text-3xl">
@@ -375,15 +405,13 @@ Secundário (Cyan)  ████ #06b6d4  hsl(187 94% 43%)
 ```
 
 ### Problema: Chat de IA não aparece
+
 **Solução**: Certifique-se que está usando Layout
+
 ```tsx
 // ✅ Certo
 export default function Page() {
-  return (
-    <Layout>
-      {/* Seu conteúdo */}
-    </Layout>
-  );
+  return <Layout>{/* Seu conteúdo */}</Layout>;
 }
 ```
 
@@ -392,12 +420,15 @@ export default function Page() {
 ## 🚀 Começe Agora - 3 Passos
 
 ### 1. Copie um Template
+
 Escolha um dos templates acima (Dashboard, Lista ou Formulário)
 
 ### 2. Personalize
+
 Adicione seu conteúdo usando as classes utilitárias
 
 ### 3. Teste
+
 Verifique em 375px, 768px e 1280px
 
 ---
@@ -413,4 +444,4 @@ Verifique em 375px, 768px e 1280px
 **Última atualização**: 2025-12-17
 **Versão**: 1.0.0
 
-*Este guia é atualizado constantemente. Favorita-o!*
+_Este guia é atualizado constantemente. Favorita-o!_

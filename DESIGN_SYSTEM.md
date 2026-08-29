@@ -1,6 +1,9 @@
 # ZippiCRM Design System
 
+> **Documento parcialmente histórico.** As referências ao drawer AITOPIA não fazem parte do produto atual; o recurso simulado foi removido em 2026-08-29. Componentes e tokens devem ser confirmados no código.
+
 ## Visão Geral
+
 Sistema de design padronizado do ZippiCRM com foco em consistência visual, responsividade mobile-first e acessibilidade.
 
 ---
@@ -8,6 +11,7 @@ Sistema de design padronizado do ZippiCRM com foco em consistência visual, resp
 ## 🎨 Cores
 
 ### Cor Primária
+
 - **Purple**: `#7c3aed` (271 91% 55%)
 - Uso: Botões principais, links, elementos interativos importantes
 - Variantes:
@@ -17,30 +21,31 @@ Sistema de design padronizado do ZippiCRM com foco em consistência visual, resp
   - `--color-purple-700`: Darkest
 
 ### Cores Secundárias
+
 - **Cyan**: `hsl(187 94% 43%)` - Accent color
 - **Blue**: `hsl(199 89% 48%)` - Complementary
 
 ### Cores de Status
 
 #### Success (Verde)
+
 ```css
---color-success-50: hsl(142 76% 96%)
---color-success-500: hsl(142 76% 36%)
---color-success-700: hsl(142 76% 24%)
+--color-success-50: hsl(142 76% 96%) --color-success-500: hsl(142 76% 36%)
+  --color-success-700: hsl(142 76% 24%);
 ```
 
 #### Warning (Amarelo)
+
 ```css
---color-warning-50: hsl(48 100% 96%)
---color-warning-500: hsl(45 93% 47%)
---color-warning-700: hsl(42 96% 35%)
+--color-warning-50: hsl(48 100% 96%) --color-warning-500: hsl(45 93% 47%)
+  --color-warning-700: hsl(42 96% 35%);
 ```
 
 #### Danger (Vermelho)
+
 ```css
---color-danger-50: hsl(0 86% 97%)
---color-danger-500: hsl(0 84% 60%)
---color-danger-700: hsl(0 74% 42%)
+--color-danger-50: hsl(0 86% 97%) --color-danger-500: hsl(0 84% 60%)
+  --color-danger-700: hsl(0 74% 42%);
 ```
 
 ### Uso de Cores
@@ -64,17 +69,15 @@ Sistema de design padronizado do ZippiCRM com foco em consistência visual, resp
 ## 📏 Espaçamento
 
 ### Escala de Espaçamento
+
 ```css
---spacing-xs: 0.5rem    /* 8px */
---spacing-sm: 0.75rem   /* 12px */
---spacing-md: 1rem      /* 16px */
---spacing-lg: 1.5rem    /* 24px */
---spacing-xl: 2rem      /* 32px */
---spacing-2xl: 3rem     /* 48px */
---spacing-3xl: 4rem     /* 64px */
+--spacing-xs: 0.5rem /* 8px */ --spacing-sm: 0.75rem /* 12px */ --spacing-md: 1rem /* 16px */
+  --spacing-lg: 1.5rem /* 24px */ --spacing-xl: 2rem /* 32px */ --spacing-2xl: 3rem /* 48px */
+  --spacing-3xl: 4rem /* 64px */;
 ```
 
 ### Classes Utilitárias
+
 ```tsx
 // Gap entre elementos
 <div className="spacing-md">  // gap: 1rem
@@ -89,22 +92,20 @@ Sistema de design padronizado do ZippiCRM com foco em consistência visual, resp
 ## 📝 Tipografia
 
 ### Escala de Tamanhos
+
 ```css
---text-xs: 0.75rem      /* 12px */
---text-sm: 0.875rem     /* 14px */
---text-base: 1rem       /* 16px */
---text-lg: 1.125rem     /* 18px */
---text-xl: 1.25rem      /* 20px */
---text-2xl: 1.5rem      /* 24px */
---text-3xl: 1.875rem    /* 30px */
---text-4xl: 2.25rem     /* 36px */
+--text-xs: 0.75rem /* 12px */ --text-sm: 0.875rem /* 14px */ --text-base: 1rem /* 16px */
+  --text-lg: 1.125rem /* 18px */ --text-xl: 1.25rem /* 20px */ --text-2xl: 1.5rem /* 24px */
+  --text-3xl: 1.875rem /* 30px */ --text-4xl: 2.25rem /* 36px */;
 ```
 
 ### Fontes
+
 - **Sans Serif**: Inter (corpo de texto)
 - **Display**: Outfit (títulos)
 
 ### Classes Responsivas
+
 ```tsx
 // Título responsivo
 <h1 className="text-responsive-xl">Título Grande</h1>
@@ -122,6 +123,7 @@ Sistema de design padronizado do ZippiCRM com foco em consistência visual, resp
 ## 📱 Breakpoints
 
 ### Tailwind Breakpoints
+
 ```css
 sm: 640px   /* Tablets */
 md: 768px   /* Tablets grandes */
@@ -131,6 +133,7 @@ xl: 1280px  /* Desktops grandes */
 ```
 
 ### Uso Mobile-First
+
 ```tsx
 // Sempre comece com mobile, depois adicione breakpoints maiores
 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -153,6 +156,7 @@ xl: 1280px  /* Desktops grandes */
 ### Botões
 
 #### Variantes
+
 ```tsx
 // Primary (roxo - padrão)
 <Button>Ação Principal</Button>
@@ -171,6 +175,7 @@ xl: 1280px  /* Desktops grandes */
 ```
 
 #### Tamanhos
+
 ```tsx
 <Button size="sm">Pequeno</Button>
 <Button size="default">Padrão</Button>
@@ -221,9 +226,7 @@ xl: 1280px  /* Desktops grandes */
 ```tsx
 // Wrapper para scroll horizontal em mobile
 <div className="table-responsive">
-  <Table>
-    {/* Conteúdo da tabela */}
-  </Table>
+  <Table>{/* Conteúdo da tabela */}</Table>
 </div>
 ```
 
@@ -232,6 +235,7 @@ xl: 1280px  /* Desktops grandes */
 ## 🤖 AI Chat Drawer (AITOPIA)
 
 ### Uso
+
 O chat de IA está disponível em todas as páginas através de um botão flutuante no canto inferior direito.
 
 ```tsx
@@ -239,20 +243,17 @@ O chat de IA está disponível em todas as páginas através de um botão flutua
 // Não precisa adicionar manualmente em cada página
 
 // Hook para controlar o drawer programaticamente
-import { useAIDrawer } from '@/hooks/use-ai-drawer';
+import { useAIDrawer } from "@/hooks/use-ai-drawer";
 
 function MyComponent() {
   const aiDrawer = useAIDrawer();
 
-  return (
-    <Button onClick={aiDrawer.open}>
-      Abrir Assistente IA
-    </Button>
-  );
+  return <Button onClick={aiDrawer.open}>Abrir Assistente IA</Button>;
 }
 ```
 
 ### Características
+
 - Estado persistido em localStorage
 - Painel lateral direito colapsável
 - Botão flutuante quando fechado
@@ -267,12 +268,12 @@ O sistema suporta tema claro e escuro automaticamente. Todas as cores usam vari�
 
 ```tsx
 // Sempre use variáveis de tema ao invés de cores fixas
-className="bg-background text-foreground"
-className="bg-card text-card-foreground"
-className="bg-primary text-primary-foreground"
+className = "bg-background text-foreground";
+className = "bg-card text-card-foreground";
+className = "bg-primary text-primary-foreground";
 
 // Evite:
-className="bg-white text-black"  // ❌ Não se adapta ao tema escuro
+className = "bg-white text-black"; // ❌ Não se adapta ao tema escuro
 ```
 
 ---
@@ -296,19 +297,24 @@ Ao criar novos componentes, verifique:
 ## 📦 Classes Utilitárias Personalizadas
 
 ### Grid Responsivo
+
 - `grid-responsive-cards`: Grid 1-2-3-4 colunas
 - `grid-responsive-2col`: Grid 1-2 colunas
 
 ### Espaçamento
+
 - `spacing-xs`, `spacing-sm`, `spacing-md`, `spacing-lg`, `spacing-xl`
 
 ### Texto
+
 - `text-responsive-xl`, `text-responsive-lg`, `text-responsive-base`
 
 ### Container
+
 - `container-padding`: Padding lateral responsivo
 
 ### Outros
+
 - `card-elevated`: Card com sombra e hover
 - `table-responsive`: Wrapper para tabelas
 - `scrollbar-hide`: Esconde scrollbar mantendo funcionalidade
@@ -318,6 +324,7 @@ Ao criar novos componentes, verifique:
 ## 🚀 Exemplos Práticos
 
 ### Página com Grid de Cards
+
 ```tsx
 import { Layout } from "@/components/layout/Layout";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -327,10 +334,7 @@ import { Button } from "@/components/ui/button";
 export default function MyPage() {
   return (
     <Layout>
-      <PageHeader
-        title="Minha Página"
-        description="Descrição da página"
-      >
+      <PageHeader title="Minha Página" description="Descrição da página">
         <Button>Nova Ação</Button>
       </PageHeader>
 
@@ -339,9 +343,7 @@ export default function MyPage() {
           <CardHeader>
             <CardTitle>Card 1</CardTitle>
           </CardHeader>
-          <CardContent>
-            Conteúdo do card
-          </CardContent>
+          <CardContent>Conteúdo do card</CardContent>
         </Card>
         {/* Mais cards... */}
       </div>
@@ -351,6 +353,7 @@ export default function MyPage() {
 ```
 
 ### Formulário Responsivo
+
 ```tsx
 <form className="grid grid-cols-1 md:grid-cols-2 gap-4">
   <div className="space-y-2">
@@ -369,6 +372,7 @@ export default function MyPage() {
 ```
 
 ### Tabela Responsiva
+
 ```tsx
 <div className="table-responsive">
   <Table>
@@ -380,9 +384,7 @@ export default function MyPage() {
         <TableHead>Ações</TableHead>
       </TableRow>
     </TableHeader>
-    <TableBody>
-      {/* Linhas da tabela */}
-    </TableBody>
+    <TableBody>{/* Linhas da tabela */}</TableBody>
   </Table>
 </div>
 ```
