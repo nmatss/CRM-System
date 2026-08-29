@@ -183,6 +183,7 @@ export type AuditAction =
   | "membership.role_changed"
   | "membership.removed"
   | "data.exported"
+  | "data.imported"
   | "entity.deleted"
   | "order.cancelled"
   | "cashback.credited"
@@ -219,6 +220,7 @@ const auditMetadataKeys: Record<AuditAction, readonly string[]> = {
   "membership.role_changed": ["role"],
   "membership.removed": [],
   "data.exported": ["entityType", "rowCount"],
+  "data.imported": ["entityType", "rowCount", "created", "updated", "skipped"],
   "entity.deleted": ["entityType"],
   "order.cancelled": [],
   "cashback.credited": ["amountCents", "transactionId"],

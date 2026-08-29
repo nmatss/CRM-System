@@ -52,6 +52,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
+import {
+  describeImportPlan,
+  describeImportResult,
+  isNoOpImport,
+  type ImportOutcome,
+} from "@/lib/importPreview";
 import { capabilities, hasCapability } from "@/lib/capabilities";
 import { actionErrorDescription } from "@/lib/actionErrors";
 import { downloadJsonAsCsv } from "@/lib/csvExport";
@@ -102,12 +108,14 @@ function parseCSV(csvText: string): any[] {
     headers.forEach((header, index) => {
       row[header] = values[index] || "";
     });
-    if (row.name || row.nome) {
+    // Every non-empty line is forwarded; the server validates and reports each
+    // one by line number instead of the client silently dropping it.
+    if (values.some((value) => value !== "")) {
       data.push({
-        name: row.name || row.nome,
+        name: row.name || row.nome || "",
         category: row.category || row.categoria || "",
-        price: row.price || row.preco || "R$ 0,00",
-        stock: parseInt(row.stock || row.estoque || "0") || 0,
+        price: row.price || row.preco || "",
+        stock: row.stock || row.estoque || "",
         status: row.status || "Ativo",
         image: row.image || row.imagem || "",
       });
@@ -120,6 +128,8 @@ export default function Products() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importPreview, setImportPreview] = useState<ImportOutcome | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [formData, setFormData] = useState<ProductFormData>(initialFormData);
@@ -252,7 +262,9 @@ export default function Products() {
         return;
       }
       setImportData(parsed);
+      setImportPreview(null);
       setIsImportDialogOpen(true);
+      void previewImport(parsed);
     };
     reader.readAsText(file);
     if (fileInputRef.current) {
@@ -260,19 +272,46 @@ export default function Products() {
     }
   };
 
+  /** Asks the server what a commit would do, without writing anything. */
+  const previewImport = async (rows: Record<string, string>[]) => {
+    setIsPreviewing(true);
+    try {
+      const response = await apiRequest("POST", "/import/products", {
+        rows,
+        mode: "dry-run",
+        onDuplicate: "skip",
+      });
+      setImportPreview((await response.json()) as ImportOutcome);
+    } catch {
+      setImportPreview(null);
+      toast({
+        title: "Erro",
+        description: "Não foi possível analisar o arquivo.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPreviewing(false);
+    }
+  };
+
   const handleImport = async () => {
     if (importData.length === 0) return;
     setIsImporting(true);
     try {
-      const response = await apiRequest("POST", "/import/products", { products: importData });
-      const result = await response.json();
+      const response = await apiRequest("POST", "/import/products", {
+        rows: importData,
+        mode: "commit",
+        onDuplicate: "skip",
+      });
+      const result = (await response.json()) as ImportOutcome;
       queryClient.invalidateQueries({ queryKey: ["products"] });
       toast({
-        title: "Sucesso!",
-        description: `${result.imported ?? result.success ?? importData.length} produtos importados.`,
+        title: "Importação concluída",
+        description: describeImportResult(result, "produtos"),
       });
       setIsImportDialogOpen(false);
       setImportData([]);
+      setImportPreview(null);
     } catch (error) {
       toast({
         title: "Erro",
@@ -777,6 +816,45 @@ export default function Products() {
             </DialogTitle>
             <DialogDescription>Revise os dados do arquivo CSV antes de importar.</DialogDescription>
           </DialogHeader>
+          <div
+            className="rounded-md border bg-muted/40 p-3 text-sm"
+            role="status"
+            data-testid="import-preview"
+          >
+            {isPreviewing ? (
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Analisando o arquivo...
+              </span>
+            ) : importPreview ? (
+              <>
+                <p className="font-medium">{describeImportPlan(importPreview, "produtos")}</p>
+                {importPreview.totals.duplicates > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Produtos já existentes são ignorados: reimportar o mesmo arquivo não duplica o
+                    catálogo.
+                  </p>
+                )}
+                {importPreview.issues.length > 0 && (
+                  <ul className="mt-2 space-y-0.5 text-xs text-destructive">
+                    {importPreview.issues.slice(0, 5).map((issue) => (
+                      <li key={`${issue.row}-${issue.field ?? ""}-${issue.message}`}>
+                        Linha {issue.row}
+                        {issue.field ? ` · ${issue.field}` : ""}: {issue.message}
+                      </li>
+                    ))}
+                    {importPreview.totalIssues > 5 && (
+                      <li>e mais {importPreview.totalIssues - 5} problema(s).</li>
+                    )}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <span className="text-muted-foreground">
+                Nenhuma análise disponível para este arquivo.
+              </span>
+            )}
+          </div>
           {importData.length > 0 ? (
             <div className="overflow-x-auto border rounded-md">
               <ScrollArea className="max-h-[300px]">
@@ -821,12 +899,19 @@ export default function Products() {
             </Button>
             <Button
               onClick={handleImport}
-              disabled={importData.length === 0 || isImporting}
+              disabled={
+                importData.length === 0 ||
+                isImporting ||
+                isPreviewing ||
+                (importPreview !== null && isNoOpImport(importPreview))
+              }
               className="w-full sm:w-auto"
               data-testid="button-confirm-import"
             >
               {isImporting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Importar {importData.length} produtos
+              {importPreview
+                ? `Importar ${importPreview.totals.created + importPreview.totals.updated} produtos`
+                : `Importar ${importData.length} produtos`}
             </Button>
           </DialogFooter>
         </DialogContent>
