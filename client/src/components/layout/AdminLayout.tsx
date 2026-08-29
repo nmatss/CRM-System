@@ -1,16 +1,16 @@
 import { useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { 
-  LayoutDashboard, 
-  Building2, 
-  Users, 
+import {
+  LayoutDashboard,
+  Building2,
+  Users,
   PieChart,
   LogOut,
   Crown,
   X,
   BarChart3,
-  FileText
+  FileText,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -33,8 +33,13 @@ interface AdminSidebarProps {
   onTabChange?: (tab: string) => void;
 }
 
-function AdminSidebar({ isOpen = true, onClose, activeTab = "dashboard", onTabChange }: AdminSidebarProps) {
-  const [location, setLocation] = useLocation();
+function AdminSidebar({
+  isOpen = true,
+  onClose,
+  activeTab = "dashboard",
+  onTabChange,
+}: AdminSidebarProps) {
+  const [, setLocation] = useLocation();
   const { logout, isLoggingOut } = useAuth();
   const { toast } = useToast();
 
@@ -43,7 +48,7 @@ function AdminSidebar({ isOpen = true, onClose, activeTab = "dashboard", onTabCh
       await logout();
       toast({ title: "Até logo!", description: "Logout realizado com sucesso." });
       setLocation("/login");
-    } catch (error) {
+    } catch {
       toast({ title: "Erro", description: "Falha ao fazer logout", variant: "destructive" });
     }
   };
@@ -60,21 +65,20 @@ function AdminSidebar({ isOpen = true, onClose, activeTab = "dashboard", onTabCh
   return (
     <>
       {isOpen && onClose && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={onClose}
-        />
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={onClose} />
       )}
-      
-      <div className={cn(
-        "fixed lg:static inset-y-0 left-0 z-50 flex h-screen w-64 flex-col bg-[#050A1A] text-white transition-transform duration-300 lg:translate-x-0",
-        isOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
+
+      <div
+        className={cn(
+          "fixed lg:static inset-y-0 left-0 z-50 flex h-screen w-64 flex-col bg-[#050A1A] text-white transition-transform duration-300 lg:translate-x-0",
+          isOpen ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
         <div className="flex h-16 items-center justify-between border-b border-white/10 px-4">
           <div className="flex items-center gap-2">
-            <img 
-              src={zippiLogo} 
-              alt="Zippi CRM" 
+            <img
+              src={zippiLogo}
+              alt="Zippi CRM"
               className="h-10 w-auto object-contain"
               data-testid="sidebar-logo"
             />
@@ -89,7 +93,7 @@ function AdminSidebar({ isOpen = true, onClose, activeTab = "dashboard", onTabCh
             </button>
           )}
         </div>
-        
+
         <div className="flex-1 overflow-y-auto py-4">
           <nav className="grid gap-1 px-3">
             <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-yellow-400/70 flex items-center gap-2">
@@ -99,14 +103,14 @@ function AdminSidebar({ isOpen = true, onClose, activeTab = "dashboard", onTabCh
             {adminNavigation.map((item) => {
               const isActive = activeTab === item.tab;
               return (
-                <button 
-                  key={item.name} 
+                <button
+                  key={item.name}
                   onClick={() => handleNavClick(item.tab)}
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all w-full text-left",
                     isActive
                       ? "bg-gradient-to-r from-yellow-500/20 to-orange-600/20 text-yellow-400 border-l-2 border-yellow-400"
-                      : "text-gray-400 hover:bg-white/5 hover:text-white"
+                      : "text-gray-400 hover:bg-white/5 hover:text-white",
                   )}
                   data-testid={`admin-nav-${item.name.toLowerCase().replace(/\s+/g, "-")}`}
                 >
@@ -128,7 +132,7 @@ function AdminSidebar({ isOpen = true, onClose, activeTab = "dashboard", onTabCh
               <p className="text-xs text-gray-400">Acesso Total</p>
             </div>
           </div>
-          
+
           <button
             onClick={handleLogout}
             disabled={isLoggingOut}
@@ -155,17 +159,15 @@ export function AdminLayout({ children, activeTab = "dashboard", onTabChange }: 
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <AdminSidebar 
-        isOpen={sidebarOpen} 
+      <AdminSidebar
+        isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         activeTab={activeTab}
         onTabChange={onTabChange}
       />
       <div className="flex flex-1 flex-col overflow-hidden lg:ml-0">
         <Header onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
       </div>
     </div>
   );

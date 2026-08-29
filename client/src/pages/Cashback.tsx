@@ -1,34 +1,49 @@
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CashbackRulesTable } from "@/components/cashback/CashbackRulesTable";
-import { BalanceDistributionWidget, ExpiringClientsWidget, AIInsightsWidget } from "@/components/cashback/CashbackWidgets";
 import {
-  ArrowUpRight,
-  Wallet,
-  RotateCcw,
-  Percent,
-  Gift,
-  Plus,
-  CheckCircle2,
-  Settings,
-  Trash2,
-  Pencil,
-  Loader2,
-  Sparkles
-} from "lucide-react";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { CashbackRulesTable } from "@/components/cashback/CashbackRulesTable";
+import {
+  BalanceDistributionWidget,
+  ExpiringClientsWidget,
+  type CashbackDistributionItem,
+  type ExpiringCashbackItem,
+} from "@/components/cashback/CashbackWidgets";
+import { Wallet, Percent, Plus, Pencil, Loader2, CircleDollarSign, ListChecks } from "lucide-react";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import type { CashbackRule } from "@shared/schema";
+import { capabilities, hasCapability } from "@/lib/capabilities";
+import { actionErrorDescription } from "@/lib/actionErrors";
+import { summarizeCashbackTransactions } from "@/lib/cashbackMetrics";
+import type { CashbackRule, CashbackTransaction } from "@shared/schema";
 
 interface CashbackRuleFormData {
   name: string;
@@ -61,11 +76,6 @@ const validityOptions = [
   { value: "0", label: "Sem expiração" },
 ];
 
-const getValidityLabel = (days: number): string => {
-  const option = validityOptions.find(opt => opt.value === String(days));
-  return option ? option.label : `${days} dias`;
-};
-
 const defaultFormData: CashbackRuleFormData = {
   name: "",
   trigger: "",
@@ -74,15 +84,29 @@ const defaultFormData: CashbackRuleFormData = {
   status: "Ativo",
 };
 
+async function fetchCashbackData<T>(url: string): Promise<T> {
+  const response = await fetch(url, { credentials: "include" });
+  if (!response.ok) throw new Error(`Erro ao carregar cashback (${response.status})`);
+  return response.json();
+}
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value);
+
 export default function Cashback() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<CashbackRule | null>(null);
   const [ruleToDelete, setRuleToDelete] = useState<CashbackRule | null>(null);
   const [formData, setFormData] = useState<CashbackRuleFormData>(defaultFormData);
-  
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const canManageCashback = hasCapability(user, capabilities.manageCashback);
 
   const { data: cashbackRules = [], isLoading } = useQuery<CashbackRule[]>({
     queryKey: ["cashback-rules"],
@@ -92,6 +116,22 @@ export default function Cashback() {
       return response.json();
     },
   });
+
+  const distributionQuery = useQuery<CashbackDistributionItem[]>({
+    queryKey: ["cashback", "distribution"],
+    queryFn: () => fetchCashbackData("/api/v1/cashback/distribution"),
+  });
+  const expiringQuery = useQuery<ExpiringCashbackItem[]>({
+    queryKey: ["cashback", "expiring", 7],
+    queryFn: () => fetchCashbackData("/api/v1/cashback/expiring?days=7"),
+  });
+  const transactionsQuery = useQuery<CashbackTransaction[]>({
+    queryKey: ["cashback", "transactions"],
+    queryFn: () => fetchCashbackData("/api/v1/cashback/transactions"),
+  });
+
+  const cashbackSummary = summarizeCashbackTransactions(transactionsQuery.data ?? []);
+  const activeRules = cashbackRules.filter((rule) => rule.status === "Ativo").length;
 
   const createMutation = useMutation({
     mutationFn: async (data: CashbackRuleFormData) => {
@@ -104,8 +144,12 @@ export default function Cashback() {
       toast({ title: "Regra criada com sucesso!" });
       handleCloseDialog();
     },
-    onError: () => {
-      toast({ title: "Erro ao criar regra", variant: "destructive" });
+    onError: (error) => {
+      toast({
+        title: "Erro ao criar regra",
+        description: actionErrorDescription(error, "Não foi possível criar a regra."),
+        variant: "destructive",
+      });
     },
   });
 
@@ -120,8 +164,12 @@ export default function Cashback() {
       toast({ title: "Regra atualizada com sucesso!" });
       handleCloseDialog();
     },
-    onError: () => {
-      toast({ title: "Erro ao atualizar regra", variant: "destructive" });
+    onError: (error) => {
+      toast({
+        title: "Erro ao atualizar regra",
+        description: actionErrorDescription(error, "Não foi possível atualizar a regra."),
+        variant: "destructive",
+      });
     },
   });
 
@@ -137,8 +185,12 @@ export default function Cashback() {
       setDeleteDialogOpen(false);
       setRuleToDelete(null);
     },
-    onError: () => {
-      toast({ title: "Erro ao excluir regra", variant: "destructive" });
+    onError: (error) => {
+      toast({
+        title: "Erro ao excluir regra",
+        description: actionErrorDescription(error, "Não foi possível excluir a regra."),
+        variant: "destructive",
+      });
     },
   });
 
@@ -219,13 +271,6 @@ export default function Cashback() {
     });
   };
 
-  const handleSendReminder = (clientId: number) => {
-    toast({
-      title: "Lembrete enviado!",
-      description: "O cliente receberá um lembrete sobre o cashback expirando.",
-    });
-  };
-
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
   return (
@@ -234,65 +279,121 @@ export default function Cashback() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Cashback & Fidelidade</h1>
-            <p className="text-sm text-muted-foreground">Gerencie suas regras de bônus e retenção.</p>
+            <p className="text-sm text-muted-foreground">
+              Gerencie suas regras de bônus e retenção.
+            </p>
           </div>
-          <Button 
-            className="gap-2 bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto" 
-            onClick={handleOpenCreate}
-            data-testid="button-new-rule"
-          >
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Nova Regra de Cashback</span>
-            <span className="sm:hidden">Nova Regra</span>
-          </Button>
+          {canManageCashback && (
+            <Button
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto"
+              onClick={handleOpenCreate}
+              data-testid="button-new-rule"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">Nova Regra de Cashback</span>
+              <span className="sm:hidden">Nova Regra</span>
+            </Button>
+          )}
         </div>
 
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white border-none">
             <CardHeader className="pb-2 sm:pb-2">
-              <CardTitle className="text-sm font-medium text-white/80">Cashback Disponível</CardTitle>
+              <CardTitle className="text-sm font-medium text-white/80">Regras ativas</CardTitle>
             </CardHeader>
             <CardContent className="pb-4 sm:pb-6">
-              <div className="text-2xl font-bold flex items-center gap-2" data-testid="text-cashback-available">
-                <Wallet className="h-5 w-5" />
-                <span>R$ 142.300</span>
+              <div
+                className="text-2xl font-bold flex items-center gap-2"
+                data-testid="text-cashback-available"
+              >
+                <ListChecks className="h-5 w-5" />
+                <span>{isLoading ? "—" : activeRules}</span>
               </div>
-              <p className="text-xs text-white/70 mt-1">Passivo pendente</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2 sm:pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Taxa de Resgate</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-4 sm:pb-6">
-              <div className="text-2xl font-bold" data-testid="text-redemption-rate">24.8%</div>
-              <p className="text-xs text-emerald-600 flex items-center gap-1 mt-1">
-                <ArrowUpRight className="h-3 w-3" />
-                +2.1% este mês
+              <p className="text-xs text-white/70 mt-1">
+                De {cashbackRules.length} regras configuradas
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2 sm:pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Receita Gerada</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total creditado
+              </CardTitle>
             </CardHeader>
             <CardContent className="pb-4 sm:pb-6">
-              <div className="text-2xl font-bold" data-testid="text-revenue-generated">
-                R$ 890.120
+              <div
+                className="text-2xl font-bold flex items-center gap-2"
+                data-testid="text-total-credited"
+              >
+                <Wallet className="h-5 w-5" />
+                {transactionsQuery.isLoading
+                  ? "—"
+                  : transactionsQuery.isError
+                    ? "Indisponível"
+                    : formatCurrency(cashbackSummary.totalCredited)}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">A partir de resgates</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Somatório do histórico disponível
+              </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2 sm:pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">ROI</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total resgatado
+              </CardTitle>
             </CardHeader>
             <CardContent className="pb-4 sm:pb-6">
-              <div className="text-2xl font-bold" data-testid="text-roi">12x</div>
-              <p className="text-xs text-muted-foreground mt-1">Retorno sobre Investimento</p>
+              <div
+                className="text-2xl font-bold flex items-center gap-2"
+                data-testid="text-total-redeemed"
+              >
+                <CircleDollarSign className="h-5 w-5" />
+                {transactionsQuery.isLoading
+                  ? "—"
+                  : transactionsQuery.isError
+                    ? "Indisponível"
+                    : formatCurrency(cashbackSummary.totalRedeemed)}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Débitos registrados no histórico</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2 sm:pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Taxa de resgate
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4 sm:pb-6">
+              <div
+                className="text-2xl font-bold flex items-center gap-2"
+                data-testid="text-redemption-rate"
+              >
+                <Percent className="h-5 w-5" />
+                {transactionsQuery.isLoading
+                  ? "—"
+                  : transactionsQuery.isError
+                    ? "Indisponível"
+                    : `${cashbackSummary.redemptionRate.toFixed(1)}%`}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Resgatado sobre o total creditado
+              </p>
             </CardContent>
           </Card>
         </div>
+
+        {transactionsQuery.isError && (
+          <div
+            className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 p-3 text-sm"
+            role="alert"
+          >
+            <span>Não foi possível carregar os indicadores financeiros.</span>
+            <Button variant="outline" size="sm" onClick={() => transactionsQuery.refetch()}>
+              Tentar novamente
+            </Button>
+          </div>
+        )}
 
         <CashbackRulesTable
           rules={cashbackRules}
@@ -301,54 +402,26 @@ export default function Cashback() {
           onDelete={handleOpenDelete}
           onDuplicate={handleDuplicate}
           onToggleStatus={handleToggleStatus}
+          canManage={canManageCashback}
         />
 
         <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
           <div className="lg:col-span-2 space-y-6">
-            <BalanceDistributionWidget />
-            <AIInsightsWidget />
+            <BalanceDistributionWidget
+              data={distributionQuery.data ?? []}
+              isLoading={distributionQuery.isLoading}
+              isError={distributionQuery.isError}
+              onRetry={() => distributionQuery.refetch()}
+            />
           </div>
 
           <div className="space-y-6">
-            <ExpiringClientsWidget onSendReminder={handleSendReminder} />
-
-            <Card className="bg-slate-900 text-white border-slate-800">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-                  <RotateCcw className="h-5 w-5 text-emerald-400" />
-                  Impacto na Retenção
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center gap-2 text-sm">
-                    <span className="text-slate-400 text-xs sm:text-sm">Taxa de Recompra (com Cashback)</span>
-                    <span className="font-bold text-emerald-400">42%</span>
-                  </div>
-                  <Progress value={42} className="h-2 bg-slate-800" />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center gap-2 text-sm">
-                    <span className="text-slate-400 text-xs sm:text-sm">Taxa de Recompra (sem bônus)</span>
-                    <span className="font-bold text-slate-400">18%</span>
-                  </div>
-                  <Progress value={18} className="h-2 bg-slate-800" />
-                </div>
-
-                <div className="pt-4 border-t border-slate-800">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="h-5 w-5 text-indigo-400 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-indigo-100 text-sm">Insight</p>
-                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                        Clientes com cashback têm 133% mais chance de recompra nos próximos 30 dias.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <ExpiringClientsWidget
+              data={expiringQuery.data ?? []}
+              isLoading={expiringQuery.isLoading}
+              isError={expiringQuery.isError}
+              onRetry={() => expiringQuery.refetch()}
+            />
           </div>
         </div>
       </div>
@@ -363,7 +436,9 @@ export default function Cashback() {
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name" className="text-sm font-medium">Nome da Regra</Label>
+              <Label htmlFor="name" className="text-sm font-medium">
+                Nome da Regra
+              </Label>
               <Input
                 id="name"
                 placeholder="Ex: Cashback de Boas-vindas"
@@ -376,7 +451,9 @@ export default function Cashback() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="value" className="text-sm font-medium">Valor do Cashback</Label>
+              <Label htmlFor="value" className="text-sm font-medium">
+                Valor do Cashback
+              </Label>
               <Input
                 id="value"
                 type="text"
@@ -388,11 +465,15 @@ export default function Cashback() {
                 className="w-full h-11 text-base"
                 data-testid="input-rule-value"
               />
-              <p className="text-xs text-muted-foreground">Use % para porcentagem ou R$ para valor fixo</p>
+              <p className="text-xs text-muted-foreground">
+                Use % para porcentagem ou R$ para valor fixo
+              </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="trigger" className="text-sm font-medium">Gatilho</Label>
+              <Label htmlFor="trigger" className="text-sm font-medium">
+                Gatilho
+              </Label>
               <Select
                 value={formData.trigger}
                 onValueChange={(v) => setFormData({ ...formData, trigger: v })}
@@ -402,14 +483,18 @@ export default function Cashback() {
                 </SelectTrigger>
                 <SelectContent>
                   {triggerOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="validity" className="text-sm font-medium">Validade</Label>
+              <Label htmlFor="validity" className="text-sm font-medium">
+                Validade
+              </Label>
               <Select
                 value={formData.validity}
                 onValueChange={(v) => setFormData({ ...formData, validity: v })}
@@ -419,14 +504,18 @@ export default function Cashback() {
                 </SelectTrigger>
                 <SelectContent>
                   {validityOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="status" className="text-sm font-medium">Status</Label>
+              <Label htmlFor="status" className="text-sm font-medium">
+                Status
+              </Label>
               <Select
                 value={formData.status}
                 onValueChange={(v) => setFormData({ ...formData, status: v })}
@@ -469,9 +558,12 @@ export default function Cashback() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-base sm:text-lg">Excluir Regra de Cashback</AlertDialogTitle>
+            <AlertDialogTitle className="text-base sm:text-lg">
+              Excluir Regra de Cashback
+            </AlertDialogTitle>
             <AlertDialogDescription className="text-sm">
-              Tem certeza que deseja excluir a regra "{ruleToDelete?.name}"? Esta ação não pode ser desfeita.
+              Tem certeza que deseja excluir a regra "{ruleToDelete?.name}"? Esta ação não pode ser
+              desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col sm:flex-row gap-2 sm:gap-2">

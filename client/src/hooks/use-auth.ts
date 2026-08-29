@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { SessionUser } from "@shared/schema";
 import { clearCsrfToken, apiRequest } from "@/lib/queryClient";
+import { clearAuthenticatedQueryCache } from "@/lib/authCache";
 
 interface AuthResponse {
   user: SessionUser;
@@ -11,7 +12,7 @@ interface AuthResponse {
 export function useAuth() {
   const queryClient = useQueryClient();
 
-  const { data: user, isLoading, error } = useQuery<SessionUser | null>({
+  const { data: user, isLoading } = useQuery<SessionUser | null>({
     queryKey: ["auth", "me"],
     queryFn: async () => {
       const response = await fetch("/api/v1/auth/me", {
@@ -50,7 +51,11 @@ export function useAuth() {
     },
   });
 
-  const registerMutation = useMutation<AuthResponse, Error, { email: string; password: string; name: string; tenantName?: string }>({
+  const registerMutation = useMutation<
+    AuthResponse,
+    Error,
+    { email: string; password: string; name: string; tenantName?: string }
+  >({
     mutationFn: async (data) => {
       // Register is a public endpoint, doesn't require CSRF
       const response = await fetch("/api/v1/auth/register", {
@@ -77,10 +82,9 @@ export function useAuth() {
       const response = await apiRequest("POST", "/auth/logout");
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.setQueryData(["auth", "me"], null);
-      queryClient.invalidateQueries();
-      clearCsrfToken(); // Clear CSRF token on logout
+    onSuccess: async () => {
+      clearCsrfToken();
+      await clearAuthenticatedQueryCache(queryClient);
     },
   });
 
@@ -96,7 +100,11 @@ export function useAuth() {
     },
   });
 
-  const changePasswordMutation = useMutation<{ message: string }, Error, { currentPassword: string; newPassword: string; confirmPassword: string }>({
+  const changePasswordMutation = useMutation<
+    { message: string },
+    Error,
+    { currentPassword: string; newPassword: string; confirmPassword: string }
+  >({
     mutationFn: async (data) => {
       // Use apiRequest to include CSRF token
       const response = await apiRequest("POST", "/auth/change-password", data);

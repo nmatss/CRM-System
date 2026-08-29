@@ -1,4 +1,4 @@
-import React, { Component, ReactNode } from 'react';
+import React, { Component, ReactNode } from "react";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -28,7 +28,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     // Log the error to console for debugging
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
 
     // Update state with error details
     this.setState({
@@ -80,19 +80,20 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
               {/* Error Title */}
               <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                Oops! Something went wrong
+                Ops! Algo deu errado
               </h1>
 
               {/* Error Message */}
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                We encountered an unexpected error. Please try again or contact support if the problem persists.
+                Encontramos um erro inesperado. Tente novamente ou entre em contato com o suporte se
+                o problema persistir.
               </p>
 
               {/* Error Details (only in development) */}
-              {process.env.NODE_ENV === 'development' && this.state.error && (
+              {process.env.NODE_ENV === "development" && this.state.error && (
                 <details className="w-full mb-6 text-left">
                   <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Error Details (Development Only)
+                    Detalhes do erro (somente em desenvolvimento)
                   </summary>
                   <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded p-3 text-xs overflow-auto max-h-40">
                     <p className="font-semibold text-red-800 dark:text-red-400 mb-1">
@@ -112,17 +113,14 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
                 onClick={this.handleReset}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
               >
-                Try Again
+                Tentar novamente
               </button>
 
               {/* Additional Help */}
               <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                If this issue continues, please{' '}
-                <a
-                  href="/"
-                  className="text-purple-600 dark:text-purple-400 hover:underline"
-                >
-                  return to home
+                Se o problema continuar, você pode{" "}
+                <a href="/" className="text-purple-600 dark:text-purple-400 hover:underline">
+                  voltar ao início
                 </a>
               </p>
             </div>

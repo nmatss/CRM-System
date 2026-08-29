@@ -5,17 +5,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { 
-  Plus, 
-  Search, 
-  Filter, 
+import {
+  Plus,
+  Search,
   MoreHorizontal,
   ArrowUpDown,
   Package,
   Loader2,
   Upload,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -51,9 +50,22 @@ import {
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
+import { capabilities, hasCapability } from "@/lib/capabilities";
+import { actionErrorDescription } from "@/lib/actionErrors";
+import { downloadJsonAsCsv } from "@/lib/csvExport";
+import { fetchPaginatedQuery } from "@/lib/paginatedQuery";
+import { DataPagination } from "@/components/ui/data-pagination";
 import type { Product } from "@shared/schema";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ProductFormData {
@@ -74,27 +86,30 @@ const initialFormData: ProductFormData = {
   image: "",
 };
 
+const MAX_IMPORT_FILE_BYTES = 1024 * 1024;
+const MAX_IMPORT_ROWS = 1000;
+
 function parseCSV(csvText: string): any[] {
-  const lines = csvText.trim().split('\n');
+  const lines = csvText.trim().split("\n");
   if (lines.length < 2) return [];
-  
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+
+  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/"/g, ""));
   const data: any[] = [];
-  
+
   for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+    const values = lines[i].split(",").map((v) => v.trim().replace(/"/g, ""));
     const row: any = {};
     headers.forEach((header, index) => {
-      row[header] = values[index] || '';
+      row[header] = values[index] || "";
     });
     if (row.name || row.nome) {
       data.push({
         name: row.name || row.nome,
-        category: row.category || row.categoria || '',
-        price: row.price || row.preco || 'R$ 0,00',
-        stock: parseInt(row.stock || row.estoque || '0') || 0,
-        status: row.status || 'Ativo',
-        image: row.image || row.imagem || '',
+        category: row.category || row.categoria || "",
+        price: row.price || row.preco || "R$ 0,00",
+        stock: parseInt(row.stock || row.estoque || "0") || 0,
+        status: row.status || "Ativo",
+        image: row.image || row.imagem || "",
       });
     }
   }
@@ -109,21 +124,47 @@ export default function Products() {
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [formData, setFormData] = useState<ProductFormData>(initialFormData);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(1);
   const [importData, setImportData] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
 
-  const { data: products = [], isLoading } = useQuery<Product[]>({
-    queryKey: ["products"],
-    queryFn: async () => {
-      const response = await fetch("/api/v1/products");
-      if (!response.ok) throw new Error("Erro ao carregar produtos");
-      return response.json();
-    },
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const canManageProducts = hasCapability(user, capabilities.manageProducts);
+
+  const pageSize = 20;
+  const normalizedSearch = searchTerm.trim();
+  const productsQuery = useQuery({
+    queryKey: [
+      "products",
+      {
+        page,
+        limit: pageSize,
+        search: normalizedSearch,
+        status: statusFilter,
+        sort: "name",
+        order: sortOrder,
+      },
+    ],
+    queryFn: () =>
+      fetchPaginatedQuery<Product>({
+        endpoint: "/api/v1/products",
+        page,
+        limit: pageSize,
+        filters: {
+          search: normalizedSearch || undefined,
+          status: statusFilter === "all" ? undefined : statusFilter,
+          sort: "name",
+          order: sortOrder,
+        },
+      }),
   });
+  const products = productsQuery.data?.data ?? [];
+  const pagination = productsQuery.data?.pagination;
 
   const createMutation = useMutation({
     mutationFn: async (data: ProductFormData) => {
@@ -135,8 +176,12 @@ export default function Products() {
       toast({ title: "Sucesso!", description: "Produto adicionado com sucesso." });
       closeModal();
     },
-    onError: () => {
-      toast({ title: "Erro", description: "Não foi possível adicionar o produto.", variant: "destructive" });
+    onError: (error) => {
+      toast({
+        title: "Erro",
+        description: actionErrorDescription(error, "Não foi possível adicionar o produto."),
+        variant: "destructive",
+      });
     },
   });
 
@@ -150,8 +195,12 @@ export default function Products() {
       toast({ title: "Sucesso!", description: "Produto atualizado com sucesso." });
       closeModal();
     },
-    onError: () => {
-      toast({ title: "Erro", description: "Não foi possível atualizar o produto.", variant: "destructive" });
+    onError: (error) => {
+      toast({
+        title: "Erro",
+        description: actionErrorDescription(error, "Não foi possível atualizar o produto."),
+        variant: "destructive",
+      });
     },
   });
 
@@ -166,25 +215,48 @@ export default function Products() {
       setIsDeleteDialogOpen(false);
       setProductToDelete(null);
     },
-    onError: () => {
-      toast({ title: "Erro", description: "Não foi possível excluir o produto.", variant: "destructive" });
+    onError: (error) => {
+      toast({
+        title: "Erro",
+        description: actionErrorDescription(error, "Não foi possível excluir o produto."),
+        variant: "destructive",
+      });
     },
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      toast({
+        title: "Arquivo muito grande",
+        description: "Importe arquivos CSV de até 1 MB.",
+        variant: "destructive",
+      });
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
       const parsed = parseCSV(text);
+      if (parsed.length > MAX_IMPORT_ROWS) {
+        toast({
+          title: "Muitas linhas",
+          description: `Importe no máximo ${MAX_IMPORT_ROWS} produtos por vez.`,
+          variant: "destructive",
+        });
+        return;
+      }
       setImportData(parsed);
       setIsImportDialogOpen(true);
     };
     reader.readAsText(file);
     if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      fileInputRef.current.value = "";
     }
   };
 
@@ -195,14 +267,18 @@ export default function Products() {
       const response = await apiRequest("POST", "/import/products", { products: importData });
       const result = await response.json();
       queryClient.invalidateQueries({ queryKey: ["products"] });
-      toast({ 
-        title: "Sucesso!", 
-        description: `${result.imported || importData.length} produtos importados.` 
+      toast({
+        title: "Sucesso!",
+        description: `${result.imported ?? result.success ?? importData.length} produtos importados.`,
       });
       setIsImportDialogOpen(false);
       setImportData([]);
     } catch (error) {
-      toast({ title: "Erro", description: "Não foi possível importar os produtos.", variant: "destructive" });
+      toast({
+        title: "Erro",
+        description: actionErrorDescription(error, "Não foi possível importar os produtos."),
+        variant: "destructive",
+      });
     } finally {
       setIsImporting(false);
     }
@@ -210,25 +286,24 @@ export default function Products() {
 
   const handleExport = async () => {
     try {
-      const response = await fetch("/api/v1/export/products");
-      if (!response.ok) throw new Error("Export failed");
-      const data = await response.json();
-      
-      const headers = ["name", "category", "price", "stock", "status"];
-      const csvContent = [
-        headers.join(","),
-        ...data.map((p: any) => headers.map(h => `"${p[h] || ''}"`).join(","))
-      ].join("\n");
-      
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `produtos_${new Date().toISOString().split('T')[0]}.csv`;
-      link.click();
-      
+      await downloadJsonAsCsv(
+        "/export/products",
+        `produtos_${new Date().toISOString().split("T")[0]}.csv`,
+        [
+          { key: "name", label: "Nome" },
+          { key: "category", label: "Categoria" },
+          { key: "price", label: "Preço" },
+          { key: "stock", label: "Estoque" },
+          { key: "status", label: "Status" },
+        ],
+      );
       toast({ title: "Sucesso!", description: "Produtos exportados com sucesso." });
-    } catch (error) {
-      toast({ title: "Erro", description: "Não foi possível exportar os produtos.", variant: "destructive" });
+    } catch {
+      toast({
+        title: "Erro",
+        description: "Não foi possível exportar os produtos.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -277,12 +352,6 @@ export default function Products() {
     }
   };
 
-  const filteredProducts = products.filter(
-    (product) =>
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.category.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const isMutating = createMutation.isPending || updateMutation.isPending;
 
   return (
@@ -302,53 +371,84 @@ export default function Products() {
               className="hidden"
               data-testid="input-import-file"
             />
-            <Button 
-              variant="outline" 
-              className="gap-2" 
-              onClick={() => fileInputRef.current?.click()}
-              data-testid="button-import-products"
-            >
-              <Upload className="h-4 w-4" />
-              Importar
-            </Button>
-            <Button 
-              variant="outline" 
-              className="gap-2" 
+            {canManageProducts && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => fileInputRef.current?.click()}
+                data-testid="button-import-products"
+              >
+                <Upload className="h-4 w-4" />
+                Importar
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              className="gap-2"
               onClick={handleExport}
               data-testid="button-export-products"
             >
               <Download className="h-4 w-4" />
               Exportar
             </Button>
-            <Button className="gap-2" onClick={openCreateModal} data-testid="button-add-product">
-              <Plus className="h-4 w-4" />
-              Adicionar Produto
-            </Button>
+            {canManageProducts && (
+              <Button className="gap-2" onClick={openCreateModal} data-testid="button-add-product">
+                <Plus className="h-4 w-4" />
+                Adicionar Produto
+              </Button>
+            )}
           </div>
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input 
-              placeholder="Buscar produtos..." 
+            <Input
+              placeholder="Buscar produtos..."
               className="pl-9"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
               data-testid="input-search-products"
             />
           </div>
-          <Button variant="outline" className="gap-2" data-testid="button-filter">
-            <Filter className="h-4 w-4" />
-            Filtrar
-          </Button>
-          <Button variant="outline" className="gap-2 ml-auto" data-testid="button-sort">
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => {
+              setStatusFilter(value);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger
+              className="w-full sm:w-[150px]"
+              data-testid="select-product-status-filter"
+            >
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="Ativo">Ativos</SelectItem>
+              <SelectItem value="Inativo">Inativos</SelectItem>
+              <SelectItem value="Rascunho">Rascunhos</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            className="gap-2 ml-auto"
+            data-testid="button-sort"
+            onClick={() => {
+              setSortOrder((current) => (current === "asc" ? "desc" : "asc"));
+              setPage(1);
+            }}
+          >
             <ArrowUpDown className="h-4 w-4" />
-            Ordenar
+            Nome {sortOrder === "asc" ? "A–Z" : "Z–A"}
           </Button>
         </div>
 
-        {isLoading ? (
+        {productsQuery.isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
             {[...Array(8)].map((_, i) => (
               <Card key={i} className="overflow-hidden">
@@ -361,103 +461,173 @@ export default function Products() {
               </Card>
             ))}
           </div>
-        ) : filteredProducts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-center" data-testid="empty-state">
+        ) : productsQuery.isError ? (
+          <div
+            className="flex h-64 flex-col items-center justify-center gap-3 text-center"
+            role="alert"
+          >
+            <p className="text-destructive">Não foi possível carregar os produtos.</p>
+            <Button variant="outline" onClick={() => productsQuery.refetch()}>
+              Tentar novamente
+            </Button>
+          </div>
+        ) : products.length === 0 ? (
+          <div
+            className="flex flex-col items-center justify-center h-64 text-center"
+            data-testid="empty-state"
+          >
             <Package className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground mb-2">
-              {searchTerm ? "Nenhum produto encontrado para a busca." : "Nenhum produto cadastrado ainda."}
+              {searchTerm
+                ? "Nenhum produto encontrado para a busca."
+                : "Nenhum produto cadastrado ainda."}
             </p>
-            {!searchTerm && (
-              <Button variant="outline" onClick={openCreateModal} data-testid="button-add-first-product">
+            {!searchTerm && canManageProducts && (
+              <Button
+                variant="outline"
+                onClick={openCreateModal}
+                data-testid="button-add-first-product"
+              >
                 Adicionar primeiro produto
               </Button>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-            {filteredProducts.map((product) => (
-              <Card key={product.id} className="overflow-hidden group" data-testid={`card-product-${product.id}`}>
-                <div className="aspect-square w-full overflow-hidden bg-muted relative">
-                  {product.image ? (
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className="w-full aspect-square object-cover rounded-t-lg transition-transform duration-300 group-hover:scale-105"
-                    />
-                  ) : (
-                    <div className="w-full aspect-square flex items-center justify-center bg-muted rounded-t-lg">
-                      <Package className="h-16 w-16 text-muted-foreground" />
-                    </div>
-                  )}
-                  <div className="absolute top-2 right-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="secondary" size="icon" className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" data-testid={`button-menu-${product.id}`}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEditModal(product)} data-testid={`button-edit-${product.id}`}>
-                          Editar
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>Duplicar</DropdownMenuItem>
-                        <DropdownMenuItem 
-                          className="text-destructive" 
-                          onClick={() => openDeleteDialog(product)}
-                          data-testid={`button-delete-${product.id}`}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+              {products.map((product) => (
+                <Card
+                  key={product.id}
+                  className="overflow-hidden group"
+                  data-testid={`card-product-${product.id}`}
+                >
+                  <div className="aspect-square w-full overflow-hidden bg-muted relative">
+                    {product.image ? (
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        className="w-full aspect-square object-cover rounded-t-lg transition-transform duration-300 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="w-full aspect-square flex items-center justify-center bg-muted rounded-t-lg">
+                        <Package className="h-16 w-16 text-muted-foreground" />
+                      </div>
+                    )}
+                    {canManageProducts && (
+                      <div className="absolute top-2 right-2">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="secondary"
+                              size="icon"
+                              className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              data-testid={`button-menu-${product.id}`}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => openEditModal(product)}
+                              data-testid={`button-edit-${product.id}`}
+                            >
+                              Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => openDeleteDialog(product)}
+                              data-testid={`button-delete-${product.id}`}
+                            >
+                              Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
+                    {product.stock <= 10 && product.stock > 0 && (
+                      <Badge className="absolute top-2 left-2 bg-amber-500 hover:bg-amber-600">
+                        Últimas Unidades
+                      </Badge>
+                    )}
+                    {product.stock === 0 && (
+                      <Badge variant="destructive" className="absolute top-2 left-2">
+                        Esgotado
+                      </Badge>
+                    )}
+                  </div>
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-start mb-2 gap-2">
+                      <div className="min-w-0 flex-1">
+                        <h3
+                          className="font-semibold truncate"
+                          title={product.name}
+                          data-testid={`text-product-name-${product.id}`}
                         >
-                          Excluir
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                  {product.stock <= 10 && product.stock > 0 && (
-                    <Badge className="absolute top-2 left-2 bg-amber-500 hover:bg-amber-600">
-                      Últimas Unidades
-                    </Badge>
-                  )}
-                  {product.stock === 0 && (
-                    <Badge variant="destructive" className="absolute top-2 left-2">
-                      Esgotado
-                    </Badge>
-                  )}
-                </div>
-                <CardContent className="p-4">
-                  <div className="flex justify-between items-start mb-2 gap-2">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold truncate" title={product.name} data-testid={`text-product-name-${product.id}`}>{product.name}</h3>
-                      <p className="text-sm text-muted-foreground truncate" data-testid={`text-category-${product.id}`}>{product.category}</p>
+                          {product.name}
+                        </h3>
+                        <p
+                          className="text-sm text-muted-foreground truncate"
+                          data-testid={`text-category-${product.id}`}
+                        >
+                          {product.category}
+                        </p>
+                      </div>
+                      <p
+                        className="text-lg sm:text-xl font-semibold whitespace-nowrap"
+                        data-testid={`text-price-${product.id}`}
+                      >
+                        {product.price}
+                      </p>
                     </div>
-                    <p className="text-lg sm:text-xl font-semibold whitespace-nowrap" data-testid={`text-price-${product.id}`}>{product.price}</p>
-                  </div>
-                  <div className="flex items-center justify-between mt-4 text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className={
-                        product.stock > 10 ? "text-emerald-600" :
-                        product.stock > 0 ? "text-amber-600" : "text-rose-600"
-                      } data-testid={`text-stock-${product.id}`}>
-                        {product.stock} em estoque
-                      </span>
+                    <div className="flex items-center justify-between mt-4 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={
+                            product.stock > 10
+                              ? "text-emerald-600"
+                              : product.stock > 0
+                                ? "text-amber-600"
+                                : "text-rose-600"
+                          }
+                          data-testid={`text-stock-${product.id}`}
+                        >
+                          {product.stock} em estoque
+                        </span>
+                      </div>
+                      {canManageProducts && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8"
+                          onClick={() => openEditModal(product)}
+                          data-testid={`button-edit-inline-${product.id}`}
+                        >
+                          Editar
+                        </Button>
+                      )}
                     </div>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8" 
-                      onClick={() => openEditModal(product)}
-                      data-testid={`button-edit-inline-${product.id}`}
-                    >
-                      Editar
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            {pagination && (
+              <DataPagination
+                page={pagination.page}
+                totalPages={pagination.totalPages}
+                total={pagination.total}
+                label="produtos"
+                onPageChange={setPage}
+              />
+            )}
           </div>
         )}
       </div>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-full sm:max-w-[500px] max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto" data-testid="product-modal">
+        <DialogContent
+          className="max-w-full sm:max-w-[500px] max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto"
+          data-testid="product-modal"
+        >
           <DialogHeader>
             <DialogTitle>{editingProduct ? "Editar Produto" : "Novo Produto"}</DialogTitle>
             <DialogDescription>
@@ -509,7 +679,9 @@ export default function Products() {
                   id="stock"
                   type="number"
                   value={formData.stock}
-                  onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })
+                  }
                   min={0}
                   required
                   data-testid="input-product-stock"
@@ -543,10 +715,21 @@ export default function Products() {
               />
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button type="button" variant="outline" onClick={closeModal} className="w-full sm:w-auto" data-testid="button-cancel">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeModal}
+                className="w-full sm:w-auto"
+                data-testid="button-cancel"
+              >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isMutating} className="w-full sm:w-auto" data-testid="button-save-product">
+              <Button
+                type="submit"
+                disabled={isMutating}
+                className="w-full sm:w-auto"
+                data-testid="button-save-product"
+              >
                 {isMutating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {editingProduct ? "Salvar" : "Adicionar"}
               </Button>
@@ -560,11 +743,14 @@ export default function Products() {
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir produto?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. O produto "{productToDelete?.name}" será removido permanentemente.
+              Esta ação não pode ser desfeita. O produto "{productToDelete?.name}" será removido
+              permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-            <AlertDialogCancel className="w-full sm:w-auto mt-0" data-testid="button-cancel-delete">Cancelar</AlertDialogCancel>
+            <AlertDialogCancel className="w-full sm:w-auto mt-0" data-testid="button-cancel-delete">
+              Cancelar
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="w-full sm:w-auto bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -578,15 +764,16 @@ export default function Products() {
       </AlertDialog>
 
       <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
-        <DialogContent className="max-w-full sm:max-w-[600px] max-h-[100dvh] sm:max-h-[90vh]" data-testid="import-dialog">
+        <DialogContent
+          className="max-w-full sm:max-w-[600px] max-h-[100dvh] sm:max-h-[90vh]"
+          data-testid="import-dialog"
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5" />
               Importar Produtos
             </DialogTitle>
-            <DialogDescription>
-              Revise os dados do arquivo CSV antes de importar.
-            </DialogDescription>
+            <DialogDescription>Revise os dados do arquivo CSV antes de importar.</DialogDescription>
           </DialogHeader>
           {importData.length > 0 ? (
             <div className="overflow-x-auto border rounded-md">
