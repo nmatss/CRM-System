@@ -68,6 +68,9 @@ export default defineConfig({
       // A browser suite issues far more than 100 requests per minute from one
       // address; the production default stays untouched.
       GENERAL_RATE_LIMIT_MAX: "100000",
+      // The lead specs deliberately submit several times from one address; the
+      // production default of 5 per hour stays untouched.
+      PUBLIC_LEAD_RATE_LIMIT_MAX: "100000",
       // Jobs are driven explicitly by the specs so assertions stay deterministic.
       OUTBOX_WORKER_ENABLED: "false",
     },

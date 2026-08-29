@@ -9,7 +9,7 @@ const DB_PATH = process.env.DATABASE_PATH || "./data/zippcrm.db";
 const SESSION_DB_PATH = process.env.SESSION_DATABASE_PATH || DB_PATH;
 const usesSeparateSessionDatabase = resolve(SESSION_DB_PATH) !== resolve(DB_PATH);
 const dbExistedBeforeOpen = existsSync(DB_PATH);
-const CURRENT_SCHEMA_VERSION = "2026-08-29-durable-outbox-1";
+const CURRENT_SCHEMA_VERSION = "2026-08-29-lead-consent-1";
 
 // Ensure data directory exists
 const dbDir = dirname(DB_PATH);
@@ -220,10 +220,7 @@ function recordSchemaVersion() {
     VALUES (?, ?)
   `,
     )
-    .run(
-      CURRENT_SCHEMA_VERSION,
-      "SQLite bootstrap through the durable outbox and execution history",
-    );
+    .run(CURRENT_SCHEMA_VERSION, "SQLite bootstrap through recorded lead consent");
 }
 
 function initializeSqliteSchema() {
@@ -948,6 +945,36 @@ function applyOutboxAndExecutionsMigration() {
   })();
 }
 
+/**
+ * Migration 0009: records the consent that legitimises holding a lead's
+ * personal data. Additive and idempotent; legacy rows keep NULL because
+ * consent genuinely was not captured for them.
+ */
+function applyLeadConsentMigration() {
+  const contactColumns = getTableColumns("contact_requests");
+  const demoColumns = getTableColumns("demo_requests");
+
+  sqlite.transaction(() => {
+    for (const [table, columns] of [
+      ["contact_requests", contactColumns],
+      ["demo_requests", demoColumns],
+    ] as const) {
+      if (!columns.has("consent_accepted_at")) {
+        sqlite.exec(`ALTER TABLE ${table} ADD COLUMN consent_accepted_at TEXT`);
+      }
+      if (!columns.has("consent_policy_version")) {
+        sqlite.exec(`ALTER TABLE ${table} ADD COLUMN consent_policy_version TEXT`);
+      }
+    }
+
+    sqlite
+      .prepare(
+        "INSERT OR IGNORE INTO schema_migrations(version,description) VALUES('0009','Recorded consent for public lead capture')",
+      )
+      .run();
+  })();
+}
+
 assertProductionBootstrapAllowed();
 initializeSqliteSchema();
 applyOrderItemsAdditiveMigration();
@@ -955,6 +982,7 @@ applyCashbackLedgerAdditiveMigration();
 applyNormalizedEmailAndAuditMigration();
 applyIntegerMoneyReportsMigration();
 applyOutboxAndExecutionsMigration();
+applyLeadConsentMigration();
 recordSchemaVersion();
 validateRequiredSchemaObjects();
 validateSqliteIntegrity();

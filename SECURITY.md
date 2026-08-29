@@ -154,3 +154,25 @@ security contact before external distribution.
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
 - [Node.js Security Best Practices](https://nodejs.org/en/docs/guides/security/)
 - [Express Security Best Practices](https://expressjs.com/en/advanced/best-practice-security.html)
+
+## Public Lead Capture
+
+`POST /api/v1/contact` and `POST /api/v1/demo` are the only unauthenticated
+endpoints that persist personal data. They carry their own controls:
+
+- a dedicated rate limit of 5 requests per hour per IP (`PUBLIC_LEAD_RATE_LIMIT_MAX`),
+  because the general limiter of 100 per minute would let a bot store tens of
+  thousands of leads a day;
+- a closed payload: unknown fields are rejected, so a caller cannot set the
+  triage `status` or any other server-owned field;
+- bounded string lengths on every field, so one request cannot store a megabyte;
+- a hidden honeypot field. A non-empty value means a bot: the submission is
+  discarded and the response is still 201, so the caller learns nothing;
+- mandatory consent. `consent: true` is required and is stored with a timestamp
+  and the policy version, which is what makes holding the data lawful under the
+  LGPD. Rows created before migration 0009 keep NULL, which is the truthful
+  value: consent was not captured for them.
+
+The privacy policy **text** is still a product decision; the mechanism that
+records which version a visitor accepted is in place and versioned by
+`PRIVACY_POLICY_VERSION`.
