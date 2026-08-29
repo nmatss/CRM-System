@@ -38,18 +38,16 @@ COPY package*.json ./
 
 # Install only production dependencies (need to rebuild native modules)
 RUN apk add --no-cache python3 make g++ gcc && \
-    npm ci --only=production && \
+    npm ci --omit=dev && \
     apk del python3 make g++ gcc && \
     npm cache clean --force
 
 # Copy built files from builder stage
-COPY --from=builder /app/dist ./dist
+COPY --from=builder --chown=zippcrm:nodejs /app/dist ./dist
+COPY --chown=zippcrm:nodejs scripts ./scripts
 
 # Create data directory for SQLite
-RUN mkdir -p /app/data && chown -R zippcrm:nodejs /app/data
-
-# Set ownership to non-root user
-RUN chown -R zippcrm:nodejs /app
+RUN mkdir -p /app/data && chown zippcrm:nodejs /app/data
 
 # Switch to non-root user
 USER zippcrm
@@ -61,13 +59,14 @@ EXPOSE 6000
 ENV NODE_ENV=production
 ENV PORT=6000
 ENV DATABASE_PATH=/app/data/zippcrm.db
+ENV SESSION_DATABASE_PATH=/app/data/sessions.db
 
 # Volume for persistent SQLite data
 VOLUME ["/app/data"]
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:6000/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:6000/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
 # Start the application
 CMD ["node", "dist/index.cjs"]

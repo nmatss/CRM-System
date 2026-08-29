@@ -1,6 +1,14 @@
 # Dependencies
 node_modules
 
+# Runtime data
+data/
+backups/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+
 # Build output (will be rebuilt in container)
 dist
 

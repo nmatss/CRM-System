@@ -4,11 +4,11 @@
 
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm ci && npm run build"
+buildCommand = "npm ci && npm run build && npm prune --omit=dev"
 
 [deploy]
-startCommand = "npm run start"
-healthcheckPath = "/api/health"
+startCommand = "test \"$RAILWAY_VOLUME_MOUNT_PATH\" = \"/app/data\" && npm run start"
+healthcheckPath = "/api/ready"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
@@ -19,3 +19,13 @@ port = 6000
 # Note: For persistent SQLite data on Railway,
 # you need to attach a volume in the Railway dashboard
 # Mount path: /app/data
+#
+# Required environment variables in Railway dashboard:
+# NODE_ENV=production
+# PORT=6000
+# TRUST_PROXY=1
+# DATABASE_PATH=/app/data/zippcrm.db
+# SESSION_DATABASE_PATH=/app/data/sessions.db
+# SESSION_SECRET=<non-placeholder value with at least 32 characters>
+# ADMIN_EMAIL=<initial super admin email>
+# ADMIN_PASSWORD=<non-placeholder value with at least 12 characters>
