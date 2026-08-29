@@ -131,9 +131,11 @@ async function getUserNotifications(tenantId: number, userId: string) {
   return notifications;
 }
 
-// Example 7: Update notification status after processing
-async function markNotificationAsRead(notificationId: number) {
-  const updated = await storage.updateNotificationStatus(notificationId, "read");
+// Example 7: Update notification status after processing.
+// The tenant and the owner are part of the call on purpose: an id alone must
+// never be enough to change someone else's notification.
+async function markNotificationAsRead(tenantId: number, userId: string, notificationId: number) {
+  const updated = await storage.markNotificationRead(tenantId, userId, notificationId);
   console.log("Notification marked as read:", updated);
   return updated;
 }

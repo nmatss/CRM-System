@@ -530,7 +530,16 @@ export interface IStorage {
   // Notifications (tenant-scoped)
   getNotifications(tenantId: number, userId?: string, limit?: number): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
-  updateNotificationStatus(id: number, status: string): Promise<Notification | undefined>;
+  /**
+   * Scoped to the tenant AND the owner: a notification belongs to one user, and
+   * an id alone must never be enough to change someone else's row.
+   */
+  markNotificationRead(
+    tenantId: number,
+    userId: string,
+    id: number,
+  ): Promise<Notification | undefined>;
+  markAllNotificationsRead(tenantId: number, userId: string): Promise<number>;
 
   // Dashboard Stats (tenant-scoped)
   getDashboardStats(tenantId: number): Promise<{
