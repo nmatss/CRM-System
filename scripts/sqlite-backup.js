@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import Database from "better-sqlite3";
 import { createHash } from "crypto";
-import { mkdirSync, readFileSync, statSync } from "fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { basename, dirname, join } from "path";
 
 const dbPath = process.env.DATABASE_PATH || join(process.cwd(), "data", "zippcrm.db");
@@ -40,4 +40,39 @@ const data = readFileSync(target);
 const sha256 = createHash("sha256").update(data).digest("hex");
 const size = statSync(target).size;
 
-console.log(JSON.stringify({ backup: target, size, sha256, integrity, foreignKeyIssues }, null, 2));
+// A manifest next to each backup lets a restore be verified without trusting
+// the operator's memory of which file is which.
+const manifestPath = `${target}.json`;
+const manifest = {
+  backup: target,
+  source: dbPath,
+  createdAt: new Date().toISOString(),
+  size,
+  sha256,
+  integrity,
+  foreignKeyIssues,
+};
+writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+// Retention. Keeping backups forever fills the volume and eventually takes the
+// application down, which is the failure the backup was supposed to prevent.
+const keep = Number.parseInt(process.env.BACKUP_KEEP ?? "14", 10);
+const pruned = [];
+if (Number.isInteger(keep) && keep > 0) {
+  const prefix = `${basename(dbPath)}.`;
+  const backups = readdirSync(backupDir)
+    .filter((name) => name.startsWith(prefix) && name.endsWith(".bak"))
+    .sort()
+    .reverse();
+
+  for (const stale of backups.slice(keep)) {
+    for (const suffix of ["", "-wal", "-shm", ".json"]) {
+      rmSync(join(backupDir, `${stale}${suffix}`), { force: true });
+    }
+    pruned.push(stale);
+  }
+}
+
+console.log(
+  JSON.stringify({ ...manifest, manifest: manifestPath, retained: keep, pruned }, null, 2),
+);

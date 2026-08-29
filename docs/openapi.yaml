@@ -3930,3 +3930,26 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  /api/v1/admin/metrics:
+    get:
+      summary: Prometheus metrics for the running instance
+      description: Super admin only. Exposes build identity, request counters and latency histograms by route pattern, database readiness and outbox backlog, in the Prometheus text exposition format.
+      operationId: adminMetrics
+      tags:
+        - Diagnostics
+      security:
+        - sessionAuth: []
+      responses:
+        "200":
+          description: Metrics in the Prometheus exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"

@@ -18,6 +18,7 @@ Documentos operacionais relacionados:
 - [Deploy](./DEPLOY.md)
 - [Backup e restore](./BACKUP_RESTORE.md)
 - [Runbook de produção](./RUNBOOK_PRODUCAO.md)
+- [Observabilidade, SLOs e alertas](./docs/OBSERVABILITY.md)
 - [Checklist de go-live](./GO_LIVE_CHECKLIST.md)
 - [ADR 0001 — Outbox durável e worker embutido](./docs/adr/0001-durable-outbox-and-embedded-worker.md)
 - [ADR 0002 — Dinheiro inteiro e métricas derivadas](./docs/adr/0002-integer-money-and-derived-metrics.md)
