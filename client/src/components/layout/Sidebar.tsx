@@ -166,7 +166,7 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         role={!isDesktop && isOpen ? "dialog" : undefined}
         inert={!isSidebarVisible ? true : undefined}
         className={cn(
-          "fixed lg:static inset-y-0 left-0 z-50 flex h-screen w-full max-w-xs sm:w-64 flex-col bg-[#050A1A] text-white transition-transform duration-300 lg:translate-x-0",
+          "fixed lg:static inset-y-0 left-0 z-50 flex h-screen w-full max-w-xs sm:w-64 lg:shrink-0 flex-col bg-[#050A1A] text-white transition-transform duration-300 lg:translate-x-0",
           isOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
@@ -195,7 +195,7 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
 
         <div className="flex-1 overflow-y-auto py-4">
           <nav className="grid gap-1 px-3" aria-label="Crescimento, retenção e operação">
-            <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-cyan-400/70">
+            <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-cyan-300">
               Crescimento & Retenção
             </div>
             {navigation
@@ -227,7 +227,7 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
                 );
               })}
 
-            <div className="mt-6 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-blue-400/70">
+            <div className="mt-6 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-blue-300">
               Operacional
             </div>
             {navigation
@@ -260,7 +260,7 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
           </nav>
 
           <nav className="mt-8 grid gap-1 px-3" aria-label="Sistema">
-            <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-purple-400/70">
+            <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-purple-300">
               Sistema
             </div>
             {can(capabilities.viewAdmin) && (

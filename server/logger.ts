@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { randomUUID } from "crypto";
+import { buildId } from "./buildInfo";
 
 type LogLevel = "error" | "warn" | "info" | "debug";
 
@@ -60,6 +61,8 @@ class Logger {
     const logObject = {
       timestamp,
       level: level.toUpperCase(),
+      // Correlates a line with the exact artifact that emitted it.
+      build: buildId,
       requestId: safeContext?.requestId || "no-request-id",
       message,
       ...safeContext,

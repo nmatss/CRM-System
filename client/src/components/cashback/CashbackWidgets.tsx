@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { ChartFigure } from "@/components/charts/ChartFigure";
 import { AlertCircle, TrendingUp } from "lucide-react";
 import type { Customer } from "@shared/schema";
 
@@ -52,7 +53,14 @@ export function BalanceDistributionWidget({
           <WidgetEmpty text="Nenhum saldo de cashback encontrado." />
         ) : (
           <>
-            <div className="h-[220px] w-full">
+            <ChartFigure
+              className="h-[220px] w-full"
+              label="Distribuição de saldos de cashback por faixa"
+              rows={data.map((item) => ({
+                label: item.range,
+                value: `${item.count} cliente(s)`,
+              }))}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -63,6 +71,7 @@ export function BalanceDistributionWidget({
                     cy="50%"
                     innerRadius={50}
                     outerRadius={75}
+                    rootTabIndex={-1}
                   >
                     {data.map((item, index) => (
                       <Cell key={item.range} fill={colors[index % colors.length]} />
@@ -71,7 +80,7 @@ export function BalanceDistributionWidget({
                   <Tooltip formatter={(value: number) => [`${value} clientes`, "Quantidade"]} />
                 </PieChart>
               </ResponsiveContainer>
-            </div>
+            </ChartFigure>
             <div className="grid gap-2 sm:grid-cols-2">
               {data.map((item, index) => (
                 <div

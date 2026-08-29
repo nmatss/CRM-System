@@ -152,7 +152,10 @@ export function CashbackRulesTable({
             </div>
             <div className="flex gap-2">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="h-10 flex-1 sm:w-[140px]">
+                <SelectTrigger
+                  aria-label="Filtrar regras por status"
+                  className="h-10 flex-1 sm:w-[140px]"
+                >
                   <Filter className="mr-2 h-4 w-4" />
                   <SelectValue />
                 </SelectTrigger>

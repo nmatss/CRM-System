@@ -5,6 +5,8 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { generalLimiter } from "./rateLimit";
 import { logger, requestIdMiddleware } from "./logger";
+import { metricsMiddleware } from "./metrics";
+import { buildInfo } from "./buildInfo";
 import { sqlite } from "./db";
 import { sessionSqlite, usingSeparateSessionDatabase } from "./sessionDb";
 import { outboxWorker } from "./outbox";
@@ -85,6 +87,9 @@ app.use(requestIdMiddleware);
 
 // Apply general rate limiting to all API routes
 app.use("/api/", generalLimiter);
+
+// Record latency and status of every API response.
+app.use(metricsMiddleware);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -239,7 +244,12 @@ async function startApplication() {
     },
     () => {
       log(`serving on port ${port}`);
-      logger.info("Application started", { port });
+      logger.info("Application started", {
+        port,
+        version: buildInfo.version,
+        commit: buildInfo.commit,
+        builtAt: buildInfo.builtAt,
+      });
       if (process.env.OUTBOX_WORKER_ENABLED !== "false") {
         outboxWorker.start();
       }

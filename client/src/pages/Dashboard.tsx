@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Layout } from "@/components/layout/Layout";
+import { ChartFigure } from "@/components/charts/ChartFigure";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -222,7 +223,7 @@ export default function Dashboard() {
       comparison: "vs mês anterior",
       trend: stats.kpis.revenueChange >= 0 ? "up" : "down",
       icon: DollarSign,
-      color: "text-emerald-600",
+      color: "text-emerald-700",
     },
     {
       title: "Ticket Médio",
@@ -340,7 +341,7 @@ export default function Dashboard() {
                     <span
                       className={
                         kpi.trend === "up"
-                          ? "text-emerald-600 font-medium"
+                          ? "text-emerald-700 font-medium"
                           : "text-rose-600 font-medium"
                       }
                     >
@@ -367,7 +368,14 @@ export default function Dashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6 sm:pl-2">
-              <div className="h-[250px] sm:h-[300px] w-full">
+              <ChartFigure
+                className="h-[250px] sm:h-[300px] w-full"
+                label="Vendas por período: evolução da receita nos últimos 30 dias"
+                rows={stats.salesChart.map((point) => ({
+                  label: point.date,
+                  value: formatCurrency(point.value),
+                }))}
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={stats.salesChart}>
                     <defs>
@@ -416,7 +424,7 @@ export default function Dashboard() {
                     />
                   </AreaChart>
                 </ResponsiveContainer>
-              </div>
+              </ChartFigure>
             </CardContent>
           </Card>
 
@@ -429,7 +437,14 @@ export default function Dashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
-              <div className="h-[250px] sm:h-[300px]">
+              <ChartFigure
+                className="h-[250px] sm:h-[300px]"
+                label="Clientes por segmento: distribuição da base de clientes"
+                rows={stats.customerSegments.map((segment) => ({
+                  label: segment.name,
+                  value: String(segment.value),
+                }))}
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -440,6 +455,9 @@ export default function Dashboard() {
                       outerRadius={80}
                       paddingAngle={3}
                       dataKey="value"
+                      // The drawing is decorative; the accessible alternative is
+                      // the table rendered by ChartFigure.
+                      rootTabIndex={-1}
                       label={({ name, percent }) => {
                         const isMobile = window.innerWidth < 640;
                         return isMobile
@@ -456,7 +474,7 @@ export default function Dashboard() {
                     <Legend wrapperStyle={{ fontSize: "12px" }} iconSize={10} />
                   </PieChart>
                 </ResponsiveContainer>
-              </div>
+              </ChartFigure>
             </CardContent>
           </Card>
 
@@ -469,7 +487,14 @@ export default function Dashboard() {
               <CardDescription className="text-xs sm:text-sm">Últimos 6 meses</CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
-              <div className="h-[250px] sm:h-[300px]">
+              <ChartFigure
+                className="h-[250px] sm:h-[300px]"
+                label="Cashback concedido e resgatado nos últimos 6 meses"
+                rows={stats.cashbackChart.flatMap((point) => [
+                  { label: `${point.month} · concedido`, value: formatCurrency(point.concedido) },
+                  { label: `${point.month} · resgatado`, value: formatCurrency(point.resgatado) },
+                ])}
+              >
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={stats.cashbackChart}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -509,7 +534,7 @@ export default function Dashboard() {
                     />
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
+              </ChartFigure>
             </CardContent>
           </Card>
         </div>

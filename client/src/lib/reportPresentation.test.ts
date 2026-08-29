@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  toReportDate,
   buildCustomerExportRows,
   buildOrderExportRows,
   buildReportQuery,
@@ -72,5 +73,19 @@ describe("report presentation", () => {
     expect(campaignMetricsUnavailableReason("attribution_events_not_implemented")).toContain(
       "ainda não implementada",
     );
+  });
+});
+
+describe("toReportDate", () => {
+  it("serialises the calendar day the user picked, not an instant", () => {
+    // The API rejects a full ISO instant with 400, which used to break the
+    // whole reports screen.
+    expect(toReportDate(new Date(2026, 7, 1, 0, 0, 0))).toBe("2026-08-01");
+    expect(toReportDate(new Date(2026, 7, 31, 23, 59, 59))).toBe("2026-08-31");
+    expect(toReportDate(new Date(2026, 0, 5, 12, 0, 0))).toBe("2026-01-05");
+  });
+
+  it("pads month and day", () => {
+    expect(toReportDate(new Date(2026, 2, 9))).toBe("2026-03-09");
   });
 });

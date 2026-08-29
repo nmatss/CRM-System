@@ -285,7 +285,7 @@ export default function Cashback() {
           </div>
           {canManageCashback && (
             <Button
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto"
+              className="gap-2 bg-emerald-700 hover:bg-emerald-800 w-full sm:w-auto"
               onClick={handleOpenCreate}
               data-testid="button-new-rule"
             >
@@ -478,7 +478,11 @@ export default function Cashback() {
                 value={formData.trigger}
                 onValueChange={(v) => setFormData({ ...formData, trigger: v })}
               >
-                <SelectTrigger className="w-full h-11" data-testid="select-trigger">
+                <SelectTrigger
+                  aria-label="Gatilho da regra"
+                  className="w-full h-11"
+                  data-testid="select-trigger"
+                >
                   <SelectValue placeholder="Selecione quando o cashback é ativado" />
                 </SelectTrigger>
                 <SelectContent>
@@ -499,7 +503,11 @@ export default function Cashback() {
                 value={formData.validity}
                 onValueChange={(v) => setFormData({ ...formData, validity: v })}
               >
-                <SelectTrigger className="w-full h-11" data-testid="select-validity">
+                <SelectTrigger
+                  aria-label="Validade do cashback"
+                  className="w-full h-11"
+                  data-testid="select-validity"
+                >
                   <SelectValue placeholder="Selecione a validade" />
                 </SelectTrigger>
                 <SelectContent>
@@ -520,7 +528,11 @@ export default function Cashback() {
                 value={formData.status}
                 onValueChange={(v) => setFormData({ ...formData, status: v })}
               >
-                <SelectTrigger className="w-full h-11" data-testid="select-status">
+                <SelectTrigger
+                  aria-label="Status da regra"
+                  className="w-full h-11"
+                  data-testid="select-status"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

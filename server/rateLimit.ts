@@ -23,12 +23,30 @@ function passwordResetIdentityKey(req: Request): string {
 }
 
 /**
- * General rate limiter for all API endpoints
- * Limits: 100 requests per minute per IP
+ * Reads a bounded numeric operational knob. An out-of-range or malformed value
+ * falls back to the default instead of silently disabling a control.
+ */
+function boundedEnvNumber(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < min || parsed > max) {
+    console.warn(`[RATE_LIMIT] Ignoring out-of-range ${name}; using ${fallback}`);
+    return fallback;
+  }
+  return parsed;
+}
+
+/**
+ * General rate limiter for all API endpoints.
+ *
+ * Defaults to 100 requests per minute per IP. Operators can raise it because a
+ * single-page client behind corporate NAT legitimately exceeds that; the
+ * authentication limiters below are deliberately not tunable.
  */
 export const generalLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 100, // Limit each IP to 100 requests per minute
+  windowMs: boundedEnvNumber("GENERAL_RATE_LIMIT_WINDOW_MS", 60_000, 1_000, 3_600_000),
+  max: boundedEnvNumber("GENERAL_RATE_LIMIT_MAX", 100, 10, 1_000_000),
   keyGenerator: ipKey,
   standardHeaders: "draft-8", // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers

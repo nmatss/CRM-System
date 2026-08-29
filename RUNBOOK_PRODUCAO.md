@@ -66,6 +66,17 @@ Verificar:
 - Recarregar a pagina para renovar token.
 - Cliente usa `apiRequest` para POST/PUT/PATCH/DELETE.
 
+## Metricas E Alertas
+
+`GET /api/v1/admin/metrics` expoe o formato Prometheus (identidade do build,
+contadores por rota e classe de status, histograma de latencia, readiness do
+banco e backlog da outbox). SLOs, regras de alerta prontas e limites conhecidos
+estao em `docs/OBSERVABILITY.md`.
+
+Toda linha de log carrega `build` e `requestId`. Ao abrir um incidente, registre
+o `commit` retornado por `/api/health`: ele identifica exatamente o artefato em
+execucao.
+
 ## Outbox E Worker Embutido
 
 O processo da aplicacao executa o worker da outbox (ADR 0001). Campanhas e
@@ -147,6 +158,12 @@ SQLite, no payload do job, no log ou na resposta HTTP.
 ```bash
 npm run db:backup
 ```
+
+O script grava um manifesto `.bak.json` ao lado da copia (origem, instante,
+tamanho, SHA-256, integridade e checagem de FK) e aplica retencao. `BACKUP_KEEP`
+controla quantas copias ficam (padrao 14); as mais antigas sao removidas junto
+com seus arquivos auxiliares. Copia offsite continua sendo passo do operador:
+o script nao envia nada para fora do volume.
 
 Docker:
 

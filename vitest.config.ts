@@ -7,6 +7,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
+    // Playwright owns everything under e2e/; vitest must never pick it up.
+    exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"],
     setupFiles: ["./vitest.setup.ts"],
     css: true,
     projects: [
@@ -49,10 +51,10 @@ export default defineConfig({
       // Progressive ratchet: kept just below the measured value so a real
       // regression fails CI while normal work does not flake.
       thresholds: {
-        statements: 26,
-        branches: 21,
-        functions: 19,
-        lines: 26,
+        statements: 27,
+        branches: 22,
+        functions: 20,
+        lines: 27,
       },
     },
   },

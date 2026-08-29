@@ -336,7 +336,7 @@ export default function Campaigns() {
                 </CardDescription>
               </div>
               <Select value={channelFilter} onValueChange={setChannelFilter}>
-                <SelectTrigger className="w-full sm:w-44">
+                <SelectTrigger aria-label="Filtrar por canal" className="w-full sm:w-44">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

@@ -1,3 +1,15 @@
+/**
+ * The report API accepts a calendar-day range only, and computes it in UTC.
+ * Sending a full ISO instant is rejected with 400, so the picked calendar date
+ * must be serialised as `YYYY-MM-DD` using the same day the user sees.
+ */
+export function toReportDate(date: Date): string {
+  const year = String(date.getFullYear()).padStart(4, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export interface ReportsData {
   timezone: "UTC";
   range: { startDate: string | null; endDate: string | null };

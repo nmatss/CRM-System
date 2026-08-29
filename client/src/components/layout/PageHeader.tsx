@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Breadcrumb,
@@ -50,7 +51,9 @@ export function PageHeader({ title, description, children }: PageHeaderProps) {
             const name = routeNames[segment] || segment.charAt(0).toUpperCase() + segment.slice(1);
 
             return (
-              <span key={segment} className="contents">
+              // A Fragment keeps <li> a direct child of the breadcrumb <ol>;
+              // a wrapper element breaks the list semantics for screen readers.
+              <Fragment key={segment}>
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
                   {isLast ? (
@@ -65,7 +68,7 @@ export function PageHeader({ title, description, children }: PageHeaderProps) {
                     </BreadcrumbLink>
                   )}
                 </BreadcrumbItem>
-              </span>
+              </Fragment>
             );
           })}
         </BreadcrumbList>

@@ -497,6 +497,9 @@ function PerformanceGoalCard({
           </div>
           <Progress
             value={percentage}
+            // A progress bar with no name is announced as "progress bar, 40%"
+            // with no indication of what is progressing.
+            aria-label={`${title}: ${current} de ${goal}`}
             className={`h-2 ${isCompleted ? "[&>div]:bg-green-500" : ""}`}
           />
           <p className="text-xs text-muted-foreground">

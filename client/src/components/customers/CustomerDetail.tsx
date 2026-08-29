@@ -368,7 +368,7 @@ function MetricCard({
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">{label}</CardTitle>
       </CardHeader>
-      <CardContent className={`text-xl font-bold ${accent ? "text-emerald-600" : ""}`}>
+      <CardContent className={`text-xl font-bold ${accent ? "text-emerald-700" : ""}`}>
         {value}
       </CardContent>
     </Card>
