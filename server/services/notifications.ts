@@ -2,7 +2,7 @@ export interface NotificationPayload {
   tenantId: number;
   userId: string;
   type: string;
-  channel: 'email' | 'sms' | 'whatsapp';
+  channel: "email" | "sms" | "whatsapp";
   title: string;
   message: string;
   data?: Record<string, any>;
@@ -16,60 +16,33 @@ export interface NotificationResult {
 
 export class NotificationService {
   /**
-   * Send email notification (stub implementation)
-   * Logs the email details and returns success
+   * Provider integration is not configured yet. Fail closed without logging
+   * recipients, message content, tenant data, or invented delivery IDs.
    */
-  async sendEmail(payload: NotificationPayload): Promise<NotificationResult> {
-    console.log('[NotificationService] Email would be sent:', {
-      to: payload.userId,
-      subject: payload.title,
-      body: payload.message,
-      tenantId: payload.tenantId,
-      type: payload.type,
-      data: payload.data,
-    });
-
+  async sendEmail(_payload: NotificationPayload): Promise<NotificationResult> {
     return {
-      success: true,
-      messageId: `email-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      success: false,
+      error: "Notification provider is not configured",
     };
   }
 
   /**
-   * Send SMS notification (stub implementation)
-   * Logs the SMS details and returns success
+   * Send SMS notification when a provider is configured.
    */
-  async sendSMS(payload: NotificationPayload): Promise<NotificationResult> {
-    console.log('[NotificationService] SMS would be sent:', {
-      to: payload.userId,
-      message: payload.message,
-      tenantId: payload.tenantId,
-      type: payload.type,
-      data: payload.data,
-    });
-
+  async sendSMS(_payload: NotificationPayload): Promise<NotificationResult> {
     return {
-      success: true,
-      messageId: `sms-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      success: false,
+      error: "Notification provider is not configured",
     };
   }
 
   /**
-   * Send WhatsApp notification (stub implementation)
-   * Logs the WhatsApp message details and returns success
+   * Send WhatsApp notification when a provider is configured.
    */
-  async sendWhatsApp(payload: NotificationPayload): Promise<NotificationResult> {
-    console.log('[NotificationService] WhatsApp message would be sent:', {
-      to: payload.userId,
-      message: payload.message,
-      tenantId: payload.tenantId,
-      type: payload.type,
-      data: payload.data,
-    });
-
+  async sendWhatsApp(_payload: NotificationPayload): Promise<NotificationResult> {
     return {
-      success: true,
-      messageId: `whatsapp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      success: false,
+      error: "Notification provider is not configured",
     };
   }
 
@@ -79,11 +52,11 @@ export class NotificationService {
    */
   async send(payload: NotificationPayload): Promise<NotificationResult> {
     switch (payload.channel) {
-      case 'email':
+      case "email":
         return this.sendEmail(payload);
-      case 'sms':
+      case "sms":
         return this.sendSMS(payload);
-      case 'whatsapp':
+      case "whatsapp":
         return this.sendWhatsApp(payload);
       default:
         return {

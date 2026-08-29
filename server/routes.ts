@@ -1,12 +1,10 @@
 import type { Express, Request, Response } from "express";
 import express from "express";
-import { createServer, type Server } from "http";
-import crypto from "crypto";
-import { storage } from "./storage";
+import { type Server } from "http";
+import { CashbackLedgerError, OrderDomainError, storage, type AuditAction } from "./storage";
 import {
   insertCustomerSchema,
   insertProductSchema,
-  insertOrderSchema,
   insertCashbackRuleSchema,
   insertCampaignSchema,
   insertAutomationSchema,
@@ -16,6 +14,7 @@ import {
   insertSellerTaskSchema,
   loginSchema,
   registerSchema,
+  normalizeEmail,
 } from "@shared/schema";
 import {
   setupSession,
@@ -23,13 +22,20 @@ import {
   comparePassword,
   requireAuth,
   requireSuperAdmin,
-  requireTenantAccess,
+  requireTenantContext,
   requireRole,
   createSuperAdminIfNotExists,
+  SESSION_COOKIE_NAME,
 } from "./auth";
-import { logger, requestIdMiddleware } from "./logger";
-import { ZodError } from "zod";
-import { authLimiter, registerLimiter, passwordResetLimiter } from "./rateLimit";
+import { logger } from "./logger";
+import { setupCsrf } from "./csrf";
+import { z, ZodError } from "zod";
+import {
+  authAccountLimiter,
+  authIpLimiter,
+  registerLimiter,
+  passwordResetLimiter,
+} from "./rateLimit";
 import { checkAndSeed } from "./seed";
 
 // ==================== ERROR HANDLING UTILITIES ====================
@@ -44,7 +50,7 @@ function sendError(
   status: number,
   message: string,
   code?: string,
-  details?: any
+  details?: any,
 ): void {
   const response: ErrorResponse = { error: message };
   if (code) response.code = code;
@@ -56,7 +62,7 @@ function handleZodError(error: ZodError): { message: string; details: any } {
   const fieldErrors: Record<string, string[]> = {};
 
   error.errors.forEach((err) => {
-    const path = err.path.join('.');
+    const path = err.path.join(".");
     if (!fieldErrors[path]) {
       fieldErrors[path] = [];
     }
@@ -67,13 +73,27 @@ function handleZodError(error: ZodError): { message: string; details: any } {
     message: "Erro de validação",
     details: {
       fields: fieldErrors,
-      errors: error.errors.map(err => ({
-        field: err.path.join('.'),
+      errors: error.errors.map((err) => ({
+        field: err.path.join("."),
         message: err.message,
-        code: err.code
-      }))
-    }
+        code: err.code,
+      })),
+    },
   };
+}
+
+export function sanitizeSpreadsheetCell(value: unknown): unknown {
+  if (typeof value === "string" && /^\s*[=+\-@]/.test(value)) return `'${value}`;
+  return value;
+}
+
+function sanitizeExportRows<T extends Record<string, unknown>>(rows: T[]): T[] {
+  return rows.map(
+    (row) =>
+      Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [key, sanitizeSpreadsheetCell(value)]),
+      ) as T,
+  );
 }
 
 // ==================== HELPER FUNCTIONS ====================
@@ -96,74 +116,316 @@ function getTenantId(req: Request): number {
   return req.session.user.tenantId;
 }
 
-/**
- * Validates that the authenticated user has access to the requested tenant.
- * This should be used for routes that accept tenantId as a URL parameter.
- *
- * @param req - Express request object
- * @param requestedTenantId - The tenant ID from URL params/query
- * @returns true if user has access, false otherwise
- */
-function validateTenantAccess(req: Request, requestedTenantId: number): boolean {
-  if (!req.session.user) {
+function getAuditContext(req: Request) {
+  return {
+    actorUserId: req.session?.user?.id ?? null,
+    requestId: String((req as Request & { requestId?: string }).requestId || crypto.randomUUID()),
+  };
+}
+
+async function auditLogin(
+  req: Request,
+  input: {
+    tenantId?: number | null;
+    actorUserId?: string | null;
+    outcome: "success" | "failure";
+    identifierType: "email" | "cpf" | "unknown";
+    reason?: string;
+  },
+) {
+  return storage.appendAuditEvent({
+    ...getAuditContext(req),
+    tenantId: input.tenantId,
+    actorUserId: input.actorUserId,
+    action: "auth.login",
+    targetType: "user",
+    targetId: input.actorUserId,
+    outcome: input.outcome,
+    metadata: { identifierType: input.identifierType, reason: input.reason },
+  });
+}
+
+async function auditLoginOrFailClosed(
+  req: Request,
+  res: Response,
+  input: Parameters<typeof auditLogin>[1],
+): Promise<boolean> {
+  try {
+    await auditLogin(req, input);
+    return true;
+  } catch (_error) {
+    sendError(res, 503, "Autenticação temporariamente indisponível", "AUDIT_UNAVAILABLE");
     return false;
   }
+}
 
-  // Super admins can access any tenant
-  if (req.session.user.isSuperAdmin) {
-    return true;
+function parseImportedNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
   }
 
-  // Regular users can only access their assigned tenant
-  return req.session.user.tenantId === requestedTenantId;
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+
+  const normalized = trimmed.includes(",")
+    ? trimmed
+        .replace(/[^\d,.-]/g, "")
+        .replace(/\./g, "")
+        .replace(",", ".")
+    : trimmed.replace(/[^\d.-]/g, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function parsePagination(req: Request): { page: number; limit: number; offset: number } {
-  const page = Math.max(1, parseInt(req.query.page as string) || 1);
-  const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 50));
-  const offset = (page - 1) * limit;
-  return { page, limit, offset };
+function regenerateSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
 }
 
-export async function registerRoutes(
-  httpServer: Server,
-  app: Express
-): Promise<Server> {
+function saveSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.save((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+function destroySession(req: Request): Promise<void> {
+  return new Promise((resolve) => {
+    req.session.destroy(() => resolve());
+  });
+}
+
+function requireStrongTemporaryPassword(value: unknown): string {
+  if (typeof value !== "string" || value.length < 12) {
+    throw new Error("Senha temporária deve ter pelo menos 12 caracteres");
+  }
+  return value;
+}
+
+function normalizeAssignableRole(value: unknown): "seller" | "manager" {
+  return value === "manager" ? "manager" : "seller";
+}
+
+const MAX_IMPORT_ROWS = 1000;
+const MAX_IMPORT_FIELD_LENGTH = 512;
+const nonNegativeImportedNumber = z.preprocess(
+  (value) => parseImportedNumber(value, Number.NaN),
+  z.number().finite().nonnegative(),
+);
+const nonNegativeImportedInteger = z.preprocess(
+  (value) => parseImportedNumber(value, Number.NaN),
+  z.number().int().nonnegative(),
+);
+const updateCustomerSchema = insertCustomerSchema.partial().omit({ tenantId: true }).extend({
+  ltv: nonNegativeImportedNumber.optional(),
+});
+const updateProductSchema = insertProductSchema.partial().omit({ tenantId: true }).extend({
+  price: nonNegativeImportedNumber.optional(),
+  stock: nonNegativeImportedInteger.optional(),
+});
+const safeOrderDateSchema = z.string().refine((value) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return (
+      parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
+    );
+  }
+  return z.string().datetime().safeParse(value).success;
+}, "Data do pedido deve usar YYYY-MM-DD ou ISO 8601");
+const orderStatusSchema = z.enum([
+  "Pendente",
+  "Processando",
+  "Pago",
+  "Enviado",
+  "Entregue",
+  "Cancelado",
+]);
+const updateOrderSchema = z
+  .object({
+    customerId: z.number().int().positive().nullable().optional(),
+    customer: z.string().trim().min(1).max(200).optional(),
+    orderDate: safeOrderDateSchema.optional(),
+    status: orderStatusSchema.optional(),
+    method: z.string().trim().min(1).max(100).optional(),
+  })
+  .strict();
+const transactionalOrderCreateSchema = z.object({
+  customerId: z.number().int().positive().nullable().optional(),
+  customer: z.string().trim().min(1).max(200),
+  method: z.string().trim().min(1).max(100),
+  orderDate: safeOrderDateSchema.optional(),
+  status: orderStatusSchema
+    .optional()
+    .refine((status) => status !== "Cancelado", "Pedido novo não pode ser criado como cancelado"),
+  lineItems: z
+    .array(
+      z
+        .object({
+          productId: z.number().int().positive(),
+          quantity: z.number().int().positive().max(10000),
+        })
+        .strict(),
+    )
+    .min(1)
+    .max(100),
+});
+const updateAutomationSchema = insertAutomationSchema.partial().omit({ tenantId: true });
+const listQueryShape = {
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  search: z
+    .string()
+    .trim()
+    .max(200)
+    .optional()
+    .transform((value) => value || undefined),
+};
+const boundedLimitSchema = z.coerce.number().int().min(1).max(100);
+const cashbackLedgerOperationSchema = z
+  .object({
+    customerId: z.number().int().positive(),
+    amountCents: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    idempotencyKey: z.string().trim().min(8).max(200),
+    description: z.string().trim().min(1).max(500),
+    source: z.enum(["manual", "promotion", "support", "redemption"]),
+    ruleId: z.number().int().positive().nullable().optional(),
+    orderId: z.number().int().positive().nullable().optional(),
+    expiresAt: z.string().datetime().nullable().optional(),
+  })
+  .strict();
+const reportDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const [year, month, day] = value.split("-").map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return (
+      parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
+    );
+  }, "Data inválida");
+const reportQuerySchema = z
+  .object({
+    startDate: reportDateSchema.optional(),
+    endDate: reportDateSchema.optional(),
+    timezone: z.literal("UTC").default("UTC"),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if ((value.startDate === undefined) !== (value.endDate === undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "startDate e endDate devem ser enviados juntos",
+      });
+    }
+    if (value.startDate && value.endDate && value.startDate > value.endDate) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "startDate deve ser anterior ou igual a endDate",
+      });
+    }
+  });
+const customerListQuerySchema = z
+  .object({
+    ...listQueryShape,
+    segment: z.enum(["VIP", "Novo", "Regular", "Em Risco", "Inativo"]).optional(),
+    sort: z.literal("name").default("name"),
+    order: z.enum(["asc", "desc"]).default("asc"),
+  })
+  .strict();
+const productListQuerySchema = z
+  .object({
+    ...listQueryShape,
+    status: z.enum(["Ativo", "Inativo", "Rascunho"]).optional(),
+    sort: z.literal("name").default("name"),
+    order: z.enum(["asc", "desc"]).default("asc"),
+  })
+  .strict();
+const orderListQuerySchema = z
+  .object({
+    ...listQueryShape,
+    status: z
+      .enum(["Pendente", "Processando", "Pago", "Enviado", "Entregue", "Cancelado"])
+      .optional(),
+    sort: z.literal("orderDate").default("orderDate"),
+    order: z.enum(["asc", "desc"]).default("desc"),
+  })
+  .strict();
+
+function sanitizeImportedText(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  return String(value).trim().slice(0, MAX_IMPORT_FIELD_LENGTH);
+}
+
+function isSellerSession(req: Request): boolean {
+  return !req.session.user?.isSuperAdmin && req.session.user?.role === "seller";
+}
+
+function scopeUserFilterToSession(req: Request, requestedUserId?: string): string | undefined {
+  return isSellerSession(req) ? req.session.user!.id : requestedUserId;
+}
+
+async function isCustomerInTenant(tenantId: number, customerId: number): Promise<boolean> {
+  return Boolean(await storage.getCustomer(tenantId, customerId));
+}
+
+async function isActiveUserInTenant(tenantId: number, userId: string): Promise<boolean> {
+  const membership = await storage.getTenantUser(tenantId, userId);
+  return Boolean(membership?.isActive);
+}
+
+export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   setupSession(app);
 
   // Add request ID middleware for tracking requests
-  app.use(requestIdMiddleware);
-
   await createSuperAdminIfNotExists();
 
   // Seed database in development mode
   await checkAndSeed();
+
+  // CSRF needs session state and must be registered before API routes.
+  setupCsrf(app);
 
   // Create v1 API router
   const v1Router = express.Router();
 
   // ==================== HEALTH CHECK ====================
   // Keep health check at root for backward compatibility
-  app.get("/api/health", async (_req: Request, res: Response) => {
-    try {
-      // Check database connectivity
-      const dbCheck = await storage.healthCheck();
+  app.get("/api/health", (_req: Request, res: Response) => {
+    res.json({ status: "healthy", timestamp: new Date().toISOString(), version: "1.0.0" });
+  });
 
-      res.json({
-        status: "healthy",
-        timestamp: new Date().toISOString(),
-        database: dbCheck ? "connected" : "disconnected",
-        version: "1.0.0",
-        environment: process.env.NODE_ENV || "development"
+  app.get("/api/ready", async (_req: Request, res: Response) => {
+    const ready = await storage.healthCheck();
+    res
+      .status(ready ? 200 : 503)
+      .json({
+        status: ready ? "ready" : "not_ready",
+        database: ready ? "connected" : "disconnected",
       });
-    } catch (error) {
-      res.status(503).json({
-        status: "unhealthy",
-        timestamp: new Date().toISOString(),
-        database: "error",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
+  });
+
+  v1Router.get("/admin/diagnostics/database", requireSuperAdmin, async (_req, res) => {
+    const valid = await storage.deepHealthCheck();
+    res.status(valid ? 200 : 503).json({ status: valid ? "ok" : "failed" });
   });
 
   // ==================== AUTH ROUTES ====================
@@ -175,74 +437,153 @@ export async function registerRoutes(
    * @param {string} password - User's password
    * @returns {object} User session object and success message
    */
-  v1Router.post("/auth/login", authLimiter, async (req: Request, res: Response) => {
-    try {
-      const { username, password } = loginSchema.parse(req.body);
-      
-      // Try to find user by CPF first (cleaned), then by email
-      const cleanedCpf = username.replace(/\D/g, '');
-      let user = await storage.getUserByCpf(cleanedCpf);
-      if (!user) {
-        user = await storage.getUserByEmail(username);
-      }
-      
-      if (!user) {
-        return sendError(res, 401, "Usuário ou senha inválidos", "INVALID_CREDENTIALS");
-      }
+  v1Router.post(
+    "/auth/login",
+    authIpLimiter,
+    authAccountLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const { username, password } = loginSchema.parse(req.body);
+        const identifierType = username.includes("@")
+          ? ("email" as const)
+          : username.replace(/\D/g, "").length === 11
+            ? ("cpf" as const)
+            : ("unknown" as const);
 
-      if (user.status !== "active") {
-        return sendError(res, 401, "Usuário inativo. Entre em contato com o administrador.", "USER_INACTIVE");
-      }
-
-      const isValid = await comparePassword(password, user.password);
-      if (!isValid) {
-        return sendError(res, 401, "Usuário ou senha inválidos", "INVALID_CREDENTIALS");
-      }
-      
-      let tenantId: number | undefined;
-      let role: string | undefined;
-      
-      if (!user.isSuperAdmin) {
-        const userTenants = await storage.getUserTenants(user.id);
-        const activeTenant = userTenants.find(tu => tu.isActive);
-        if (activeTenant) {
-          tenantId = activeTenant.tenantId;
-          role = activeTenant.role;
+        // Try to find user by CPF first (cleaned), then by email
+        const cleanedCpf = username.replace(/\D/g, "");
+        let user = await storage.getUserByCpf(cleanedCpf);
+        if (!user) {
+          user = await storage.getUserByEmail(normalizeEmail(username));
         }
+
+        if (!user) {
+          if (
+            !(await auditLoginOrFailClosed(req, res, {
+              outcome: "failure",
+              identifierType,
+              reason: "invalid_credentials",
+            }))
+          )
+            return;
+          return sendError(res, 401, "Usuário ou senha inválidos", "INVALID_CREDENTIALS");
+        }
+
+        if (user.status !== "active") {
+          if (
+            !(await auditLoginOrFailClosed(req, res, {
+              actorUserId: user.id,
+              outcome: "failure",
+              identifierType,
+              reason: "inactive_user",
+            }))
+          )
+            return;
+          return sendError(
+            res,
+            401,
+            "Usuário inativo. Entre em contato com o administrador.",
+            "USER_INACTIVE",
+          );
+        }
+
+        const isValid = await comparePassword(password, user.password);
+        if (!isValid) {
+          if (
+            !(await auditLoginOrFailClosed(req, res, {
+              actorUserId: user.id,
+              outcome: "failure",
+              identifierType,
+              reason: "invalid_credentials",
+            }))
+          )
+            return;
+          return sendError(res, 401, "Usuário ou senha inválidos", "INVALID_CREDENTIALS");
+        }
+
+        let tenantId: number | undefined;
+        let role: string | undefined;
+
+        if (!user.isSuperAdmin) {
+          const userTenants = await storage.getUserTenants(user.id);
+          const activeTenant = userTenants.find((tu) => tu.isActive);
+          if (activeTenant) {
+            tenantId = activeTenant.tenantId;
+            role = activeTenant.role;
+          }
+        }
+
+        await regenerateSession(req);
+
+        req.session.user = {
+          id: user.id,
+          email: user.email,
+          cpf: user.cpf,
+          name: user.name,
+          isSuperAdmin: user.isSuperAdmin,
+          mustChangePassword: user.mustChangePassword,
+          lastPasswordChange: user.lastPasswordChange,
+          tenantId,
+          role: role as any,
+        };
+
+        await saveSession(req);
+
+        try {
+          await auditLogin(req, {
+            tenantId,
+            actorUserId: user.id,
+            outcome: "success",
+            identifierType,
+          });
+        } catch (_error) {
+          await destroySession(req);
+          res.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
+          return sendError(
+            res,
+            503,
+            "Autenticação temporariamente indisponível",
+            "AUDIT_UNAVAILABLE",
+          );
+        }
+
+        // lastLogin is informational and only advances after session + audit succeed.
+        try {
+          await storage.updateUser(user.id, { lastLogin: new Date().toISOString() } as any);
+        } catch (_error) {
+          logger.warn("Unable to update informational lastLogin after successful authentication", {
+            requestId: (req as Request & { requestId?: string }).requestId,
+            userId: user.id,
+          });
+        }
+
+        res.json({
+          user: req.session.user,
+          message: "Login realizado com sucesso",
+        });
+      } catch (error) {
+        logger.error("Login failed", {
+          requestId: (req as any).requestId,
+          endpoint: "/api/v1/auth/login",
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        if (error instanceof ZodError) {
+          if (
+            !(await auditLoginOrFailClosed(req, res, {
+              outcome: "failure",
+              identifierType: "unknown",
+              reason: "validation_error",
+            }))
+          )
+            return;
+          const zodError = handleZodError(error);
+          return sendError(res, 400, zodError.message, "VALIDATION_ERROR", zodError.details);
+        }
+        return sendError(res, 400, "Dados de login inválidos", "LOGIN_ERROR");
       }
-      
-      // Update last login
-      await storage.updateUser(user.id, { lastLogin: new Date().toISOString() } as any);
-      
-      req.session.user = {
-        id: user.id,
-        email: user.email,
-        cpf: user.cpf,
-        name: user.name,
-        isSuperAdmin: user.isSuperAdmin,
-        mustChangePassword: user.mustChangePassword,
-        tenantId,
-        role: role as any,
-      };
-      
-      res.json({ 
-        user: req.session.user,
-        message: "Login realizado com sucesso" 
-      });
-    } catch (error) {
-      logger.error("Login failed", {
-        requestId: (req as any).requestId,
-        endpoint: "/api/v1/auth/login",
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      if (error instanceof ZodError) {
-        const zodError = handleZodError(error);
-        return sendError(res, 400, zodError.message, "VALIDATION_ERROR", zodError.details);
-      }
-      return sendError(res, 400, "Dados de login inválidos", "LOGIN_ERROR");
-    }
-  });
+    },
+  );
 
   /**
    * @description Logs out the current user by destroying their session
@@ -255,6 +596,7 @@ export async function registerRoutes(
       if (err) {
         return res.status(500).json({ error: "Erro ao fazer logout" });
       }
+      res.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
       res.json({ message: "Logout realizado com sucesso" });
     });
   });
@@ -265,7 +607,7 @@ export async function registerRoutes(
    * @access auth
    * @returns {object} Current user session data
    */
-  v1Router.get("/auth/me", (req: Request, res: Response) => {
+  v1Router.get("/auth/me", requireAuth, (req: Request, res: Response) => {
     if (!req.session.user) {
       return res.status(401).json({ error: "Não autenticado" });
     }
@@ -277,48 +619,58 @@ export async function registerRoutes(
    * @route POST /api/v1/auth/register
    * @access public
    * @param {string} email - User's email address
-   * @param {string} password - User's password (minimum 6 characters)
+   * @param {string} password - User's password (minimum 12 characters)
    * @param {string} name - User's full name
    * @param {string} [tenantName] - Optional name for a new tenant organization
    * @returns {object} Newly created user session object and success message
    */
   v1Router.post("/auth/register", registerLimiter, async (req: Request, res: Response) => {
+    let registrationCreated = false;
     try {
       const { email, password, name, tenantName } = registerSchema.parse(req.body);
-      
+
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser) {
         return sendError(res, 400, "Email já está em uso", "DUPLICATE_EMAIL");
       }
-      
+
       const hashedPassword = await hashPassword(password);
-      const user = await storage.createUser({
-        email,
-        password: hashedPassword,
-        name,
-        isSuperAdmin: false,
-      });
-      
-      let tenantId: number | undefined;
-      let role: string = "manager";
-      
-      if (tenantName) {
-        const slug = tenantName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-        const tenant = await storage.createTenant({
-          name: tenantName,
-          slug,
-          plan: "free",
-          status: "active",
-        });
-        tenantId = tenant.id;
-        
-        await storage.createTenantUser({
-          tenantId: tenant.id,
-          userId: user.id,
-          role: "manager",
-        });
-      }
-      
+      const slug = tenantName
+        ? tenantName
+            .toLowerCase()
+            .replace(/\s+/g, "-")
+            .replace(/[^a-z0-9-]/g, "")
+        : undefined;
+      const registered = await storage.registerSelfService(
+        {
+          email,
+          password: hashedPassword,
+          name,
+          isSuperAdmin: false,
+          mustChangePassword: false,
+        },
+        tenantName
+          ? {
+              name: tenantName,
+              slug: slug!,
+              plan: "free",
+              status: "active",
+            }
+          : undefined,
+        {
+          ...getAuditContext(req),
+          action: "auth.register",
+          targetType: "user",
+          outcome: "success",
+        },
+      );
+      registrationCreated = true;
+      const user = registered.user;
+      const tenantId = registered.tenant?.id;
+      const role = "manager";
+
+      await regenerateSession(req);
+
       req.session.user = {
         id: user.id,
         email: user.email,
@@ -326,18 +678,29 @@ export async function registerRoutes(
         name: user.name,
         isSuperAdmin: false,
         mustChangePassword: false,
+        lastPasswordChange: user.lastPasswordChange,
         tenantId,
         role: role as any,
       };
-      
-      res.status(201).json({ 
+
+      await saveSession(req);
+
+      res.status(201).json({
         user: req.session.user,
-        message: "Registro realizado com sucesso" 
+        message: "Registro realizado com sucesso",
       });
     } catch (error) {
       if (error instanceof ZodError) {
         const zodError = handleZodError(error);
         return sendError(res, 400, zodError.message, "VALIDATION_ERROR", zodError.details);
+      }
+      if (registrationCreated) {
+        return sendError(
+          res,
+          503,
+          "Conta criada, mas a sessão não pôde ser iniciada. Faça login para continuar.",
+          "ACCOUNT_CREATED_SESSION_UNAVAILABLE",
+        );
       }
       return sendError(res, 400, "Dados de registro inválidos", "REGISTER_ERROR");
     }
@@ -348,46 +711,65 @@ export async function registerRoutes(
    * @route POST /api/v1/auth/change-password
    * @access auth
    * @param {string} currentPassword - User's current password
-   * @param {string} newPassword - New password (minimum 6 characters)
+   * @param {string} newPassword - New password (minimum 12 characters)
    * @param {string} confirmPassword - New password confirmation
    * @returns {object} Success message
    */
-  v1Router.post("/auth/change-password", requireAuth, passwordResetLimiter, async (req: Request, res: Response) => {
-    try {
-      const { currentPassword, newPassword, confirmPassword } = req.body;
-      
-      if (!currentPassword || !newPassword || !confirmPassword) {
-        return res.status(400).json({ error: "Todos os campos são obrigatórios" });
+  v1Router.post(
+    "/auth/change-password",
+    requireAuth,
+    passwordResetLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const { currentPassword, newPassword, confirmPassword } = req.body;
+
+        if (!currentPassword || !newPassword || !confirmPassword) {
+          return res.status(400).json({ error: "Todos os campos são obrigatórios" });
+        }
+
+        if (newPassword !== confirmPassword) {
+          return res.status(400).json({ error: "As senhas não conferem" });
+        }
+
+        if (newPassword.length < 12) {
+          return res.status(400).json({ error: "A nova senha deve ter pelo menos 12 caracteres" });
+        }
+
+        const user = await storage.getUser(req.session.user!.id);
+        if (!user) {
+          return res.status(404).json({ error: "Usuário não encontrado" });
+        }
+
+        const isValid = await comparePassword(currentPassword, user.password);
+        if (!isValid) {
+          return res.status(401).json({ error: "Senha atual incorreta" });
+        }
+
+        const hashedPassword = await hashPassword(newPassword);
+        const updatedUser = await storage.updateUserPasswordAudited(
+          user.id,
+          hashedPassword,
+          false,
+          {
+            ...getAuditContext(req),
+            tenantId: req.session.user?.tenantId,
+            action: "auth.password_changed",
+            targetType: "user",
+            outcome: "success",
+            metadata: { resetType: "self_service" },
+          },
+        );
+
+        req.session.user!.mustChangePassword = false;
+        req.session.user!.lastPasswordChange = updatedUser?.lastPasswordChange ?? null;
+        await saveSession(req);
+
+        res.json({ message: "Senha alterada com sucesso" });
+      } catch {
+        res.status(400).json({ error: "Erro ao alterar senha" });
       }
-      
-      if (newPassword !== confirmPassword) {
-        return res.status(400).json({ error: "As senhas não conferem" });
-      }
-      
-      if (newPassword.length < 6) {
-        return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres" });
-      }
-      
-      const user = await storage.getUser(req.session.user!.id);
-      if (!user) {
-        return res.status(404).json({ error: "Usuário não encontrado" });
-      }
-      
-      const isValid = await comparePassword(currentPassword, user.password);
-      if (!isValid) {
-        return res.status(401).json({ error: "Senha atual incorreta" });
-      }
-      
-      const hashedPassword = await hashPassword(newPassword);
-      await storage.updateUserPassword(user.id, hashedPassword);
-      
-      req.session.user!.mustChangePassword = false;
-      
-      res.json({ message: "Senha alterada com sucesso" });
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao alterar senha" });
-    }
-  });
+    },
+  );
 
   /**
    * @description Switches the current user's active tenant context
@@ -396,52 +778,62 @@ export async function registerRoutes(
    * @param {number} tenantId - ID of the tenant to switch to
    * @returns {object} Updated user session with new tenant context
    */
-  v1Router.post("/auth/switch-tenant/:tenantId", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const tenantId = parseInt(req.params.tenantId);
-      if (isNaN(tenantId)) {
-        return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
-      }
-      const userId = req.session.user!.id;
-
-      if (req.session.user!.isSuperAdmin) {
-        const tenant = await storage.getTenant(tenantId);
-        if (!tenant) {
-          return res.status(404).json({ error: "Tenant não encontrado" });
+  v1Router.post(
+    "/auth/switch-tenant/:tenantId",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = parseInt(req.params.tenantId);
+        if (isNaN(tenantId)) {
+          return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
         }
+        const userId = req.session.user!.id;
+
+        if (req.session.user!.isSuperAdmin) {
+          const tenant = await storage.getTenant(tenantId);
+          if (!tenant) {
+            return res.status(404).json({ error: "Tenant não encontrado" });
+          }
+          if (tenant.status !== "active") {
+            return res.status(403).json({ error: "Tenant inativo" });
+          }
+          req.session.user!.tenantId = tenantId;
+          req.session.user!.role = "manager";
+          await saveSession(req);
+          return res.json({ user: req.session.user });
+        }
+
+        const tenantUser = await storage.getTenantUser(tenantId, userId);
+        const tenant = await storage.getTenant(tenantId);
+        if (!tenant || tenant.status !== "active" || !tenantUser?.isActive) {
+          return res.status(403).json({ error: "Acesso negado a este tenant" });
+        }
+
         req.session.user!.tenantId = tenantId;
-        req.session.user!.role = "manager";
-        return res.json({ user: req.session.user });
+        req.session.user!.role = tenantUser.role as any;
+        await saveSession(req);
+
+        res.json({ user: req.session.user });
+      } catch {
+        res.status(500).json({ error: "Erro ao trocar tenant" });
       }
-      
-      const tenantUser = await storage.getTenantUser(tenantId, userId);
-      if (!tenantUser) {
-        return res.status(403).json({ error: "Acesso negado a este tenant" });
-      }
-      
-      req.session.user!.tenantId = tenantId;
-      req.session.user!.role = tenantUser.role as any;
-      
-      res.json({ user: req.session.user });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao trocar tenant" });
-    }
-  });
+    },
+  );
 
   // ==================== PUBLIC TENANT ROUTES ====================
   v1Router.get("/tenants/by-slug/:slug", async (req: Request, res: Response) => {
     try {
       const { slug } = req.params;
       const tenant = await storage.getTenantBySlug(slug);
-      
+
       if (!tenant) {
         return res.status(404).json({ error: "Loja não encontrada" });
       }
-      
+
       if (tenant.status !== "active") {
         return res.status(403).json({ error: "Esta loja não está ativa" });
       }
-      
+
       res.json({
         id: tenant.id,
         name: tenant.name,
@@ -451,7 +843,7 @@ export async function registerRoutes(
         secondaryColor: tenant.secondaryColor,
         loginMessage: tenant.loginMessage,
       });
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Erro ao buscar loja" });
     }
   });
@@ -461,7 +853,7 @@ export async function registerRoutes(
     try {
       const tenants = await storage.getTenants();
       res.json(tenants);
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Erro ao buscar tenants" });
     }
   });
@@ -471,100 +863,120 @@ export async function registerRoutes(
       const validatedData = insertTenantSchema.parse(req.body);
       const tenant = await storage.createTenant(validatedData);
       res.status(201).json(tenant);
-    } catch (error) {
+    } catch {
       res.status(400).json({ error: "Dados de tenant inválidos" });
     }
   });
 
-  v1Router.put("/admin/tenants/:tenantId", requireSuperAdmin, async (req: Request, res: Response) => {
-    try {
-      const tenantId = parseInt(req.params.tenantId);
-      if (isNaN(tenantId)) {
-        return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
-      }
-      const { name, slug, plan, status, logo, primaryColor, secondaryColor, loginMessage } = req.body;
-      
-      const updateData: Record<string, string | null | undefined> = {};
-      if (name !== undefined) updateData.name = name;
-      if (slug !== undefined) updateData.slug = slug;
-      if (plan !== undefined) updateData.plan = plan;
-      if (status !== undefined) updateData.status = status;
-      if (logo !== undefined) updateData.logo = logo || null;
-      if (primaryColor !== undefined) updateData.primaryColor = primaryColor;
-      if (secondaryColor !== undefined) updateData.secondaryColor = secondaryColor;
-      if (loginMessage !== undefined) updateData.loginMessage = loginMessage || null;
-      
-      const updated = await storage.updateTenant(tenantId, updateData as any);
-      
-      if (!updated) {
-        return res.status(404).json({ error: "Tenant não encontrado" });
-      }
-      
-      res.json(updated);
-    } catch (error) {
-      logger.error("Tenant update failed", {
-        requestId: (req as any).requestId,
-        endpoint: "/api/admin/tenants/:tenantId",
-        userId: req.session.user?.id,
-        tenantId: parseInt(req.params.tenantId),
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      res.status(400).json({ error: "Erro ao atualizar tenant" });
-    }
-  });
+  v1Router.put(
+    "/admin/tenants/:tenantId",
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = parseInt(req.params.tenantId);
+        if (isNaN(tenantId)) {
+          return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
+        }
+        const { name, slug, plan, status, logo, primaryColor, secondaryColor, loginMessage } =
+          req.body;
 
-  v1Router.get("/admin/tenants/:tenantId/users", requireSuperAdmin, async (req: Request, res: Response) => {
-    try {
-      const tenantId = parseInt(req.params.tenantId);
-      if (isNaN(tenantId)) {
-        return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
-      }
-      const tenantUsers = await storage.getTenantUsers(tenantId);
-      res.json(tenantUsers);
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao buscar usuários do tenant" });
-    }
-  });
+        const updateData: Record<string, string | null | undefined> = {};
+        if (name !== undefined) updateData.name = name;
+        if (slug !== undefined) updateData.slug = slug;
+        if (plan !== undefined) updateData.plan = plan;
+        if (status !== undefined) updateData.status = status;
+        if (logo !== undefined) updateData.logo = logo || null;
+        if (primaryColor !== undefined) updateData.primaryColor = primaryColor;
+        if (secondaryColor !== undefined) updateData.secondaryColor = secondaryColor;
+        if (loginMessage !== undefined) updateData.loginMessage = loginMessage || null;
 
-  v1Router.delete("/admin/tenants/:tenantId", requireSuperAdmin, async (req: Request, res: Response) => {
-    try {
-      const tenantId = parseInt(req.params.tenantId);
-      if (isNaN(tenantId)) {
-        return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
+        const updated = await storage.updateTenant(tenantId, updateData as any);
+
+        if (!updated) {
+          return res.status(404).json({ error: "Tenant não encontrado" });
+        }
+
+        res.json(updated);
+      } catch (error) {
+        logger.error("Tenant update failed", {
+          requestId: (req as any).requestId,
+          endpoint: "/api/v1/admin/tenants/:tenantId",
+          userId: req.session.user?.id,
+          tenantId: parseInt(req.params.tenantId),
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        res.status(400).json({ error: "Erro ao atualizar tenant" });
       }
-      const deleted = await storage.deleteTenant(tenantId);
-      if (!deleted) {
-        return res.status(404).json({ error: "Tenant não encontrado" });
+    },
+  );
+
+  v1Router.get(
+    "/admin/tenants/:tenantId/users",
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = parseInt(req.params.tenantId);
+        if (isNaN(tenantId)) {
+          return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
+        }
+        const tenantUsers = await storage.getTenantUsers(tenantId);
+        res.json(tenantUsers);
+      } catch {
+        res.status(500).json({ error: "Erro ao buscar usuários do tenant" });
       }
-      res.json({ message: "Tenant excluído com sucesso" });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao excluir tenant" });
-    }
-  });
+    },
+  );
+
+  v1Router.delete(
+    "/admin/tenants/:tenantId",
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = parseInt(req.params.tenantId);
+        if (isNaN(tenantId)) {
+          return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
+        }
+        const deleted = await storage.deleteTenant(tenantId, {
+          ...getAuditContext(req),
+          action: "entity.deleted",
+          targetType: "tenants",
+          outcome: "success",
+        });
+        if (!deleted) {
+          return res.status(404).json({ error: "Tenant não encontrado" });
+        }
+        res.json({ message: "Tenant excluído com sucesso" });
+      } catch {
+        res.status(500).json({ error: "Erro ao excluir tenant" });
+      }
+    },
+  );
 
   // ==================== ADMIN USER MANAGEMENT ====================
   v1Router.get("/admin/users", requireSuperAdmin, async (req: Request, res: Response) => {
     try {
       const users = await storage.getUsers();
       const tenants = await storage.getTenants();
-      
-      const usersWithTenants = await Promise.all(users.map(async ({ password, ...user }) => {
-        const userTenants = await storage.getUserTenants(user.id);
-        return {
-          ...user,
-          tenantUsers: userTenants.map(tu => ({
-            ...tu,
-            tenant: tenants.find(t => t.id === tu.tenantId)
-          }))
-        };
-      }));
-      
+
+      const usersWithTenants = await Promise.all(
+        users.map(async ({ password: _password, ...user }) => {
+          const userTenants = await storage.getUserTenants(user.id);
+          return {
+            ...user,
+            tenantUsers: userTenants.map((tu) => ({
+              ...tu,
+              tenant: tenants.find((t) => t.id === tu.tenantId),
+            })),
+          };
+        }),
+      );
+
       res.json(usersWithTenants);
     } catch (error) {
       logger.error("Failed to fetch users", {
         requestId: (req as any).requestId,
-        endpoint: "/api/admin/users",
+        endpoint: "/api/v1/admin/users",
         userId: req.session.user?.id,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
@@ -575,8 +987,9 @@ export async function registerRoutes(
 
   v1Router.post("/admin/users", requireSuperAdmin, async (req: Request, res: Response) => {
     try {
-      const { email, password, name, cpf, sellerCode, phone, isSuperAdmin, tenantId, role } = req.body;
-      
+      const { email, password, name, cpf, sellerCode, phone, isSuperAdmin, tenantId, role } =
+        req.body;
+
       // Check for duplicate CPF
       if (cpf) {
         const existingByCpf = await storage.getUserByCpf(cpf);
@@ -584,50 +997,70 @@ export async function registerRoutes(
           return sendError(res, 400, "CPF já está em uso", "DUPLICATE_CPF");
         }
       }
-      
+
       // Check for duplicate email only if provided
-      if (email) {
-        const existingUser = await storage.getUserByEmail(email);
-        if (existingUser) {
-          return sendError(res, 400, "Email já está em uso", "DUPLICATE_EMAIL");
-        }
+      if (!email) {
+        return res.status(400).json({ error: "Email é obrigatório" });
       }
-      
-      const finalPassword = password || sellerCode;
-      if (!finalPassword) {
-        return res.status(400).json({ error: "Senha ou código vendedor é obrigatório" });
+
+      const normalizedEmail = normalizeEmail(email);
+
+      const existingUser = await storage.getUserByEmail(normalizedEmail);
+      if (existingUser) {
+        return sendError(res, 400, "Email já está em uso", "DUPLICATE_EMAIL");
       }
-      
-      const hashedPassword = await hashPassword(finalPassword);
-      const user = await storage.createUser({
-        email: email || null,
-        cpf: cpf || null,
-        sellerCode: sellerCode || null,
-        phone: phone || null,
-        password: hashedPassword,
-        name,
-        isSuperAdmin: isSuperAdmin || false,
-        mustChangePassword: !isSuperAdmin,
-      });
-      
+
+      if (!password || password.length < 12) {
+        return res
+          .status(400)
+          .json({ error: "Senha é obrigatória e deve ter pelo menos 12 caracteres" });
+      }
+
+      let parsedTenantId: number | undefined;
       if (tenantId && !isSuperAdmin) {
-        const parsedTenantId = parseInt(tenantId);
+        parsedTenantId = parseInt(tenantId);
         if (isNaN(parsedTenantId)) {
           return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
         }
-        await storage.createTenantUser({
-          tenantId: parsedTenantId,
-          userId: user.id,
-          role: role || "seller",
-        });
+        const tenant = await storage.getTenant(parsedTenantId);
+        if (!tenant || tenant.status !== "active") {
+          return res.status(400).json({ error: "Tenant inválido ou inativo" });
+        }
       }
-      
+
+      const hashedPassword = await hashPassword(password);
+      const created = await storage.createUserWithMembership(
+        {
+          email: normalizedEmail,
+          cpf: cpf || null,
+          sellerCode: sellerCode || null,
+          phone: phone || null,
+          password: hashedPassword,
+          name,
+          isSuperAdmin: isSuperAdmin || false,
+          mustChangePassword: !isSuperAdmin,
+        },
+        parsedTenantId,
+        parsedTenantId ? normalizeAssignableRole(role) : undefined,
+        {
+          ...getAuditContext(req),
+          tenantId: parsedTenantId,
+          action: parsedTenantId ? "membership.created" : "auth.register",
+          targetType: parsedTenantId ? "membership" : "user",
+          outcome: "success",
+          metadata: parsedTenantId
+            ? { role: normalizeAssignableRole(role) }
+            : { tenantCreated: false },
+        },
+      );
+      const user = created.user;
+
       const { password: _, ...userWithoutPassword } = user;
       res.status(201).json(userWithoutPassword);
     } catch (error) {
       logger.error("User creation failed", {
         requestId: (req as any).requestId,
-        endpoint: "/api/admin/users",
+        endpoint: "/api/v1/admin/users",
         userId: req.session.user?.id,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
@@ -640,373 +1073,651 @@ export async function registerRoutes(
     try {
       const { userId } = req.params;
       const { name, email, password, isSuperAdmin } = req.body;
-      
-      const updateData: Record<string, any> = {};
-      if (name !== undefined) updateData.name = name;
-      if (email !== undefined) updateData.email = email;
-      if (password) updateData.password = await hashPassword(password);
-      if (isSuperAdmin !== undefined) updateData.isSuperAdmin = isSuperAdmin;
-      
-      const updated = await storage.updateUser(userId, updateData);
+
+      let hashedPassword: string | undefined;
+      if (password) {
+        if (password.length < 12) {
+          return res.status(400).json({ error: "Senha deve ter pelo menos 12 caracteres" });
+        }
+        hashedPassword = await hashPassword(password);
+      }
+      const hasChanges =
+        name !== undefined ||
+        email !== undefined ||
+        isSuperAdmin !== undefined ||
+        hashedPassword !== undefined;
+      const updated = hasChanges
+        ? await storage.updateUserBySuperAdmin(
+            userId,
+            {
+              name,
+              email: email === undefined ? undefined : normalizeEmail(email),
+              isSuperAdmin,
+              hashedPassword,
+            },
+            getAuditContext(req),
+          )
+        : await storage.getUser(userId);
       if (!updated) {
         return res.status(404).json({ error: "Usuário não encontrado" });
       }
-      
+
       const { password: _, ...userWithoutPassword } = updated;
       res.json(userWithoutPassword);
-    } catch (error) {
+    } catch {
       res.status(400).json({ error: "Erro ao atualizar usuário" });
     }
   });
 
-  v1Router.delete("/admin/users/:userId", requireSuperAdmin, async (req: Request, res: Response) => {
+  v1Router.delete(
+    "/admin/users/:userId",
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const { userId } = req.params;
+
+        if (req.session.user?.id === userId) {
+          return res.status(400).json({ error: "Você não pode excluir seu próprio usuário" });
+        }
+
+        const deleted = await storage.deleteUser(userId, {
+          ...getAuditContext(req),
+          action: "entity.deleted",
+          targetType: "users",
+          outcome: "success",
+        });
+        if (!deleted) {
+          return res.status(404).json({ error: "Usuário não encontrado" });
+        }
+        res.json({ message: "Usuário excluído com sucesso" });
+      } catch {
+        res.status(500).json({ error: "Erro ao excluir usuário" });
+      }
+    },
+  );
+
+  v1Router.post(
+    "/admin/users/:userId/tenants",
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const { userId } = req.params;
+        const { tenantId, role } = req.body;
+
+        const parsedTenantId = parseInt(tenantId);
+        if (isNaN(parsedTenantId)) {
+          return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
+        }
+
+        const [user, tenant] = await Promise.all([
+          storage.getUser(userId),
+          storage.getTenant(parsedTenantId),
+        ]);
+        if (!user) {
+          return res.status(404).json({ error: "Usuário não encontrado" });
+        }
+        if (!tenant || tenant.status !== "active") {
+          return res.status(400).json({ error: "Tenant inválido ou inativo" });
+        }
+
+        const existing = await storage.getTenantUser(parsedTenantId, userId);
+        const tenantUser = await storage.upsertTenantUserAudited(
+          parsedTenantId,
+          userId,
+          normalizeAssignableRole(role),
+          {
+            ...getAuditContext(req),
+            tenantId: parsedTenantId,
+            action: existing ? "membership.role_changed" : "membership.created",
+            targetType: "membership",
+            outcome: "success",
+          },
+        );
+        if (existing) {
+          return res.json(tenantUser);
+        }
+        res.status(201).json(tenantUser);
+      } catch {
+        res.status(400).json({ error: "Erro ao vincular usuário ao tenant" });
+      }
+    },
+  );
+
+  v1Router.delete(
+    "/admin/users/:userId/tenants/:tenantId",
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const { userId, tenantId } = req.params;
+        const parsedTenantId = parseInt(tenantId);
+        if (isNaN(parsedTenantId)) {
+          return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
+        }
+        const deleted = await storage.deleteTenantUserAudited(parsedTenantId, userId, {
+          ...getAuditContext(req),
+          tenantId: parsedTenantId,
+          action: "membership.removed",
+          targetType: "membership",
+          outcome: "success",
+        });
+        if (!deleted) {
+          return res.status(404).json({ error: "Vínculo não encontrado" });
+        }
+        res.json({ message: "Vínculo removido com sucesso" });
+      } catch {
+        res.status(500).json({ error: "Erro ao remover vínculo" });
+      }
+    },
+  );
+
+  v1Router.post(
+    "/admin/users/:userId/reset-password",
+    requireSuperAdmin,
+    passwordResetLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const { userId } = req.params;
+        const user = await storage.getUser(userId);
+        if (!user) {
+          return res.status(404).json({ error: "Usuário não encontrado" });
+        }
+
+        const newPassword = requireStrongTemporaryPassword(req.body?.newPassword);
+        const hashedPassword = await hashPassword(newPassword);
+        await storage.updateUserPasswordAudited(userId, hashedPassword, true, {
+          ...getAuditContext(req),
+          action: "auth.password_changed",
+          targetType: "user",
+          outcome: "success",
+          metadata: { resetType: "super_admin" },
+        });
+
+        res.json({
+          message:
+            "Senha resetada com sucesso. Informe a senha temporária ao usuário por canal seguro.",
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("Senha temporária")) {
+          return res.status(400).json({ error: error.message });
+        }
+        res.status(500).json({ error: "Erro ao resetar senha" });
+      }
+    },
+  );
+
+  const auditActionSchema = z.enum([
+    "auth.login",
+    "auth.register",
+    "auth.password_changed",
+    "identity.updated",
+    "global_role.changed",
+    "membership.created",
+    "membership.role_changed",
+    "membership.removed",
+    "data.exported",
+    "entity.deleted",
+    "order.cancelled",
+    "cashback.credited",
+    "cashback.debited",
+    "cashback.reversed",
+    "cashback.expired",
+    "cashback.reconciled",
+  ] satisfies [AuditAction, ...AuditAction[]]);
+  const auditListQuerySchema = z
+    .object({
+      page: z.coerce.number().int().positive().default(1),
+      limit: z.coerce.number().int().positive().max(100).default(25),
+      action: auditActionSchema.optional(),
+      outcome: z.enum(["success", "failure"]).optional(),
+    })
+    .strict();
+
+  v1Router.get("/admin/audit-events", requireSuperAdmin, async (req: Request, res: Response) => {
     try {
-      const { userId } = req.params;
-      
-      if (req.session.user?.id === userId) {
-        return res.status(400).json({ error: "Você não pode excluir seu próprio usuário" });
-      }
-      
-      const deleted = await storage.deleteUser(userId);
-      if (!deleted) {
-        return res.status(404).json({ error: "Usuário não encontrado" });
-      }
-      res.json({ message: "Usuário excluído com sucesso" });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao excluir usuário" });
-    }
-  });
-
-  v1Router.post("/admin/users/:userId/tenants", requireSuperAdmin, async (req: Request, res: Response) => {
-    try {
-      const { userId } = req.params;
-      const { tenantId, role } = req.body;
-
-      const parsedTenantId = parseInt(tenantId);
-      if (isNaN(parsedTenantId)) {
-        return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
-      }
-
-      const existing = await storage.getTenantUser(parsedTenantId, userId);
-      if (existing) {
-        const updated = await storage.updateTenantUserRole(parsedTenantId, userId, role || "seller");
-        return res.json(updated);
-      }
-
-      const tenantUser = await storage.createTenantUser({
-        tenantId: parsedTenantId,
-        userId,
-        role: role || "seller",
+      const query = auditListQuerySchema.parse(req.query);
+      const result = await storage.getAuditEvents({
+        global: true,
+        limit: query.limit,
+        offset: (query.page - 1) * query.limit,
+        action: query.action,
+        outcome: query.outcome,
       });
-      res.status(201).json(tenantUser);
+      res.json({
+        data: result.data,
+        pagination: {
+          page: query.page,
+          limit: query.limit,
+          total: result.total,
+          totalPages: Math.ceil(result.total / query.limit),
+        },
+      });
     } catch (error) {
-      res.status(400).json({ error: "Erro ao vincular usuário ao tenant" });
+      if (error instanceof ZodError) {
+        const parsed = handleZodError(error);
+        return sendError(res, 400, parsed.message, "VALIDATION_ERROR", parsed.details);
+      }
+      res.status(500).json({ error: "Erro ao buscar eventos de auditoria" });
     }
   });
 
-  v1Router.delete("/admin/users/:userId/tenants/:tenantId", requireSuperAdmin, async (req: Request, res: Response) => {
-    try {
-      const { userId, tenantId } = req.params;
-      const parsedTenantId = parseInt(tenantId);
-      if (isNaN(parsedTenantId)) {
-        return sendError(res, 400, "ID de tenant inválido", "INVALID_ID");
-      }
-      const deleted = await storage.deleteTenantUser(parsedTenantId, userId);
-      if (!deleted) {
-        return res.status(404).json({ error: "Vínculo não encontrado" });
-      }
-      res.json({ message: "Vínculo removido com sucesso" });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao remover vínculo" });
-    }
-  });
+  // Every tenant-scoped route below revalidates the selected tenant and the
+  // current membership. This makes tenant or membership revocation immediate,
+  // including for read-only endpoints that only require authentication.
+  v1Router.use(
+    [
+      "/tenant",
+      "/team",
+      "/dashboard",
+      "/customers",
+      "/products",
+      "/orders",
+      "/cashback-rules",
+      "/cashback",
+      "/campaigns",
+      "/automations",
+      "/seller-tasks",
+      "/seller-goals",
+      "/customer-interactions",
+      "/seller-ranking",
+      "/reports",
+      "/import",
+      "/export",
+      "/notifications",
+      "/audit-events",
+    ],
+    requireTenantContext,
+  );
 
-  v1Router.post("/admin/users/:userId/reset-password", requireSuperAdmin, passwordResetLimiter, async (req: Request, res: Response) => {
-    try {
-      const { userId } = req.params;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ error: "Usuário não encontrado" });
+  v1Router.get(
+    "/audit-events",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const query = auditListQuerySchema.parse(req.query);
+        const result = await storage.getAuditEvents({
+          tenantId: getTenantId(req),
+          limit: query.limit,
+          offset: (query.page - 1) * query.limit,
+          action: query.action,
+          outcome: query.outcome,
+        });
+        res.json({
+          data: result.data,
+          pagination: {
+            page: query.page,
+            limit: query.limit,
+            total: result.total,
+            totalPages: Math.ceil(result.total / query.limit),
+          },
+        });
+      } catch (error) {
+        if (error instanceof ZodError) {
+          const parsed = handleZodError(error);
+          return sendError(res, 400, parsed.message, "VALIDATION_ERROR", parsed.details);
+        }
+        res.status(500).json({ error: "Erro ao buscar eventos de auditoria" });
       }
-
-      // Generate secure random password (16 characters hexadecimal)
-      const newPassword = user.sellerCode || crypto.randomBytes(8).toString('hex');
-      const hashedPassword = await hashPassword(newPassword);
-      await storage.updateUserPassword(userId, hashedPassword);
-
-      res.json({ message: "Senha resetada com sucesso", temporaryPassword: newPassword });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao resetar senha" });
-    }
-  });
+    },
+  );
 
   // ==================== TENANT SETTINGS (FOR MANAGERS) ====================
-  v1Router.get("/tenant/settings", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      
-      const tenant = await storage.getTenant(tenantId);
-      if (!tenant) {
-        return res.status(404).json({ error: "Tenant não encontrado" });
-      }
-      
-      res.json({
-        id: tenant.id,
-        name: tenant.name,
-        slug: tenant.slug,
-        logo: tenant.logo,
-        primaryColor: tenant.primaryColor,
-        secondaryColor: tenant.secondaryColor,
-        loginMessage: tenant.loginMessage,
-      });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao buscar configurações" });
-    }
-  });
+  v1Router.get(
+    "/tenant/settings",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
 
-  v1Router.put("/tenant/settings", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      
-      const { name, logo, primaryColor, secondaryColor, loginMessage } = req.body;
-      
-      const updateData: Record<string, any> = {};
-      
-      if (name !== undefined && typeof name === 'string' && name.trim().length > 0) {
-        updateData.name = name.trim();
-      }
-      
-      if (logo !== undefined) {
-        if (logo === null) {
-          updateData.logo = null;
-        } else if (typeof logo === 'string' && logo.trim().length > 0) {
-          updateData.logo = logo.trim();
+        const tenant = await storage.getTenant(tenantId);
+        if (!tenant) {
+          return res.status(404).json({ error: "Tenant não encontrado" });
         }
+
+        res.json({
+          id: tenant.id,
+          name: tenant.name,
+          slug: tenant.slug,
+          logo: tenant.logo,
+          primaryColor: tenant.primaryColor,
+          secondaryColor: tenant.secondaryColor,
+          loginMessage: tenant.loginMessage,
+        });
+      } catch {
+        res.status(500).json({ error: "Erro ao buscar configurações" });
       }
-      
-      if (primaryColor !== undefined) {
-        if (primaryColor === null) {
-          updateData.primaryColor = null;
-        } else if (typeof primaryColor === 'string' && primaryColor.trim().length > 0) {
-          updateData.primaryColor = primaryColor.trim();
+    },
+  );
+
+  v1Router.put(
+    "/tenant/settings",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
         }
-      }
-      
-      if (secondaryColor !== undefined) {
-        if (secondaryColor === null) {
-          updateData.secondaryColor = null;
-        } else if (typeof secondaryColor === 'string' && secondaryColor.trim().length > 0) {
-          updateData.secondaryColor = secondaryColor.trim();
+
+        const { name, logo, primaryColor, secondaryColor, loginMessage } = req.body;
+
+        const updateData: Record<string, any> = {};
+
+        if (name !== undefined && typeof name === "string" && name.trim().length > 0) {
+          updateData.name = name.trim();
         }
-      }
-      
-      if (loginMessage !== undefined) {
-        if (loginMessage === null) {
-          updateData.loginMessage = null;
-        } else if (typeof loginMessage === 'string' && loginMessage.trim().length > 0) {
-          updateData.loginMessage = loginMessage.trim();
+
+        if (logo !== undefined) {
+          if (logo === null) {
+            updateData.logo = null;
+          } else if (typeof logo === "string" && logo.trim().length > 0) {
+            updateData.logo = logo.trim();
+          }
         }
+
+        if (primaryColor !== undefined) {
+          if (primaryColor === null) {
+            updateData.primaryColor = null;
+          } else if (typeof primaryColor === "string" && primaryColor.trim().length > 0) {
+            updateData.primaryColor = primaryColor.trim();
+          }
+        }
+
+        if (secondaryColor !== undefined) {
+          if (secondaryColor === null) {
+            updateData.secondaryColor = null;
+          } else if (typeof secondaryColor === "string" && secondaryColor.trim().length > 0) {
+            updateData.secondaryColor = secondaryColor.trim();
+          }
+        }
+
+        if (loginMessage !== undefined) {
+          if (loginMessage === null) {
+            updateData.loginMessage = null;
+          } else if (typeof loginMessage === "string" && loginMessage.trim().length > 0) {
+            updateData.loginMessage = loginMessage.trim();
+          }
+        }
+
+        if (Object.keys(updateData).length === 0) {
+          return res.status(400).json({ error: "Nenhum campo para atualizar" });
+        }
+
+        const updated = await storage.updateTenant(tenantId, updateData);
+
+        if (!updated) {
+          return res.status(404).json({ error: "Tenant não encontrado" });
+        }
+
+        res.json({
+          id: updated.id,
+          name: updated.name,
+          slug: updated.slug,
+          logo: updated.logo,
+          primaryColor: updated.primaryColor,
+          secondaryColor: updated.secondaryColor,
+          loginMessage: updated.loginMessage,
+        });
+      } catch {
+        res.status(500).json({ error: "Erro ao atualizar configurações" });
       }
-      
-      if (Object.keys(updateData).length === 0) {
-        return res.status(400).json({ error: "Nenhum campo para atualizar" });
-      }
-      
-      const updated = await storage.updateTenant(tenantId, updateData);
-      
-      if (!updated) {
-        return res.status(404).json({ error: "Tenant não encontrado" });
-      }
-      
-      res.json({
-        id: updated.id,
-        name: updated.name,
-        slug: updated.slug,
-        logo: updated.logo,
-        primaryColor: updated.primaryColor,
-        secondaryColor: updated.secondaryColor,
-        loginMessage: updated.loginMessage,
-      });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao atualizar configurações" });
-    }
-  });
+    },
+  );
 
   // ==================== TENANT USER MANAGEMENT (FOR MANAGERS) ====================
-  v1Router.get("/team", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      
-      const tenantUsers = await storage.getTenantUsers(tenantId);
-      const usersWithDetails = await Promise.all(tenantUsers.map(async (tu) => {
-        const user = await storage.getUser(tu.userId);
-        if (!user) return null;
-        const { password, ...userWithoutPassword } = user;
-        return { ...tu, user: userWithoutPassword };
-      }));
-      
-      res.json(usersWithDetails.filter(Boolean));
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao buscar equipe" });
-    }
-  });
-
-  v1Router.post("/team", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      
-      const { name, cpf, sellerCode, phone, email, role } = req.body;
-      
-      if (cpf) {
-        const existingByCpf = await storage.getUserByCpf(cpf);
-        if (existingByCpf) {
-          return sendError(res, 400, "CPF já está em uso", "DUPLICATE_CPF");
+  v1Router.get(
+    "/team",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
         }
+
+        const tenantUsers = await storage.getTenantUsers(tenantId);
+        const usersWithDetails = await Promise.all(
+          tenantUsers.map(async (tu) => {
+            const user = await storage.getUser(tu.userId);
+            if (!user) return null;
+            const { password: _password, ...userWithoutPassword } = user;
+            return { ...tu, user: userWithoutPassword };
+          }),
+        );
+
+        res.json(usersWithDetails.filter(Boolean));
+      } catch {
+        res.status(500).json({ error: "Erro ao buscar equipe" });
       }
-      
-      if (email) {
-        const existingUser = await storage.getUserByEmail(email);
+    },
+  );
+
+  v1Router.post(
+    "/team",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+
+        const { name, cpf, sellerCode, phone, email, role } = req.body;
+
+        if (cpf) {
+          const existingByCpf = await storage.getUserByCpf(cpf);
+          if (existingByCpf) {
+            return sendError(res, 400, "CPF já está em uso", "DUPLICATE_CPF");
+          }
+        }
+
+        if (!email) {
+          return res.status(400).json({ error: "Email é obrigatório" });
+        }
+
+        const normalizedEmail = normalizeEmail(email);
+
+        const existingUser = await storage.getUserByEmail(normalizedEmail);
         if (existingUser) {
           return sendError(res, 400, "Email já está em uso", "DUPLICATE_EMAIL");
         }
-      }
 
-      // Generate secure random password if no sellerCode provided (16 characters hexadecimal)
-      const finalPassword = sellerCode || crypto.randomBytes(8).toString('hex');
-      const hashedPassword = await hashPassword(finalPassword);
-      
-      const user = await storage.createUser({
-        email: email || null,
-        cpf: cpf || null,
-        sellerCode: sellerCode || null,
-        phone: phone || null,
-        password: hashedPassword,
-        name,
-        isSuperAdmin: false,
-        mustChangePassword: true,
-      });
-      
-      await storage.createTenantUser({
-        tenantId,
-        userId: user.id,
-        role: role || "seller",
-      });
-      
-      const { password, ...userWithoutPassword } = user;
-      res.status(201).json(userWithoutPassword);
-    } catch (error) {
-      logger.error("Team member creation failed", {
-        requestId: (req as any).requestId,
-        endpoint: "/api/team",
-        userId: req.session.user?.id,
-        tenantId: getTenantId(req),
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      res.status(400).json({ error: "Erro ao criar membro da equipe" });
-    }
-  });
+        const initialPassword = requireStrongTemporaryPassword(req.body?.password);
+        const hashedPassword = await hashPassword(initialPassword);
 
-  v1Router.put("/team/:userId", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      
-      const { userId } = req.params;
-      const { name, phone, role } = req.body;
-      
-      const tenantUser = await storage.getTenantUser(tenantId, userId);
-      if (!tenantUser) {
-        return res.status(404).json({ error: "Usuário não encontrado nesta empresa" });
-      }
-      
-      const updateData: Record<string, any> = {};
-      if (name !== undefined) updateData.name = name;
-      if (phone !== undefined) updateData.phone = phone;
-      
-      if (Object.keys(updateData).length > 0) {
-        await storage.updateUser(userId, updateData);
-      }
-      
-      if (role !== undefined) {
-        await storage.updateTenantUserRole(tenantId, userId, role);
-      }
-      
-      res.json({ message: "Membro atualizado com sucesso" });
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao atualizar membro" });
-    }
-  });
+        const created = await storage.createUserWithMembership(
+          {
+            email: normalizedEmail,
+            cpf: cpf || null,
+            sellerCode: sellerCode || null,
+            phone: phone || null,
+            password: hashedPassword,
+            name,
+            isSuperAdmin: false,
+            mustChangePassword: true,
+          },
+          tenantId,
+          normalizeAssignableRole(role),
+          {
+            ...getAuditContext(req),
+            tenantId,
+            action: "membership.created",
+            targetType: "membership",
+            outcome: "success",
+            metadata: { role: normalizeAssignableRole(role) },
+          },
+        );
+        const user = created.user;
 
-  v1Router.post("/team/:userId/reset-password", requireAuth, requireRole("manager"), passwordResetLimiter, async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        const { password: _password, ...userWithoutPassword } = user;
+        res.status(201).json(userWithoutPassword);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("Senha temporária")) {
+          return res.status(400).json({ error: error.message });
+        }
+        logger.error("Team member creation failed", {
+          requestId: (req as any).requestId,
+          endpoint: "/api/v1/team",
+          userId: req.session.user?.id,
+          tenantId: getTenantId(req),
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        res.status(400).json({ error: "Erro ao criar membro da equipe" });
       }
+    },
+  );
 
-      const { userId } = req.params;
+  v1Router.put(
+    "/team/:userId",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
 
-      const tenantUser = await storage.getTenantUser(tenantId, userId);
-      if (!tenantUser) {
-        return res.status(404).json({ error: "Usuário não encontrado nesta empresa" });
+        const { userId } = req.params;
+        const { name, phone, role } = req.body;
+
+        const tenantUser = await storage.getTenantUser(tenantId, userId);
+        if (!tenantUser) {
+          return res.status(404).json({ error: "Usuário não encontrado nesta empresa" });
+        }
+
+        // A user identity can be shared by multiple tenants. Tenant managers may
+        // only update the role in their own membership, never global profile data.
+        if (name !== undefined || phone !== undefined) {
+          return sendError(
+            res,
+            400,
+            "Nome e telefone só podem ser alterados pelo administrador global",
+            "GLOBAL_IDENTITY_FIELDS_FORBIDDEN",
+          );
+        }
+
+        if (role !== undefined) {
+          await storage.upsertTenantUserAudited(tenantId, userId, normalizeAssignableRole(role), {
+            ...getAuditContext(req),
+            tenantId,
+            action: "membership.role_changed",
+            targetType: "membership",
+            outcome: "success",
+          });
+        }
+
+        res.json({ message: "Membro atualizado com sucesso" });
+      } catch {
+        res.status(400).json({ error: "Erro ao atualizar membro" });
       }
+    },
+  );
 
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ error: "Usuário não encontrado" });
-      }
+  v1Router.post(
+    "/team/:userId/reset-password",
+    requireAuth,
+    requireRole("manager"),
+    passwordResetLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
 
-      // Generate secure random password (16 characters hexadecimal)
-      const newPassword = user.sellerCode || crypto.randomBytes(8).toString('hex');
-      const hashedPassword = await hashPassword(newPassword);
-      await storage.updateUserPassword(userId, hashedPassword);
+        const { userId } = req.params;
 
-      res.json({ message: "Senha resetada com sucesso", temporaryPassword: newPassword });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao resetar senha" });
-    }
-  });
+        const tenantUser = await storage.getTenantUser(tenantId, userId);
+        if (!tenantUser) {
+          return res.status(404).json({ error: "Usuário não encontrado nesta empresa" });
+        }
 
-  v1Router.delete("/team/:userId", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        const userTenants = await storage.getUserTenants(userId);
+        const belongsToAnotherTenant = userTenants.some(
+          (membership) => membership.tenantId !== tenantId,
+        );
+        if (belongsToAnotherTenant) {
+          return res.status(403).json({
+            error:
+              "A senha de um usuário compartilhado entre empresas só pode ser resetada pelo super administrador",
+            code: "CROSS_TENANT_PASSWORD_RESET_FORBIDDEN",
+          });
+        }
+
+        const user = await storage.getUser(userId);
+        if (!user) {
+          return res.status(404).json({ error: "Usuário não encontrado" });
+        }
+
+        const newPassword = requireStrongTemporaryPassword(req.body?.newPassword);
+        const hashedPassword = await hashPassword(newPassword);
+        await storage.updateUserPasswordAudited(userId, hashedPassword, true, {
+          ...getAuditContext(req),
+          tenantId,
+          action: "auth.password_changed",
+          targetType: "user",
+          outcome: "success",
+          metadata: { resetType: "tenant_manager" },
+        });
+
+        res.json({
+          message:
+            "Senha resetada com sucesso. Informe a senha temporária ao usuário por canal seguro.",
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("Senha temporária")) {
+          return res.status(400).json({ error: error.message });
+        }
+        res.status(500).json({ error: "Erro ao resetar senha" });
       }
-      
-      const { userId } = req.params;
-      
-      if (req.session.user?.id === userId) {
-        return res.status(400).json({ error: "Você não pode remover a si mesmo" });
+    },
+  );
+
+  v1Router.delete(
+    "/team/:userId",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+
+        const { userId } = req.params;
+
+        if (req.session.user?.id === userId) {
+          return res.status(400).json({ error: "Você não pode remover a si mesmo" });
+        }
+
+        const tenantUser = await storage.getTenantUser(tenantId, userId);
+        if (!tenantUser) {
+          return res.status(404).json({ error: "Usuário não encontrado nesta empresa" });
+        }
+
+        await storage.deleteTenantUserAudited(tenantId, userId, {
+          ...getAuditContext(req),
+          tenantId,
+          action: "membership.removed",
+          targetType: "membership",
+          outcome: "success",
+        });
+
+        res.json({ message: "Membro removido da equipe" });
+      } catch {
+        res.status(500).json({ error: "Erro ao remover membro" });
       }
-      
-      const tenantUser = await storage.getTenantUser(tenantId, userId);
-      if (!tenantUser) {
-        return res.status(404).json({ error: "Usuário não encontrado nesta empresa" });
-      }
-      
-      await storage.deleteTenantUser(tenantId, userId);
-      
-      res.json({ message: "Membro removido da equipe" });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao remover membro" });
-    }
-  });
+    },
+  );
 
   // ==================== DASHBOARD STATS ====================
   v1Router.get("/dashboard/stats", requireAuth, async (req: Request, res: Response) => {
@@ -1015,57 +1726,40 @@ export async function registerRoutes(
       if (!tenantId) {
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
-      
-      const [customersResult, ordersResult, productsResult] = await Promise.all([
-        storage.getCustomers(tenantId),
-        storage.getOrders(tenantId),
-        storage.getProducts(tenantId),
+
+      const [stats, charts] = await Promise.all([
+        storage.getDashboardStats(tenantId),
+        storage.getDashboardCharts(tenantId),
       ]);
-
-      const customers = customersResult.data;
-      const orders = ordersResult.data;
-      const products = productsResult.data;
-      
-      const totalRevenue = orders.reduce((sum, order) => {
-        return sum + (order.total || 0);
-      }, 0);
-
-      const totalOrders = orders.length;
-      const averageTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-      const vipCustomers = customers.filter(c => c.segment === "VIP").length;
-      const newCustomers = customers.filter(c => c.segment === "Novo").length;
-
-      const weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-      const today = new Date();
-      const weeklyData = weekDays.map((name, dayIndex) => {
-        const dayOrders = orders.filter(order => {
-          if (order.orderDate) {
-            const orderDateObj = new Date(order.orderDate);
-            return orderDateObj.getDay() === dayIndex;
-          }
-          return false;
-        });
-        const total = dayOrders.reduce((sum, order) => {
-          return sum + (order.total || 0);
-        }, 0);
-        return { name, total: Math.round(total) };
-      });
-      
+      const segmentColors: Record<string, string> = {
+        VIP: "#9333ea",
+        Regular: "#00C49F",
+        Novo: "#FFBB28",
+        "Em Risco": "#FF8042",
+        Inativo: "#8884d8",
+      };
       res.json({
-        totalRevenue: Math.round(totalRevenue * 100) / 100, // Return raw number, let frontend format
-        averageTicket: Math.round(averageTicket * 100) / 100, // Return raw number, let frontend format
-        totalOrders,
-        vipCustomers,
-        newCustomers,
-        totalCustomers: customers.length,
-        totalProducts: products.length,
-        weeklyData,
-        recentOrders: orders.slice(0, 5),
+        ...stats,
+        salesChart: charts.revenueByMonth.map((month) => ({
+          date: month.month,
+          value: month.revenue,
+          valueCents: month.revenueCents,
+        })),
+        customerSegments: charts.customersBySegment.map((segment) => ({
+          name: segment.segment,
+          value: segment.count,
+          color: segmentColors[segment.segment] ?? "#8884d8",
+        })),
+        topProducts: charts.topProducts.map((product) => ({
+          name: product.name,
+          sales: product.quantity,
+          revenue: product.revenue,
+        })),
       });
     } catch (error) {
       logger.error("Dashboard stats query failed", {
         requestId: (req as any).requestId,
-        endpoint: "/api/dashboard/stats",
+        endpoint: "/api/v1/dashboard/stats",
         userId: req.session.user?.id,
         tenantId: req.session.user?.tenantId,
         error: error instanceof Error ? error.message : String(error),
@@ -1090,8 +1784,18 @@ export async function registerRoutes(
       if (!tenantId) {
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
-      const { page, limit, offset } = parsePagination(req);
-      const { data, total } = await storage.getCustomers(tenantId, limit, offset);
+      const { page, limit, search, segment, sort, order } = customerListQuerySchema.parse(
+        req.query,
+      );
+      const offset = (page - 1) * limit;
+      const { data, total } = await storage.getCustomers(tenantId, {
+        limit,
+        offset,
+        search,
+        segment,
+        sort,
+        order,
+      });
       const totalPages = Math.ceil(total / limit);
 
       res.json({
@@ -1100,10 +1804,14 @@ export async function registerRoutes(
           page,
           limit,
           total,
-          totalPages
-        }
+          totalPages,
+        },
       });
     } catch (error) {
+      if (error instanceof ZodError) {
+        const zodError = handleZodError(error);
+        return sendError(res, 400, zodError.message, "INVALID_QUERY", zodError.details);
+      }
       res.status(500).json({ error: "Failed to fetch customers" });
     }
   });
@@ -1120,23 +1828,28 @@ export async function registerRoutes(
    * @param {string} [favoriteCategory] - Customer's favorite product category
    * @returns {object} Newly created customer object
    */
-  v1Router.post("/customers", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.post(
+    "/customers",
+    requireAuth,
+    requireRole("manager", "seller"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const validatedData = insertCustomerSchema.parse({ ...req.body, tenantId });
+        const customer = await storage.createCustomer(validatedData);
+        res.status(201).json(customer);
+      } catch (error) {
+        if (error instanceof ZodError) {
+          const zodError = handleZodError(error);
+          return sendError(res, 400, zodError.message, "VALIDATION_ERROR", zodError.details);
+        }
+        return sendError(res, 400, "Dados de cliente inválidos", "CUSTOMER_CREATE_ERROR");
       }
-      const validatedData = insertCustomerSchema.parse({ ...req.body, tenantId });
-      const customer = await storage.createCustomer(validatedData);
-      res.status(201).json(customer);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const zodError = handleZodError(error);
-        return sendError(res, 400, zodError.message, "VALIDATION_ERROR", zodError.details);
-      }
-      return sendError(res, 400, "Dados de cliente inválidos", "CUSTOMER_CREATE_ERROR");
-    }
-  });
+    },
+  );
 
   /**
    * @description Updates an existing customer's information
@@ -1146,25 +1859,31 @@ export async function registerRoutes(
    * @param {object} updates - Fields to update (name, email, phone, segment, etc.)
    * @returns {object} Updated customer object
    */
-  v1Router.put("/customers/:id", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.put(
+    "/customers/:id",
+    requireAuth,
+    requireRole("manager", "seller"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const customerId = parseInt(req.params.id);
+        if (isNaN(customerId)) {
+          return sendError(res, 400, "ID de cliente inválido", "INVALID_ID");
+        }
+        const updateData = updateCustomerSchema.parse(req.body);
+        const updated = await storage.updateCustomer(tenantId, customerId, updateData);
+        if (!updated) {
+          return sendError(res, 404, "Cliente não encontrado", "CUSTOMER_NOT_FOUND");
+        }
+        res.json(updated);
+      } catch {
+        res.status(400).json({ error: "Erro ao atualizar cliente" });
       }
-      const customerId = parseInt(req.params.id);
-      if (isNaN(customerId)) {
-        return sendError(res, 400, "ID de cliente inválido", "INVALID_ID");
-      }
-      const updated = await storage.updateCustomer(tenantId, customerId, req.body);
-      if (!updated) {
-        return sendError(res, 404, "Cliente não encontrado", "CUSTOMER_NOT_FOUND");
-      }
-      res.json(updated);
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao atualizar cliente" });
-    }
-  });
+    },
+  );
 
   /**
    * @description Deletes a customer from the current tenant
@@ -1173,25 +1892,36 @@ export async function registerRoutes(
    * @param {number} id - Customer ID to delete
    * @returns {object} Success message
    */
-  v1Router.delete("/customers/:id", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.delete(
+    "/customers/:id",
+    requireAuth,
+    requireRole("manager", "seller"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const customerId = parseInt(req.params.id);
+        if (isNaN(customerId)) {
+          return sendError(res, 400, "ID de cliente inválido", "INVALID_ID");
+        }
+        const deleted = await storage.deleteCustomer(tenantId, customerId, {
+          ...getAuditContext(req),
+          tenantId,
+          action: "entity.deleted",
+          targetType: "customers",
+          outcome: "success",
+        });
+        if (!deleted) {
+          return sendError(res, 404, "Cliente não encontrado", "CUSTOMER_NOT_FOUND");
+        }
+        res.json({ message: "Cliente excluído com sucesso" });
+      } catch {
+        res.status(500).json({ error: "Erro ao excluir cliente" });
       }
-      const customerId = parseInt(req.params.id);
-      if (isNaN(customerId)) {
-        return sendError(res, 400, "ID de cliente inválido", "INVALID_ID");
-      }
-      const deleted = await storage.deleteCustomer(tenantId, customerId);
-      if (!deleted) {
-        return sendError(res, 404, "Cliente não encontrado", "CUSTOMER_NOT_FOUND");
-      }
-      res.json({ message: "Cliente excluído com sucesso" });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao excluir cliente" });
-    }
-  });
+    },
+  );
 
   /**
    * @description Retrieves all products for the current tenant with pagination support
@@ -1207,8 +1937,16 @@ export async function registerRoutes(
       if (!tenantId) {
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
-      const { page, limit, offset } = parsePagination(req);
-      const { data, total } = await storage.getProducts(tenantId, limit, offset);
+      const { page, limit, search, status, sort, order } = productListQuerySchema.parse(req.query);
+      const offset = (page - 1) * limit;
+      const { data, total } = await storage.getProducts(tenantId, {
+        limit,
+        offset,
+        search,
+        status,
+        sort,
+        order,
+      });
       const totalPages = Math.ceil(total / limit);
 
       res.json({
@@ -1217,10 +1955,14 @@ export async function registerRoutes(
           page,
           limit,
           total,
-          totalPages
-        }
+          totalPages,
+        },
       });
     } catch (error) {
+      if (error instanceof ZodError) {
+        const zodError = handleZodError(error);
+        return sendError(res, 400, zodError.message, "INVALID_QUERY", zodError.details);
+      }
       res.status(500).json({ error: "Failed to fetch products" });
     }
   });
@@ -1237,23 +1979,28 @@ export async function registerRoutes(
    * @param {string} [image] - Product image URL
    * @returns {object} Newly created product object
    */
-  v1Router.post("/products", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.post(
+    "/products",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const validatedData = insertProductSchema.parse({ ...req.body, tenantId });
+        const product = await storage.createProduct(validatedData);
+        res.status(201).json(product);
+      } catch (error) {
+        if (error instanceof ZodError) {
+          const zodError = handleZodError(error);
+          return sendError(res, 400, zodError.message, "VALIDATION_ERROR", zodError.details);
+        }
+        return sendError(res, 400, "Dados de produto inválidos", "PRODUCT_CREATE_ERROR");
       }
-      const validatedData = insertProductSchema.parse({ ...req.body, tenantId });
-      const product = await storage.createProduct(validatedData);
-      res.status(201).json(product);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const zodError = handleZodError(error);
-        return sendError(res, 400, zodError.message, "VALIDATION_ERROR", zodError.details);
-      }
-      return sendError(res, 400, "Dados de produto inválidos", "PRODUCT_CREATE_ERROR");
-    }
-  });
+    },
+  );
 
   /**
    * @description Updates an existing product's information
@@ -1263,25 +2010,31 @@ export async function registerRoutes(
    * @param {object} updates - Fields to update (name, category, price, stock, status, image)
    * @returns {object} Updated product object
    */
-  v1Router.put("/products/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.put(
+    "/products/:id",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const productId = parseInt(req.params.id);
+        if (isNaN(productId)) {
+          return sendError(res, 400, "ID de produto inválido", "INVALID_ID");
+        }
+        const updateData = updateProductSchema.parse(req.body);
+        const updated = await storage.updateProduct(tenantId, productId, updateData);
+        if (!updated) {
+          return sendError(res, 404, "Produto não encontrado", "PRODUCT_NOT_FOUND");
+        }
+        res.json(updated);
+      } catch {
+        res.status(400).json({ error: "Erro ao atualizar produto" });
       }
-      const productId = parseInt(req.params.id);
-      if (isNaN(productId)) {
-        return sendError(res, 400, "ID de produto inválido", "INVALID_ID");
-      }
-      const updated = await storage.updateProduct(tenantId, productId, req.body);
-      if (!updated) {
-        return sendError(res, 404, "Produto não encontrado", "PRODUCT_NOT_FOUND");
-      }
-      res.json(updated);
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao atualizar produto" });
-    }
-  });
+    },
+  );
 
   /**
    * @description Deletes a product from the current tenant
@@ -1290,25 +2043,36 @@ export async function registerRoutes(
    * @param {number} id - Product ID to delete
    * @returns {object} Success message
    */
-  v1Router.delete("/products/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.delete(
+    "/products/:id",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const productId = parseInt(req.params.id);
+        if (isNaN(productId)) {
+          return sendError(res, 400, "ID de produto inválido", "INVALID_ID");
+        }
+        const deleted = await storage.deleteProduct(tenantId, productId, {
+          ...getAuditContext(req),
+          tenantId,
+          action: "entity.deleted",
+          targetType: "products",
+          outcome: "success",
+        });
+        if (!deleted) {
+          return sendError(res, 404, "Produto não encontrado", "PRODUCT_NOT_FOUND");
+        }
+        res.json({ message: "Produto excluído com sucesso" });
+      } catch {
+        res.status(500).json({ error: "Erro ao excluir produto" });
       }
-      const productId = parseInt(req.params.id);
-      if (isNaN(productId)) {
-        return sendError(res, 400, "ID de produto inválido", "INVALID_ID");
-      }
-      const deleted = await storage.deleteProduct(tenantId, productId);
-      if (!deleted) {
-        return sendError(res, 404, "Produto não encontrado", "PRODUCT_NOT_FOUND");
-      }
-      res.json({ message: "Produto excluído com sucesso" });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao excluir produto" });
-    }
-  });
+    },
+  );
 
   /**
    * @description Retrieves all orders for the current tenant with pagination support
@@ -1324,8 +2088,16 @@ export async function registerRoutes(
       if (!tenantId) {
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
-      const { page, limit, offset } = parsePagination(req);
-      const { data, total } = await storage.getOrders(tenantId, limit, offset);
+      const { page, limit, search, status, sort, order } = orderListQuerySchema.parse(req.query);
+      const offset = (page - 1) * limit;
+      const { data, total } = await storage.getOrders(tenantId, {
+        limit,
+        offset,
+        search,
+        status,
+        sort,
+        order,
+      });
       const totalPages = Math.ceil(total / limit);
 
       res.json({
@@ -1334,10 +2106,14 @@ export async function registerRoutes(
           page,
           limit,
           total,
-          totalPages
-        }
+          totalPages,
+        },
       });
     } catch (error) {
+      if (error instanceof ZodError) {
+        const zodError = handleZodError(error);
+        return sendError(res, 400, zodError.message, "INVALID_QUERY", zodError.details);
+      }
       res.status(500).json({ error: "Failed to fetch orders" });
     }
   });
@@ -1352,22 +2128,40 @@ export async function registerRoutes(
    * @param {string} orderDate - Order date in ISO format
    * @returns {object} Newly created order object
    */
-  v1Router.post("/orders", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.post(
+    "/orders",
+    requireAuth,
+    requireRole("manager", "seller"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const transactionalData = transactionalOrderCreateSchema.parse(req.body);
+        const order = await storage.createOrderWithLineItems({ tenantId, ...transactionalData });
+        return res.status(201).json(order);
+      } catch (error) {
+        if (error instanceof ZodError) {
+          const zodError = handleZodError(error);
+          return sendError(res, 400, zodError.message, "VALIDATION_ERROR", zodError.details);
+        }
+        if (error instanceof OrderDomainError) {
+          return sendError(res, 400, error.message, error.code);
+        }
+        return sendError(res, 400, "Dados de pedido inválidos", "ORDER_CREATE_ERROR");
       }
-      const validatedData = insertOrderSchema.parse({ ...req.body, tenantId });
-      const order = await storage.createOrder(validatedData);
-      res.status(201).json(order);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        const zodError = handleZodError(error);
-        return sendError(res, 400, zodError.message, "VALIDATION_ERROR", zodError.details);
-      }
-      return sendError(res, 400, "Dados de pedido inválidos", "ORDER_CREATE_ERROR");
-    }
+    },
+  );
+
+  v1Router.get("/orders/:id/items", requireAuth, async (req: Request, res: Response) => {
+    const tenantId = getTenantId(req);
+    const orderId = Number(req.params.id);
+    if (!Number.isInteger(orderId) || orderId <= 0)
+      return sendError(res, 400, "ID de pedido inválido", "INVALID_ID");
+    const order = await storage.getOrder(tenantId, orderId);
+    if (!order) return sendError(res, 404, "Pedido não encontrado", "ORDER_NOT_FOUND");
+    res.json(await storage.getOrderItems(tenantId, orderId));
   });
 
   /**
@@ -1378,52 +2172,90 @@ export async function registerRoutes(
    * @param {object} updates - Fields to update (customer, total, status, orderDate)
    * @returns {object} Updated order object
    */
-  v1Router.put("/orders/:id", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.put(
+    "/orders/:id",
+    requireAuth,
+    requireRole("manager", "seller"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const orderId = parseInt(req.params.id);
+        if (isNaN(orderId)) {
+          return sendError(res, 400, "ID de pedido inválido", "INVALID_ID");
+        }
+        const { tenantId: _ignoredTenantId, ...candidateUpdate } = req.body ?? {};
+        const updateData = updateOrderSchema.parse(candidateUpdate);
+        if (updateData.customerId && !(await isCustomerInTenant(tenantId, updateData.customerId))) {
+          return sendError(
+            res,
+            400,
+            "Cliente inválido para este tenant",
+            "INVALID_TENANT_REFERENCE",
+          );
+        }
+        const updated =
+          updateData.status === "Cancelado"
+            ? await storage.cancelOrder(tenantId, orderId, {
+                ...getAuditContext(req),
+                tenantId,
+                action: "order.cancelled",
+                targetType: "orders",
+                outcome: "success",
+              })
+            : await storage.updateOrder(tenantId, orderId, updateData);
+        if (!updated) {
+          return sendError(res, 404, "Pedido não encontrado", "ORDER_NOT_FOUND");
+        }
+        res.json(updated);
+      } catch (error) {
+        if (error instanceof OrderDomainError) {
+          return sendError(res, 400, error.message, error.code);
+        }
+        res.status(400).json({ error: "Erro ao atualizar pedido" });
       }
-      const orderId = parseInt(req.params.id);
-      if (isNaN(orderId)) {
-        return sendError(res, 400, "ID de pedido inválido", "INVALID_ID");
-      }
-      const updated = await storage.updateOrder(tenantId, orderId, req.body);
-      if (!updated) {
-        return sendError(res, 404, "Pedido não encontrado", "ORDER_NOT_FOUND");
-      }
-      res.json(updated);
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao atualizar pedido" });
-    }
-  });
+    },
+  );
 
   /**
-   * @description Deletes an order from the current tenant
+   * @description Idempotently cancels an order and restores stock once
    * @route DELETE /api/v1/orders/:id
    * @access manager, seller
    * @param {number} id - Order ID to delete
    * @returns {object} Success message
    */
-  v1Router.delete("/orders/:id", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.delete(
+    "/orders/:id",
+    requireAuth,
+    requireRole("manager", "seller"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const orderId = parseInt(req.params.id);
+        if (isNaN(orderId)) {
+          return sendError(res, 400, "ID de pedido inválido", "INVALID_ID");
+        }
+        const deleted = await storage.deleteOrder(tenantId, orderId, {
+          ...getAuditContext(req),
+          tenantId,
+          action: "order.cancelled",
+          targetType: "orders",
+          outcome: "success",
+        });
+        if (!deleted) {
+          return sendError(res, 404, "Pedido não encontrado", "ORDER_NOT_FOUND");
+        }
+        res.json({ message: "Pedido cancelado com sucesso" });
+      } catch {
+        res.status(500).json({ error: "Erro ao cancelar pedido" });
       }
-      const orderId = parseInt(req.params.id);
-      if (isNaN(orderId)) {
-        return sendError(res, 400, "ID de pedido inválido", "INVALID_ID");
-      }
-      const deleted = await storage.deleteOrder(tenantId, orderId);
-      if (!deleted) {
-        return sendError(res, 404, "Pedido não encontrado", "ORDER_NOT_FOUND");
-      }
-      res.json({ message: "Pedido excluído com sucesso" });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao excluir pedido" });
-    }
-  });
+    },
+  );
 
   v1Router.get("/cashback-rules", requireAuth, async (req: Request, res: Response) => {
     try {
@@ -1433,72 +2265,93 @@ export async function registerRoutes(
       }
       const rules = await storage.getCashbackRules(tenantId);
       res.json(rules);
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Failed to fetch cashback rules" });
     }
   });
 
-  v1Router.post("/cashback-rules", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.post(
+    "/cashback-rules",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const validatedData = insertCashbackRuleSchema.parse({ ...req.body, tenantId });
+        const rule = await storage.createCashbackRule(validatedData);
+        res.status(201).json(rule);
+      } catch {
+        res.status(400).json({ error: "Invalid cashback rule data" });
       }
-      const validatedData = insertCashbackRuleSchema.parse({ ...req.body, tenantId });
-      const rule = await storage.createCashbackRule(validatedData);
-      res.status(201).json(rule);
-    } catch (error) {
-      res.status(400).json({ error: "Invalid cashback rule data" });
-    }
-  });
+    },
+  );
 
-  v1Router.put("/cashback-rules/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "ID inválido", "INVALID_ID");
-      }
+  v1Router.put(
+    "/cashback-rules/:id",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return sendError(res, 400, "ID inválido", "INVALID_ID");
+        }
 
-      const updateSchema = insertCashbackRuleSchema.partial().omit({ tenantId: true });
-      const validatedData = updateSchema.parse(req.body);
-      
-      if (Object.keys(validatedData).length === 0) {
-        return res.status(400).json({ error: "Nenhum campo para atualizar" });
-      }
-      
-      const updated = await storage.updateCashbackRule(tenantId, id, validatedData);
-      if (!updated) {
-        return res.status(404).json({ error: "Regra não encontrada" });
-      }
-      res.json(updated);
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao atualizar regra de cashback" });
-    }
-  });
+        const updateSchema = insertCashbackRuleSchema.partial().omit({ tenantId: true });
+        const validatedData = updateSchema.parse(req.body);
 
-  v1Router.delete("/cashback-rules/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        if (Object.keys(validatedData).length === 0) {
+          return res.status(400).json({ error: "Nenhum campo para atualizar" });
+        }
+
+        const updated = await storage.updateCashbackRule(tenantId, id, validatedData);
+        if (!updated) {
+          return res.status(404).json({ error: "Regra não encontrada" });
+        }
+        res.json(updated);
+      } catch {
+        res.status(400).json({ error: "Erro ao atualizar regra de cashback" });
       }
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "ID inválido", "INVALID_ID");
+    },
+  );
+
+  v1Router.delete(
+    "/cashback-rules/:id",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return sendError(res, 400, "ID inválido", "INVALID_ID");
+        }
+        const deleted = await storage.deleteCashbackRule(tenantId, id, {
+          ...getAuditContext(req),
+          tenantId,
+          action: "entity.deleted",
+          targetType: "cashback_rules",
+          outcome: "success",
+        });
+        if (!deleted) {
+          return res.status(404).json({ error: "Regra não encontrada" });
+        }
+        res.json({ message: "Regra excluída com sucesso" });
+      } catch {
+        res.status(500).json({ error: "Erro ao excluir regra de cashback" });
       }
-      const deleted = await storage.deleteCashbackRule(tenantId, id);
-      if (!deleted) {
-        return res.status(404).json({ error: "Regra não encontrada" });
-      }
-      res.json({ message: "Regra excluída com sucesso" });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao excluir regra de cashback" });
-    }
-  });
+    },
+  );
 
   v1Router.get("/campaigns", requireAuth, async (req: Request, res: Response) => {
     try {
@@ -1508,135 +2361,165 @@ export async function registerRoutes(
       }
       const campaigns = await storage.getCampaigns(tenantId);
       res.json(campaigns);
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Failed to fetch campaigns" });
     }
   });
 
-  v1Router.post("/campaigns", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.post(
+    "/campaigns",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const validatedData = insertCampaignSchema.parse({ ...req.body, tenantId });
+        const campaign = await storage.createCampaign(validatedData);
+        res.status(201).json(campaign);
+      } catch {
+        res.status(400).json({ error: "Invalid campaign data" });
       }
-      const validatedData = insertCampaignSchema.parse({ ...req.body, tenantId });
-      const campaign = await storage.createCampaign(validatedData);
-      res.status(201).json(campaign);
-    } catch (error) {
-      res.status(400).json({ error: "Invalid campaign data" });
-    }
-  });
+    },
+  );
 
-  v1Router.put("/campaigns/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "ID inválido", "INVALID_ID");
-      }
-      const { name, channel, audience, status, date, sent, openRate, conversion, revenue } = req.body;
-      
-      const updateData: Record<string, any> = {};
-      if (name !== undefined) updateData.name = name;
-      if (channel !== undefined) updateData.channel = channel;
-      if (audience !== undefined) updateData.audience = audience;
-      if (status !== undefined) updateData.status = status;
-      if (date !== undefined) updateData.date = date;
-      if (sent !== undefined) updateData.sent = sent;
-      if (openRate !== undefined) updateData.openRate = openRate;
-      if (conversion !== undefined) updateData.conversion = conversion;
-      if (revenue !== undefined) updateData.revenue = revenue;
-      
-      const updated = await storage.updateCampaign(tenantId, id, updateData);
-      if (!updated) {
-        return res.status(404).json({ error: "Campanha não encontrada" });
-      }
-      res.json(updated);
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao atualizar campanha" });
-    }
-  });
+  v1Router.put(
+    "/campaigns/:id",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return sendError(res, 400, "ID inválido", "INVALID_ID");
+        }
+        const { name, channel, audience, status, date, sent, openRate, conversion, revenue } =
+          req.body;
 
-  v1Router.delete("/campaigns/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "ID inválido", "INVALID_ID");
-      }
-      const deleted = await storage.deleteCampaign(tenantId, id);
-      if (!deleted) {
-        return res.status(404).json({ error: "Campanha não encontrada" });
-      }
-      res.json({ message: "Campanha excluída com sucesso" });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao excluir campanha" });
-    }
-  });
+        const updateData: Record<string, any> = {};
+        if (name !== undefined) updateData.name = name;
+        if (channel !== undefined) updateData.channel = channel;
+        if (audience !== undefined) updateData.audience = audience;
+        if (status !== undefined) updateData.status = status;
+        if (date !== undefined) updateData.date = date;
+        if (sent !== undefined) updateData.sent = sent;
+        if (openRate !== undefined) updateData.openRate = openRate;
+        if (conversion !== undefined) updateData.conversion = conversion;
+        if (revenue !== undefined) updateData.revenue = revenue;
 
-  v1Router.post("/campaigns/:id/send", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        const updated = await storage.updateCampaign(tenantId, id, updateData);
+        if (!updated) {
+          return res.status(404).json({ error: "Campanha não encontrada" });
+        }
+        res.json(updated);
+      } catch {
+        res.status(400).json({ error: "Erro ao atualizar campanha" });
       }
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "ID inválido", "INVALID_ID");
-      }
-      const campaign = await storage.getCampaign(tenantId, id);
-      if (!campaign) {
-        return res.status(404).json({ error: "Campanha não encontrada" });
-      }
+    },
+  );
 
-      const customersResult = await storage.getCustomers(tenantId);
-      const customers = customersResult.data;
-      let targetCustomers = customers;
-
-      switch (campaign.audience) {
-        case "Clientes VIP":
-          targetCustomers = customers.filter(c => c.segment === "VIP");
-          break;
-        case "Novos clientes":
-          targetCustomers = customers.filter(c => c.segment === "Novo");
-          break;
-        case "Clientes inativos":
-          targetCustomers = customers.filter(c => c.segment === "Inativo" || c.segment === "Em Risco");
-          break;
-        case "Aniversariantes do mês":
-          const currentMonth = new Date().getMonth() + 1;
-          targetCustomers = customers.filter(c => {
-            if (!c.birthDate) return false;
-            // Parse ISO format YYYY-MM-DD from database
-            const date = new Date(c.birthDate);
-            // Check if date is valid
-            if (isNaN(date.getTime())) return false;
-            const month = date.getMonth() + 1;
-            return month === currentMonth;
-          });
-          break;
+  v1Router.delete(
+    "/campaigns/:id",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return sendError(res, 400, "ID inválido", "INVALID_ID");
+        }
+        const deleted = await storage.deleteCampaign(tenantId, id, {
+          ...getAuditContext(req),
+          tenantId,
+          action: "entity.deleted",
+          targetType: "campaigns",
+          outcome: "success",
+        });
+        if (!deleted) {
+          return res.status(404).json({ error: "Campanha não encontrada" });
+        }
+        res.json({ message: "Campanha excluída com sucesso" });
+      } catch {
+        res.status(500).json({ error: "Erro ao excluir campanha" });
       }
-      
-      const updated = await storage.updateCampaign(tenantId, id, {
-        status: "Ativo",
-        sent: targetCustomers.length,
-      });
-      
-      res.json({ 
-        message: "Campanha enviada com sucesso",
-        sentTo: targetCustomers.length,
-        campaign: updated
-      });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao enviar campanha" });
-    }
-  });
+    },
+  );
+
+  v1Router.post(
+    "/campaigns/:id/send",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return sendError(res, 400, "ID inválido", "INVALID_ID");
+        }
+        const campaign = await storage.getCampaign(tenantId, id);
+        if (!campaign) {
+          return res.status(404).json({ error: "Campanha não encontrada" });
+        }
+
+        const customersResult = await storage.getCustomers(tenantId);
+        const customers = customersResult.data;
+        let targetCustomers = customers;
+
+        switch (campaign.audience) {
+          case "Clientes VIP":
+            targetCustomers = customers.filter((c) => c.segment === "VIP");
+            break;
+          case "Novos clientes":
+            targetCustomers = customers.filter((c) => c.segment === "Novo");
+            break;
+          case "Clientes inativos":
+            targetCustomers = customers.filter(
+              (c) => c.segment === "Inativo" || c.segment === "Em Risco",
+            );
+            break;
+          case "Aniversariantes do mês": {
+            const currentMonth = new Date().getMonth() + 1;
+            targetCustomers = customers.filter((c) => {
+              if (!c.birthDate) return false;
+              // Parse ISO format YYYY-MM-DD from database
+              const date = new Date(c.birthDate);
+              // Check if date is valid
+              if (isNaN(date.getTime())) return false;
+              const month = date.getMonth() + 1;
+              return month === currentMonth;
+            });
+            break;
+          }
+        }
+
+        const updated = await storage.updateCampaign(tenantId, id, {
+          status: "Ativo",
+          sent: targetCustomers.length,
+        });
+
+        res.json({
+          message: "Campanha enviada com sucesso",
+          sentTo: targetCustomers.length,
+          campaign: updated,
+        });
+      } catch {
+        res.status(500).json({ error: "Erro ao enviar campanha" });
+      }
+    },
+  );
 
   v1Router.get("/automations", requireAuth, async (req: Request, res: Response) => {
     try {
@@ -1646,93 +2529,120 @@ export async function registerRoutes(
       }
       const automations = await storage.getAutomations(tenantId);
       res.json(automations);
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Failed to fetch automations" });
     }
   });
 
-  v1Router.post("/automations", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.post(
+    "/automations",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const validatedData = insertAutomationSchema.parse({ ...req.body, tenantId });
+        const automation = await storage.createAutomation(validatedData);
+        res.status(201).json(automation);
+      } catch {
+        res.status(400).json({ error: "Invalid automation data" });
       }
-      const validatedData = insertAutomationSchema.parse({ ...req.body, tenantId });
-      const automation = await storage.createAutomation(validatedData);
-      res.status(201).json(automation);
-    } catch (error) {
-      res.status(400).json({ error: "Invalid automation data" });
-    }
-  });
+    },
+  );
 
-  v1Router.put("/automations/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.put(
+    "/automations/:id",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return sendError(res, 400, "ID inválido", "INVALID_ID");
+        }
+        const updateData = updateAutomationSchema.parse(req.body);
+        const updated = await storage.updateAutomation(tenantId, id, updateData);
+        if (!updated) {
+          return res.status(404).json({ error: "Automação não encontrada" });
+        }
+        res.json(updated);
+      } catch {
+        res.status(400).json({ error: "Erro ao atualizar automação" });
       }
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "ID inválido", "INVALID_ID");
-      }
-      const updated = await storage.updateAutomation(tenantId, id, req.body);
-      if (!updated) {
-        return res.status(404).json({ error: "Automação não encontrada" });
-      }
-      res.json(updated);
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao atualizar automação" });
-    }
-  });
+    },
+  );
 
-  v1Router.delete("/automations/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.delete(
+    "/automations/:id",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return sendError(res, 400, "ID inválido", "INVALID_ID");
+        }
+        const deleted = await storage.deleteAutomation(tenantId, id, {
+          ...getAuditContext(req),
+          tenantId,
+          action: "entity.deleted",
+          targetType: "automations",
+          outcome: "success",
+        });
+        if (!deleted) {
+          return res.status(404).json({ error: "Automação não encontrada" });
+        }
+        res.json({ message: "Automação excluída com sucesso" });
+      } catch {
+        res.status(500).json({ error: "Erro ao excluir automação" });
       }
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "ID inválido", "INVALID_ID");
-      }
-      const deleted = await storage.deleteAutomation(tenantId, id);
-      if (!deleted) {
-        return res.status(404).json({ error: "Automação não encontrada" });
-      }
-      res.json({ message: "Automação excluída com sucesso" });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao excluir automação" });
-    }
-  });
+    },
+  );
 
-  v1Router.patch("/automations/:id/toggle", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.patch(
+    "/automations/:id/toggle",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return sendError(res, 400, "ID inválido", "INVALID_ID");
+        }
+        const automation = await storage.getAutomation(tenantId, id);
+        if (!automation) {
+          return res.status(404).json({ error: "Automação não encontrada" });
+        }
+        const updated = await storage.updateAutomation(tenantId, id, {
+          isActive: !automation.isActive,
+        });
+        res.json(updated);
+      } catch {
+        res.status(500).json({ error: "Erro ao alternar automação" });
       }
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "ID inválido", "INVALID_ID");
-      }
-      const automation = await storage.getAutomation(tenantId, id);
-      if (!automation) {
-        return res.status(404).json({ error: "Automação não encontrada" });
-      }
-      const updated = await storage.updateAutomation(tenantId, id, {
-        isActive: !automation.isActive
-      });
-      res.json(updated);
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao alternar automação" });
-    }
-  });
+    },
+  );
 
   // ==================== USER TENANTS ====================
   v1Router.get("/user/tenants", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.session.user!.id;
-      
+
       if (req.session.user!.isSuperAdmin) {
         const allTenants = await storage.getTenants();
         res.json(allTenants);
@@ -1742,11 +2652,11 @@ export async function registerRoutes(
           userTenants.map(async (tu) => {
             const tenant = await storage.getTenant(tu.tenantId);
             return { ...tenant, role: tu.role };
-          })
+          }),
         );
         res.json(tenantsWithDetails);
       }
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Erro ao buscar tenants do usuário" });
     }
   });
@@ -1757,7 +2667,7 @@ export async function registerRoutes(
       const validatedData = insertContactRequestSchema.parse(req.body);
       const contactRequest = await storage.createContactRequest(validatedData);
       res.status(201).json({ message: "Mensagem enviada com sucesso!", id: contactRequest.id });
-    } catch (error) {
+    } catch {
       res.status(400).json({ error: "Dados de contato inválidos" });
     }
   });
@@ -1766,8 +2676,10 @@ export async function registerRoutes(
     try {
       const validatedData = insertDemoRequestSchema.parse(req.body);
       const demoRequest = await storage.createDemoRequest(validatedData);
-      res.status(201).json({ message: "Solicitação de demo enviada com sucesso!", id: demoRequest.id });
-    } catch (error) {
+      res
+        .status(201)
+        .json({ message: "Solicitação de demo enviada com sucesso!", id: demoRequest.id });
+    } catch {
       res.status(400).json({ error: "Dados da solicitação inválidos" });
     }
   });
@@ -1777,60 +2689,68 @@ export async function registerRoutes(
     try {
       const contacts = await storage.getContactRequests();
       res.json(contacts);
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Erro ao buscar contatos" });
     }
   });
 
-  v1Router.put("/admin/contacts/:id/status", requireSuperAdmin, async (req: Request, res: Response) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "ID inválido", "INVALID_ID");
+  v1Router.put(
+    "/admin/contacts/:id/status",
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return sendError(res, 400, "ID inválido", "INVALID_ID");
+        }
+        const { status } = req.body;
+        const updated = await storage.updateContactRequestStatus(id, status);
+        if (!updated) {
+          return res.status(404).json({ error: "Contato não encontrado" });
+        }
+        res.json(updated);
+      } catch {
+        res.status(400).json({ error: "Erro ao atualizar status" });
       }
-      const { status } = req.body;
-      const updated = await storage.updateContactRequestStatus(id, status);
-      if (!updated) {
-        return res.status(404).json({ error: "Contato não encontrado" });
-      }
-      res.json(updated);
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao atualizar status" });
-    }
-  });
+    },
+  );
 
   v1Router.get("/admin/demos", requireSuperAdmin, async (req: Request, res: Response) => {
     try {
       const demos = await storage.getDemoRequests();
       res.json(demos);
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Erro ao buscar demos" });
     }
   });
 
-  v1Router.put("/admin/demos/:id/status", requireSuperAdmin, async (req: Request, res: Response) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return sendError(res, 400, "ID inválido", "INVALID_ID");
+  v1Router.put(
+    "/admin/demos/:id/status",
+    requireSuperAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id);
+        if (isNaN(id)) {
+          return sendError(res, 400, "ID inválido", "INVALID_ID");
+        }
+        const { status } = req.body;
+        const updated = await storage.updateDemoRequestStatus(id, status);
+        if (!updated) {
+          return res.status(404).json({ error: "Demo não encontrada" });
+        }
+        res.json(updated);
+      } catch {
+        res.status(400).json({ error: "Erro ao atualizar status" });
       }
-      const { status } = req.body;
-      const updated = await storage.updateDemoRequestStatus(id, status);
-      if (!updated) {
-        return res.status(404).json({ error: "Demo não encontrada" });
-      }
-      res.json(updated);
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao atualizar status" });
-    }
-  });
+    },
+  );
 
   // ==================== ADMIN REPORTS/STATS ====================
   v1Router.get("/admin/tenant-stats", requireSuperAdmin, async (req: Request, res: Response) => {
     try {
       const stats = await storage.getTenantStats();
       res.json(stats);
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Erro ao buscar estatísticas" });
     }
   });
@@ -1842,18 +2762,18 @@ export async function registerRoutes(
       if (!tenantId) {
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
-      
+
       const filters = {
-        sellerId: req.query.sellerId as string | undefined,
+        sellerId: scopeUserFilterToSession(req, req.query.sellerId as string | undefined),
         status: req.query.status as string | undefined,
         dateFrom: req.query.dateFrom as string | undefined,
         dateTo: req.query.dateTo as string | undefined,
         type: req.query.type as string | undefined,
       };
-      
+
       const tasks = await storage.getSellerTasks(tenantId, filters);
       res.json(tasks);
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Erro ao buscar tarefas" });
     }
   });
@@ -1864,79 +2784,133 @@ export async function registerRoutes(
       if (!tenantId) {
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
-      
-      const sellerId = req.query.sellerId as string | undefined;
+
+      const sellerId = scopeUserFilterToSession(req, req.query.sellerId as string | undefined);
       const stats = await storage.getSellerStats(tenantId, sellerId);
       res.json(stats);
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Erro ao buscar estatísticas" });
     }
   });
 
-  v1Router.post("/seller-tasks", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      const validatedData = insertSellerTaskSchema.parse({ ...req.body, tenantId });
-      const task = await storage.createSellerTask(validatedData);
-      res.status(201).json(task);
-    } catch (error) {
-      res.status(400).json({ error: "Dados da tarefa inválidos" });
-    }
-  });
-
-  v1Router.put("/seller-tasks/:id", requireAuth, requireRole("manager", "seller"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      const taskId = parseInt(req.params.id);
-      if (isNaN(taskId)) {
-        return sendError(res, 400, "ID de tarefa inválido", "INVALID_ID");
-      }
-      const { status, notes } = req.body;
-
-      const updateData: Record<string, any> = {};
-      if (status !== undefined) {
-        updateData.status = status;
-        if (status === 'completed') {
-          updateData.completedAt = new Date().toISOString();
+  v1Router.post(
+    "/seller-tasks",
+    requireAuth,
+    requireRole("manager", "seller"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
         }
+        const validatedData = insertSellerTaskSchema.parse({
+          ...req.body,
+          tenantId,
+          sellerId: isSellerSession(req) ? req.session.user!.id : req.body.sellerId,
+        });
+        if (
+          validatedData.customerId &&
+          !(await isCustomerInTenant(tenantId, validatedData.customerId))
+        ) {
+          return sendError(
+            res,
+            400,
+            "Cliente inválido para este tenant",
+            "INVALID_TENANT_REFERENCE",
+          );
+        }
+        if (
+          validatedData.sellerId &&
+          !(await isActiveUserInTenant(tenantId, validatedData.sellerId))
+        ) {
+          return sendError(
+            res,
+            400,
+            "Vendedor inválido para este tenant",
+            "INVALID_TENANT_REFERENCE",
+          );
+        }
+        const task = await storage.createSellerTask(validatedData);
+        res.status(201).json(task);
+      } catch {
+        res.status(400).json({ error: "Dados da tarefa inválidos" });
       }
-      if (notes !== undefined) updateData.notes = notes;
-      
-      const updated = await storage.updateSellerTask(tenantId, taskId, updateData);
-      if (!updated) {
-        return res.status(404).json({ error: "Tarefa não encontrada" });
-      }
-      res.json(updated);
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao atualizar tarefa" });
-    }
-  });
+    },
+  );
 
-  v1Router.delete("/seller-tasks/:id", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.put(
+    "/seller-tasks/:id",
+    requireAuth,
+    requireRole("manager", "seller"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const taskId = parseInt(req.params.id);
+        if (isNaN(taskId)) {
+          return sendError(res, 400, "ID de tarefa inválido", "INVALID_ID");
+        }
+        const { status, notes } = req.body;
+
+        if (isSellerSession(req)) {
+          const task = await storage.getSellerTask(tenantId, taskId);
+          if (!task || task.sellerId !== req.session.user!.id) {
+            return res.status(403).json({ error: "Acesso negado a esta tarefa" });
+          }
+        }
+
+        const updateData: Record<string, any> = {};
+        if (status !== undefined) {
+          updateData.status = status;
+          if (status === "completed") {
+            updateData.completedAt = new Date().toISOString();
+          }
+        }
+        if (notes !== undefined) updateData.notes = notes;
+
+        const updated = await storage.updateSellerTask(tenantId, taskId, updateData);
+        if (!updated) {
+          return res.status(404).json({ error: "Tarefa não encontrada" });
+        }
+        res.json(updated);
+      } catch {
+        res.status(400).json({ error: "Erro ao atualizar tarefa" });
       }
-      const taskId = parseInt(req.params.id);
-      if (isNaN(taskId)) {
-        return sendError(res, 400, "ID de tarefa inválido", "INVALID_ID");
+    },
+  );
+
+  v1Router.delete(
+    "/seller-tasks/:id",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+        const taskId = parseInt(req.params.id);
+        if (isNaN(taskId)) {
+          return sendError(res, 400, "ID de tarefa inválido", "INVALID_ID");
+        }
+        const deleted = await storage.deleteSellerTask(tenantId, taskId, {
+          ...getAuditContext(req),
+          tenantId,
+          action: "entity.deleted",
+          targetType: "seller_tasks",
+          outcome: "success",
+        });
+        if (!deleted) {
+          return res.status(404).json({ error: "Tarefa não encontrada" });
+        }
+        res.json({ message: "Tarefa excluída com sucesso" });
+      } catch {
+        res.status(500).json({ error: "Erro ao excluir tarefa" });
       }
-      const deleted = await storage.deleteSellerTask(tenantId, taskId);
-      if (!deleted) {
-        return res.status(404).json({ error: "Tarefa não encontrada" });
-      }
-      res.json({ message: "Tarefa excluída com sucesso" });
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao excluir tarefa" });
-    }
-  });
+    },
+  );
 
   // ==================== SELLER GOALS ROUTES ====================
   v1Router.get("/seller-goals", requireAuth, async (req: Request, res: Response) => {
@@ -1945,56 +2919,88 @@ export async function registerRoutes(
       if (!tenantId) {
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
-      const sellerId = req.query.sellerId as string | undefined;
+      const sellerId = scopeUserFilterToSession(req, req.query.sellerId as string | undefined);
       const goals = await storage.getSellerGoals(tenantId, sellerId);
-      res.json(goals || {
-        dailyTaskGoal: 10,
-        weeklyTaskGoal: 50,
-        monthlyTaskGoal: 200,
-        dailySalesGoal: "0",
-        weeklySalesGoal: "0",
-        monthlySalesGoal: "0"
-      });
-    } catch (error) {
+      res.json(
+        goals || {
+          dailyTaskGoal: 10,
+          weeklyTaskGoal: 50,
+          monthlyTaskGoal: 200,
+          dailySalesGoal: "0",
+          weeklySalesGoal: "0",
+          monthlySalesGoal: "0",
+        },
+      );
+    } catch {
       res.status(500).json({ error: "Erro ao buscar metas" });
     }
   });
 
-  v1Router.post("/seller-goals", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+  v1Router.post(
+    "/seller-goals",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+
+        const {
+          dailyTaskGoal,
+          weeklyTaskGoal,
+          monthlyTaskGoal,
+          dailySalesGoal,
+          weeklySalesGoal,
+          monthlySalesGoal,
+          sellerId,
+        } = req.body;
+
+        if (
+          dailyTaskGoal !== undefined &&
+          (typeof dailyTaskGoal !== "number" || dailyTaskGoal < 1)
+        ) {
+          return res.status(400).json({ error: "Meta diária deve ser um número maior que 0" });
+        }
+        if (
+          weeklyTaskGoal !== undefined &&
+          (typeof weeklyTaskGoal !== "number" || weeklyTaskGoal < 1)
+        ) {
+          return res.status(400).json({ error: "Meta semanal deve ser um número maior que 0" });
+        }
+        if (
+          monthlyTaskGoal !== undefined &&
+          (typeof monthlyTaskGoal !== "number" || monthlyTaskGoal < 1)
+        ) {
+          return res.status(400).json({ error: "Meta mensal deve ser um número maior que 0" });
+        }
+        if (sellerId && !(await isActiveUserInTenant(tenantId, sellerId))) {
+          return sendError(
+            res,
+            400,
+            "Vendedor inválido para este tenant",
+            "INVALID_TENANT_REFERENCE",
+          );
+        }
+
+        const goalsData = {
+          tenantId,
+          sellerId: sellerId || null,
+          dailyTaskGoal: dailyTaskGoal || 10,
+          weeklyTaskGoal: weeklyTaskGoal || 50,
+          monthlyTaskGoal: monthlyTaskGoal || 200,
+          dailySalesGoal: dailySalesGoal || "0",
+          weeklySalesGoal: weeklySalesGoal || "0",
+          monthlySalesGoal: monthlySalesGoal || "0",
+        };
+        const goals = await storage.upsertSellerGoals(goalsData);
+        res.json(goals);
+      } catch {
+        res.status(400).json({ error: "Erro ao salvar metas" });
       }
-      
-      const { dailyTaskGoal, weeklyTaskGoal, monthlyTaskGoal, dailySalesGoal, weeklySalesGoal, monthlySalesGoal, sellerId } = req.body;
-      
-      if (dailyTaskGoal !== undefined && (typeof dailyTaskGoal !== 'number' || dailyTaskGoal < 1)) {
-        return res.status(400).json({ error: "Meta diária deve ser um número maior que 0" });
-      }
-      if (weeklyTaskGoal !== undefined && (typeof weeklyTaskGoal !== 'number' || weeklyTaskGoal < 1)) {
-        return res.status(400).json({ error: "Meta semanal deve ser um número maior que 0" });
-      }
-      if (monthlyTaskGoal !== undefined && (typeof monthlyTaskGoal !== 'number' || monthlyTaskGoal < 1)) {
-        return res.status(400).json({ error: "Meta mensal deve ser um número maior que 0" });
-      }
-      
-      const goalsData = {
-        tenantId,
-        sellerId: sellerId || null,
-        dailyTaskGoal: dailyTaskGoal || 10,
-        weeklyTaskGoal: weeklyTaskGoal || 50,
-        monthlyTaskGoal: monthlyTaskGoal || 200,
-        dailySalesGoal: dailySalesGoal || "0",
-        weeklySalesGoal: weeklySalesGoal || "0",
-        monthlySalesGoal: monthlySalesGoal || "0",
-      };
-      const goals = await storage.upsertSellerGoals(goalsData);
-      res.json(goals);
-    } catch (error) {
-      res.status(400).json({ error: "Erro ao salvar metas" });
-    }
-  });
+    },
+  );
 
   // ==================== CUSTOMER INTERACTIONS ROUTES ====================
   v1Router.get("/customer-interactions", requireAuth, async (req: Request, res: Response) => {
@@ -2011,19 +3017,21 @@ export async function registerRoutes(
         }
         customerId = parsed;
       }
-      const sellerId = req.query.sellerId as string | undefined;
-      let limit = 50;
-      if (req.query.limit) {
-        const parsed = parseInt(req.query.limit as string);
-        if (isNaN(parsed)) {
-          return sendError(res, 400, "Limite inválido", "INVALID_LIMIT");
-        }
-        limit = parsed;
+      const sellerId = scopeUserFilterToSession(req, req.query.sellerId as string | undefined);
+      const parsedLimit = boundedLimitSchema.safeParse(req.query.limit ?? 50);
+      if (!parsedLimit.success) {
+        return sendError(res, 400, "Limite deve ser um inteiro entre 1 e 100", "INVALID_LIMIT");
       }
-      
-      const interactions = await storage.getCustomerInteractions(tenantId, customerId, sellerId, limit);
+      const limit = parsedLimit.data;
+
+      const interactions = await storage.getCustomerInteractions(
+        tenantId,
+        customerId,
+        sellerId,
+        limit,
+      );
       res.json(interactions);
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Erro ao buscar histórico de interações" });
     }
   });
@@ -2034,19 +3042,33 @@ export async function registerRoutes(
       if (!tenantId) {
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
-      
+
       const { customerId, type, channel, notes, outcome, taskId } = req.body;
-      
-      if (!customerId || typeof customerId !== 'number') {
+
+      if (!customerId || typeof customerId !== "number") {
         return res.status(400).json({ error: "ID do cliente é obrigatório" });
       }
-      if (!type || typeof type !== 'string') {
+      if (!type || typeof type !== "string") {
         return res.status(400).json({ error: "Tipo de interação é obrigatório" });
       }
-      if (!channel || typeof channel !== 'string') {
+      if (!channel || typeof channel !== "string") {
         return res.status(400).json({ error: "Canal de interação é obrigatório" });
       }
-      
+      if (!(await isCustomerInTenant(tenantId, customerId))) {
+        return sendError(res, 400, "Cliente inválido para este tenant", "INVALID_TENANT_REFERENCE");
+      }
+      if (taskId) {
+        const task = await storage.getSellerTask(tenantId, taskId);
+        if (!task || (task.customerId && task.customerId !== customerId)) {
+          return sendError(
+            res,
+            400,
+            "Tarefa inválida para este tenant e cliente",
+            "INVALID_TENANT_REFERENCE",
+          );
+        }
+      }
+
       const interactionData = {
         tenantId,
         customerId,
@@ -2059,7 +3081,7 @@ export async function registerRoutes(
       };
       const interaction = await storage.createCustomerInteraction(interactionData);
       res.status(201).json(interaction);
-    } catch (error) {
+    } catch {
       res.status(400).json({ error: "Erro ao registrar interação" });
     }
   });
@@ -2071,10 +3093,10 @@ export async function registerRoutes(
       if (!tenantId) {
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
-      const period = (req.query.period as 'daily' | 'weekly' | 'monthly') || 'weekly';
+      const period = (req.query.period as "daily" | "weekly" | "monthly") || "weekly";
       const ranking = await storage.getSellerRanking(tenantId, period);
       res.json(ranking);
-    } catch (error) {
+    } catch {
       res.status(500).json({ error: "Erro ao buscar ranking" });
     }
   });
@@ -2086,131 +3108,17 @@ export async function registerRoutes(
       if (!tenantId) {
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
-      
-      const { startDate, endDate } = req.query;
 
-      const [customersResult, ordersResult, productsResult, campaigns] = await Promise.all([
-        storage.getCustomers(tenantId),
-        storage.getOrders(tenantId),
-        storage.getProducts(tenantId),
-        storage.getCampaigns(tenantId),
-      ]);
-
-      const customers = customersResult.data;
-      const orders = ordersResult.data;
-      const products = productsResult.data;
-      
-      let filteredOrders = orders;
-      if (startDate && endDate) {
-        const start = new Date(startDate as string);
-        const end = new Date(endDate as string);
-        end.setHours(23, 59, 59, 999);
-
-        filteredOrders = orders.filter(order => {
-          if (!order.orderDate) return false;
-          const orderDateObj = new Date(order.orderDate);
-          return orderDateObj >= start && orderDateObj <= end;
-        });
-      }
-
-      const totalRevenue = filteredOrders.reduce((sum, order) => sum + (order.total || 0), 0);
-      const totalOrders = filteredOrders.length;
-      const averageTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-      
-      const monthlyData: Record<string, { sales: number; orders: number }> = {};
-      const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-      
-      filteredOrders.forEach(order => {
-        if (order.orderDate) {
-          const orderDateObj = new Date(order.orderDate);
-          const monthKey = months[orderDateObj.getMonth()];
-          if (!monthlyData[monthKey]) {
-            monthlyData[monthKey] = { sales: 0, orders: 0 };
-          }
-          monthlyData[monthKey].sales += (order.total || 0);
-          monthlyData[monthKey].orders += 1;
-        }
-      });
-      
-      const salesByMonth = months.map(name => ({
-        name,
-        sales: Math.round(monthlyData[name]?.sales || 0),
-        orders: monthlyData[name]?.orders || 0,
-      })).filter(m => m.sales > 0 || m.orders > 0);
-      
-      const categoryTotals: Record<string, number> = {};
-      products.forEach(product => {
-        const category = product.category || "Outros";
-        if (!categoryTotals[category]) {
-          categoryTotals[category] = 0;
-        }
-        categoryTotals[category] += (product.price || 0);
-      });
-      
-      const salesByCategory = Object.entries(categoryTotals)
-        .map(([name, value]) => ({ name, value: Math.round(value) }))
-        .filter(c => c.value > 0)
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 6);
-      
-      const segmentCounts: Record<string, number> = {};
-      customers.forEach(customer => {
-        const segment = customer.segment || "Sem Segmento";
-        segmentCounts[segment] = (segmentCounts[segment] || 0) + 1;
-      });
-      
-      const customersBySegment = Object.entries(segmentCounts)
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count);
-      
-      const topCustomers = customers
-        .map(customer => ({
-          id: customer.id,
-          name: customer.name,
-          email: customer.email,
-          segment: customer.segment,
-          ltv: customer.ltv,
-          orderCount: filteredOrders.filter(o => o.customer === customer.name).length,
-        }))
-        .sort((a, b) => (b.ltv || 0) - (a.ltv || 0))
-        .slice(0, 10);
-      
-      const campaignStats = campaigns.map(campaign => ({
-        id: campaign.id,
-        name: campaign.name,
-        channel: campaign.channel,
-        status: campaign.status,
-        sent: campaign.sent,
-        openRate: campaign.openRate,
-        conversion: campaign.conversion,
-        revenue: campaign.revenue,
-      }));
-      
-      res.json({
-        summary: {
-          totalRevenue: Math.round(totalRevenue * 100) / 100, // Return raw number, let frontend format
-          totalOrders,
-          averageTicket: Math.round(averageTicket * 100) / 100, // Return raw number, let frontend format
-          totalCustomers: customers.length,
-          totalProducts: products.length,
-        },
-        salesByMonth: salesByMonth.length > 0 ? salesByMonth : months.slice(0, 7).map(name => ({ name, sales: 0, orders: 0 })),
-        salesByCategory: salesByCategory.length > 0 ? salesByCategory : [{ name: "Sem dados", value: 0 }],
-        customersBySegment,
-        topCustomers,
-        campaignStats,
-        orders: filteredOrders.map(o => ({
-          id: o.id,
-          customer: o.customer,
-          orderDate: o.orderDate,
-          total: o.total,
-          status: o.status,
-        })),
-      });
+      const query = reportQuerySchema.parse(req.query);
+      res.json(await storage.getSalesReport(tenantId, query));
     } catch (error) {
+      if (error instanceof ZodError) {
+        const parsed = handleZodError(error);
+        return sendError(res, 400, parsed.message, "INVALID_REPORT_QUERY", parsed.details);
+      }
       logger.error("Reports generation failed", {
         requestId: (req as any).requestId,
-        endpoint: "/api/reports",
+        endpoint: "/api/v1/reports",
         userId: req.session.user?.id,
         tenantId: getTenantId(req),
         error: error instanceof Error ? error.message : String(error),
@@ -2221,120 +3129,160 @@ export async function registerRoutes(
   });
 
   // ==================== IMPORT/EXPORT ROUTES ====================
-  v1Router.post("/import/customers", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      
-      const { data } = req.body;
-      if (!Array.isArray(data) || data.length === 0) {
-        return res.status(400).json({ error: "Dados inválidos. Envie um array de clientes." });
-      }
-      
-      const results = { success: 0, errors: [] as string[] };
-      
-      for (const row of data) {
-        try {
-          const customerData = {
-            tenantId,
-            name: row.name || row.nome || "",
-            email: row.email || "",
-            phone: row.phone || row.telefone || "",
-            segment: row.segment || row.segmento || "Novo",
-            ltv: row.ltv || "R$ 0,00",
-            lastPurchase: row.lastPurchase || row.ultimaCompra || new Date().toLocaleDateString("pt-BR"),
-            favoriteCategory: row.favoriteCategory || row.categoriaFavorita || "",
-          };
-          
-          if (!customerData.name) {
-            results.errors.push(`Linha sem nome: ${JSON.stringify(row)}`);
-            continue;
-          }
-          
-          await storage.createCustomer(customerData);
-          results.success++;
-        } catch (err: any) {
-          results.errors.push(`Erro ao importar: ${row.name || row.nome}: ${err.message}`);
+  v1Router.post(
+    "/import/customers",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
         }
-      }
-      
-      res.json({
-        message: `Importação concluída: ${results.success} clientes importados.`,
-        success: results.success,
-        errors: results.errors.slice(0, 10),
-        totalErrors: results.errors.length,
-      });
-    } catch (error) {
-      logger.error("Customer import failed", {
-        requestId: (req as any).requestId,
-        endpoint: "/api/import/customers",
-        userId: req.session.user?.id,
-        tenantId: getTenantId(req),
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      res.status(500).json({ error: "Erro ao importar clientes" });
-    }
-  });
 
-  v1Router.post("/import/products", requireAuth, requireRole("manager"), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-      
-      const { data } = req.body;
-      if (!Array.isArray(data) || data.length === 0) {
-        return res.status(400).json({ error: "Dados inválidos. Envie um array de produtos." });
-      }
-      
-      const results = { success: 0, errors: [] as string[] };
-      
-      for (const row of data) {
-        try {
-          const productData = {
-            tenantId,
-            name: row.name || row.nome || "",
-            category: row.category || row.categoria || "",
-            price: row.price || row.preco || "R$ 0,00",
-            stock: parseInt(row.stock || row.estoque || "0") || 0,
-            status: row.status || "Ativo",
-            image: row.image || row.imagem || "",
-          };
-          
-          if (!productData.name) {
-            results.errors.push(`Linha sem nome: ${JSON.stringify(row)}`);
-            continue;
-          }
-          
-          await storage.createProduct(productData);
-          results.success++;
-        } catch (err: any) {
-          results.errors.push(`Erro ao importar: ${row.name || row.nome}: ${err.message}`);
+        const data = Array.isArray(req.body?.data)
+          ? req.body.data
+          : Array.isArray(req.body?.customers)
+            ? req.body.customers
+            : [];
+        if (!Array.isArray(data) || data.length === 0) {
+          return res.status(400).json({ error: "Dados inválidos. Envie um array de clientes." });
         }
+        if (data.length > MAX_IMPORT_ROWS) {
+          return res
+            .status(413)
+            .json({ error: `Importação limitada a ${MAX_IMPORT_ROWS} clientes por envio.` });
+        }
+
+        const results = { success: 0, errors: [] as string[] };
+
+        for (let index = 0; index < data.length; index++) {
+          const row = data[index];
+          try {
+            if (!row || typeof row !== "object" || Array.isArray(row)) {
+              results.errors.push(`Linha ${index + 1}: formato inválido`);
+              continue;
+            }
+            const customerData = {
+              tenantId,
+              name: sanitizeImportedText(row.name || row.nome),
+              email: sanitizeImportedText(row.email),
+              phone: sanitizeImportedText(row.phone || row.telefone),
+              segment: sanitizeImportedText(row.segment || row.segmento, "Novo"),
+              ltv: Math.max(0, parseImportedNumber(row.ltv ?? row.valor ?? row.valorTotal)),
+              lastPurchase: sanitizeImportedText(
+                row.lastPurchase || row.ultimaCompra || new Date().toLocaleDateString("pt-BR"),
+              ),
+              favoriteCategory: sanitizeImportedText(row.favoriteCategory || row.categoriaFavorita),
+            };
+
+            if (!customerData.name) {
+              results.errors.push(`Linha ${index + 1}: cliente sem nome`);
+              continue;
+            }
+
+            await storage.createCustomer(customerData);
+            results.success++;
+          } catch (err: any) {
+            results.errors.push(`Linha ${index + 1}: ${err.message}`);
+          }
+        }
+
+        res.json({
+          message: `Importação concluída: ${results.success} clientes importados.`,
+          success: results.success,
+          errors: results.errors.slice(0, 10),
+          totalErrors: results.errors.length,
+        });
+      } catch (error) {
+        logger.error("Customer import failed", {
+          requestId: (req as any).requestId,
+          endpoint: "/api/v1/import/customers",
+          userId: req.session.user?.id,
+          tenantId: getTenantId(req),
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        res.status(500).json({ error: "Erro ao importar clientes" });
       }
-      
-      res.json({
-        message: `Importação concluída: ${results.success} produtos importados.`,
-        success: results.success,
-        errors: results.errors.slice(0, 10),
-        totalErrors: results.errors.length,
-      });
-    } catch (error) {
-      logger.error("Product import failed", {
-        requestId: (req as any).requestId,
-        endpoint: "/api/import/products",
-        userId: req.session.user?.id,
-        tenantId: getTenantId(req),
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      res.status(500).json({ error: "Erro ao importar produtos" });
-    }
-  });
+    },
+  );
+
+  v1Router.post(
+    "/import/products",
+    requireAuth,
+    requireRole("manager"),
+    async (req: Request, res: Response) => {
+      try {
+        const tenantId = getTenantId(req);
+        if (!tenantId) {
+          return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
+        }
+
+        const data = Array.isArray(req.body?.data)
+          ? req.body.data
+          : Array.isArray(req.body?.products)
+            ? req.body.products
+            : [];
+        if (!Array.isArray(data) || data.length === 0) {
+          return res.status(400).json({ error: "Dados inválidos. Envie um array de produtos." });
+        }
+        if (data.length > MAX_IMPORT_ROWS) {
+          return res
+            .status(413)
+            .json({ error: `Importação limitada a ${MAX_IMPORT_ROWS} produtos por envio.` });
+        }
+
+        const results = { success: 0, errors: [] as string[] };
+
+        for (let index = 0; index < data.length; index++) {
+          const row = data[index];
+          try {
+            if (!row || typeof row !== "object" || Array.isArray(row)) {
+              results.errors.push(`Linha ${index + 1}: formato inválido`);
+              continue;
+            }
+            const productData = {
+              tenantId,
+              name: sanitizeImportedText(row.name || row.nome),
+              category: sanitizeImportedText(row.category || row.categoria),
+              price: Math.max(0, parseImportedNumber(row.price ?? row.preco)),
+              stock: Math.max(0, Math.trunc(parseImportedNumber(row.stock ?? row.estoque))),
+              status: sanitizeImportedText(row.status, "Ativo"),
+              image: sanitizeImportedText(row.image || row.imagem),
+            };
+
+            if (!productData.name) {
+              results.errors.push(`Linha ${index + 1}: produto sem nome`);
+              continue;
+            }
+
+            await storage.createProduct(productData);
+            results.success++;
+          } catch (err: any) {
+            results.errors.push(`Linha ${index + 1}: ${err.message}`);
+          }
+        }
+
+        res.json({
+          message: `Importação concluída: ${results.success} produtos importados.`,
+          success: results.success,
+          errors: results.errors.slice(0, 10),
+          totalErrors: results.errors.length,
+        });
+      } catch (error) {
+        logger.error("Product import failed", {
+          requestId: (req as any).requestId,
+          endpoint: "/api/v1/import/products",
+          userId: req.session.user?.id,
+          tenantId: getTenantId(req),
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+        res.status(500).json({ error: "Erro ao importar produtos" });
+      }
+    },
+  );
 
   v1Router.get("/export/customers", requireAuth, async (req: Request, res: Response) => {
     try {
@@ -2344,8 +3292,16 @@ export async function registerRoutes(
       }
 
       const customersResult = await storage.getCustomers(tenantId);
-      res.json(customersResult.data);
-    } catch (error) {
+      await storage.appendAuditEvent({
+        ...getAuditContext(req),
+        tenantId,
+        action: "data.exported",
+        targetType: "customers",
+        outcome: "success",
+        metadata: { entityType: "customers", rowCount: customersResult.data.length },
+      });
+      res.json(sanitizeExportRows(customersResult.data));
+    } catch {
       res.status(500).json({ error: "Erro ao exportar clientes" });
     }
   });
@@ -2358,8 +3314,16 @@ export async function registerRoutes(
       }
 
       const productsResult = await storage.getProducts(tenantId);
-      res.json(productsResult.data);
-    } catch (error) {
+      await storage.appendAuditEvent({
+        ...getAuditContext(req),
+        tenantId,
+        action: "data.exported",
+        targetType: "products",
+        outcome: "success",
+        metadata: { entityType: "products", rowCount: productsResult.data.length },
+      });
+      res.json(sanitizeExportRows(productsResult.data));
+    } catch {
       res.status(500).json({ error: "Erro ao exportar produtos" });
     }
   });
@@ -2372,8 +3336,16 @@ export async function registerRoutes(
       }
 
       const ordersResult = await storage.getOrders(tenantId);
-      res.json(ordersResult.data);
-    } catch (error) {
+      await storage.appendAuditEvent({
+        ...getAuditContext(req),
+        tenantId,
+        action: "data.exported",
+        targetType: "orders",
+        outcome: "success",
+        metadata: { entityType: "orders", rowCount: ordersResult.data.length },
+      });
+      res.json(sanitizeExportRows(ordersResult.data));
+    } catch {
       res.status(500).json({ error: "Erro ao exportar pedidos" });
     }
   });
@@ -2386,22 +3358,19 @@ export async function registerRoutes(
         return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
       }
 
-      const userId = req.query.userId as string | undefined;
-      let limit = 50;
-      if (req.query.limit) {
-        const parsed = parseInt(req.query.limit as string);
-        if (isNaN(parsed)) {
-          return sendError(res, 400, "Limite inválido", "INVALID_LIMIT");
-        }
-        limit = parsed;
+      const userId = scopeUserFilterToSession(req, req.query.userId as string | undefined);
+      const parsedLimit = boundedLimitSchema.safeParse(req.query.limit ?? 50);
+      if (!parsedLimit.success) {
+        return sendError(res, 400, "Limite deve ser um inteiro entre 1 e 100", "INVALID_LIMIT");
       }
+      const limit = parsedLimit.data;
 
       const notifications = await storage.getNotifications(tenantId, userId, limit);
       res.json(notifications);
     } catch (error) {
       logger.error("Notifications fetch failed", {
         requestId: (req as any).requestId,
-        endpoint: "/api/notifications",
+        endpoint: "/api/v1/notifications",
         userId: req.session.user?.id,
         tenantId: getTenantId(req),
         error: error instanceof Error ? error.message : String(error),
@@ -2412,27 +3381,6 @@ export async function registerRoutes(
   });
 
   // ==================== DASHBOARD ROUTES ====================
-  v1Router.get("/dashboard/stats", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const tenantId = getTenantId(req);
-      if (!tenantId) {
-        return sendError(res, 400, "Tenant não selecionado", "TENANT_NOT_SELECTED");
-      }
-
-      const stats = await storage.getDashboardStats(tenantId);
-      res.json(stats);
-    } catch (error) {
-      logger.error("Dashboard stats fetch failed", {
-        requestId: (req as any).requestId,
-        endpoint: "/api/v1/dashboard/stats",
-        userId: req.session.user?.id,
-        tenantId: getTenantId(req),
-        error: error instanceof Error ? error.message : String(error),
-      });
-      res.status(500).json({ error: "Erro ao buscar estatísticas do dashboard" });
-    }
-  });
-
   v1Router.get("/dashboard/charts", requireAuth, async (req: Request, res: Response) => {
     try {
       const tenantId = getTenantId(req);
@@ -2519,14 +3467,11 @@ export async function registerRoutes(
         }
         customerId = parsed;
       }
-      let limit: number | undefined = undefined;
-      if (req.query.limit) {
-        const parsed = parseInt(req.query.limit as string);
-        if (isNaN(parsed)) {
-          return sendError(res, 400, "Limite inválido", "INVALID_LIMIT");
-        }
-        limit = parsed;
+      const parsedLimit = boundedLimitSchema.safeParse(req.query.limit ?? 50);
+      if (!parsedLimit.success) {
+        return sendError(res, 400, "Limite deve ser um inteiro entre 1 e 100", "INVALID_LIMIT");
       }
+      const limit = parsedLimit.data;
 
       const transactions = await storage.getCashbackTransactions(tenantId, customerId, limit);
       res.json(transactions);
@@ -2539,6 +3484,103 @@ export async function registerRoutes(
         error: error instanceof Error ? error.message : String(error),
       });
       res.status(500).json({ error: "Erro ao buscar transações de cashback" });
+    }
+  });
+
+  const sendCashbackLedgerError = (res: Response, error: unknown) => {
+    if (error instanceof ZodError) {
+      const parsed = handleZodError(error);
+      return sendError(res, 400, parsed.message, "VALIDATION_ERROR", parsed.details);
+    }
+    if (error instanceof CashbackLedgerError) {
+      const status =
+        error.code === "TRANSACTION_NOT_FOUND"
+          ? 404
+          : error.code === "INVALID_TENANT_REFERENCE"
+            ? 400
+            : 409;
+      return sendError(res, status, error.message, error.code);
+    }
+    return sendError(res, 400, "Operação de cashback inválida", "CASHBACK_OPERATION_ERROR");
+  };
+
+  v1Router.post("/cashback/credit", requireAuth, requireRole("manager"), async (req, res) => {
+    try {
+      const input = cashbackLedgerOperationSchema.parse(req.body);
+      res
+        .status(201)
+        .json(await storage.creditCashback(getTenantId(req), input, getAuditContext(req)));
+    } catch (error) {
+      sendCashbackLedgerError(res, error);
+    }
+  });
+
+  v1Router.post("/cashback/debit", requireAuth, requireRole("manager"), async (req, res) => {
+    try {
+      const input = cashbackLedgerOperationSchema.parse(req.body);
+      res
+        .status(201)
+        .json(await storage.debitCashback(getTenantId(req), input, getAuditContext(req)));
+    } catch (error) {
+      sendCashbackLedgerError(res, error);
+    }
+  });
+
+  v1Router.post(
+    "/cashback/transactions/:id/reverse",
+    requireAuth,
+    requireRole("manager"),
+    async (req, res) => {
+      try {
+        const transactionId = z.coerce.number().int().positive().parse(req.params.id);
+        const { idempotencyKey } = z
+          .object({ idempotencyKey: z.string().trim().min(8).max(200) })
+          .strict()
+          .parse(req.body);
+        res
+          .status(201)
+          .json(
+            await storage.reverseCashback(
+              getTenantId(req),
+              transactionId,
+              idempotencyKey,
+              getAuditContext(req),
+            ),
+          );
+      } catch (error) {
+        sendCashbackLedgerError(res, error);
+      }
+    },
+  );
+
+  v1Router.post("/cashback/expire", requireAuth, requireRole("manager"), async (req, res) => {
+    try {
+      const { now } = z
+        .object({ now: z.string().datetime().optional() })
+        .strict()
+        .parse(req.body ?? {});
+      res.json({
+        transactions: await storage.expireCashback(getTenantId(req), now, getAuditContext(req)),
+      });
+    } catch (error) {
+      sendCashbackLedgerError(res, error);
+    }
+  });
+
+  v1Router.get("/cashback/reconcile", requireAuth, requireRole("manager"), async (req, res) => {
+    try {
+      const parsed = z
+        .object({ customerId: z.coerce.number().int().positive().optional() })
+        .strict()
+        .parse(req.query);
+      const results = await storage.reconcileCashback(
+        getTenantId(req),
+        parsed.customerId,
+        getAuditContext(req),
+      );
+      res.json({ consistent: results.every((item) => item.consistent), results });
+    } catch (error) {
+      sendCashbackLedgerError(res, error);
     }
   });
 
@@ -2591,15 +3633,11 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Cliente não encontrado" });
       }
 
-      // Get order history
-      const ordersResult = await storage.getOrders(tenantId);
-      const customerOrders = ordersResult.data.filter(o => o.customerId === customerId);
+      const history = await storage.getCustomerOrderHistory(tenantId, customerId);
 
       res.json({
         customer,
-        orders: customerOrders,
-        totalOrders: customerOrders.length,
-        totalSpent: customerOrders.reduce((sum, o) => sum + o.total, 0),
+        ...history,
       });
     } catch (error) {
       logger.error("Customer history fetch failed", {
@@ -2664,16 +3702,18 @@ export async function registerRoutes(
 
       const stats = {
         total: campaigns.length,
-        active: campaigns.filter(c => c.status === 'sent').length,
-        draft: campaigns.filter(c => c.status === 'draft').length,
-        scheduled: campaigns.filter(c => c.status === 'scheduled').length,
+        active: campaigns.filter((c) => c.status === "sent").length,
+        draft: campaigns.filter((c) => c.status === "draft").length,
+        scheduled: campaigns.filter((c) => c.status === "scheduled").length,
         totalSent: campaigns.reduce((sum, c) => sum + c.sent, 0),
-        avgOpenRate: campaigns.length > 0
-          ? campaigns.reduce((sum, c) => sum + c.openRate, 0) / campaigns.length
-          : 0,
-        avgConversion: campaigns.length > 0
-          ? campaigns.reduce((sum, c) => sum + c.conversion, 0) / campaigns.length
-          : 0,
+        avgOpenRate:
+          campaigns.length > 0
+            ? campaigns.reduce((sum, c) => sum + c.openRate, 0) / campaigns.length
+            : 0,
+        avgConversion:
+          campaigns.length > 0
+            ? campaigns.reduce((sum, c) => sum + c.conversion, 0) / campaigns.length
+            : 0,
         totalRevenue: campaigns.reduce((sum, c) => sum + c.revenue, 0),
       };
 
@@ -2696,38 +3736,38 @@ export async function registerRoutes(
       const templates = [
         {
           id: 1,
-          name: 'Boas-vindas',
-          channel: 'Email',
-          audience: 'Novos clientes',
-          message: 'Bem-vindo à nossa loja! Aproveite 10% de desconto na sua primeira compra.',
+          name: "Boas-vindas",
+          channel: "Email",
+          audience: "Novos clientes",
+          message: "Bem-vindo à nossa loja! Aproveite 10% de desconto na sua primeira compra.",
         },
         {
           id: 2,
-          name: 'Cashback Expirando',
-          channel: 'WhatsApp',
-          audience: 'Clientes com cashback',
-          message: 'Seu cashback está expirando em breve! Use agora e aproveite.',
+          name: "Cashback Expirando",
+          channel: "WhatsApp",
+          audience: "Clientes com cashback",
+          message: "Seu cashback está expirando em breve! Use agora e aproveite.",
         },
         {
           id: 3,
-          name: 'Recuperação de Carrinho',
-          channel: 'Email',
-          audience: 'Carrinho abandonado',
-          message: 'Você deixou produtos no carrinho. Complete sua compra agora!',
+          name: "Recuperação de Carrinho",
+          channel: "Email",
+          audience: "Carrinho abandonado",
+          message: "Você deixou produtos no carrinho. Complete sua compra agora!",
         },
         {
           id: 4,
-          name: 'Aniversário',
-          channel: 'WhatsApp',
-          audience: 'Aniversariantes do mês',
-          message: 'Feliz aniversário! Ganhe um presente especial de R$ 50.',
+          name: "Aniversário",
+          channel: "WhatsApp",
+          audience: "Aniversariantes do mês",
+          message: "Feliz aniversário! Ganhe um presente especial de R$ 50.",
         },
         {
           id: 5,
-          name: 'Reativação',
-          channel: 'SMS',
-          audience: 'Clientes inativos',
-          message: 'Sentimos sua falta! Volte e ganhe 15% de desconto.',
+          name: "Reativação",
+          channel: "SMS",
+          audience: "Clientes inativos",
+          message: "Sentimos sua falta! Volte e ganhe 15% de desconto.",
         },
       ];
 
@@ -2754,39 +3794,39 @@ export async function registerRoutes(
       // Return suggested automations based on business rules
       const suggestions = [
         {
-          id: 'welcome-series',
-          title: 'Série de Boas-vindas',
-          description: 'Envie 3 emails automáticos para novos clientes',
-          icon: 'mail',
-          estimatedImpact: '+15% conversão',
+          id: "welcome-series",
+          title: "Série de Boas-vindas",
+          description: "Envie 3 emails automáticos para novos clientes",
+          icon: "mail",
+          estimatedImpact: "+15% conversão",
         },
         {
-          id: 'abandoned-cart',
-          title: 'Carrinho Abandonado',
-          description: 'Recupere vendas perdidas automaticamente',
-          icon: 'shopping-cart',
-          estimatedImpact: '+8% receita',
+          id: "abandoned-cart",
+          title: "Carrinho Abandonado",
+          description: "Recupere vendas perdidas automaticamente",
+          icon: "shopping-cart",
+          estimatedImpact: "+8% receita",
         },
         {
-          id: 'birthday',
-          title: 'Aniversário',
-          description: 'Parabenize clientes no dia do aniversário',
-          icon: 'gift',
-          estimatedImpact: '+12% engajamento',
+          id: "birthday",
+          title: "Aniversário",
+          description: "Parabenize clientes no dia do aniversário",
+          icon: "gift",
+          estimatedImpact: "+12% engajamento",
         },
         {
-          id: 'cashback-expiring',
-          title: 'Cashback Expirando',
-          description: 'Notifique sobre cashback prestes a expirar',
-          icon: 'dollar-sign',
-          estimatedImpact: '+20% uso de cashback',
+          id: "cashback-expiring",
+          title: "Cashback Expirando",
+          description: "Notifique sobre cashback prestes a expirar",
+          icon: "dollar-sign",
+          estimatedImpact: "+20% uso de cashback",
         },
         {
-          id: 'win-back',
-          title: 'Reconquista',
-          description: 'Reative clientes inativos há 90 dias',
-          icon: 'user-plus',
-          estimatedImpact: '+5% reativação',
+          id: "win-back",
+          title: "Reconquista",
+          description: "Reative clientes inativos há 90 dias",
+          icon: "user-plus",
+          estimatedImpact: "+5% reativação",
         },
       ];
 
@@ -2816,9 +3856,9 @@ export async function registerRoutes(
         {
           id: 1,
           automationId: 1,
-          automationName: 'Boas-vindas Novos Clientes',
+          automationName: "Boas-vindas Novos Clientes",
           executedAt: new Date().toISOString(),
-          status: 'success',
+          status: "success",
           recipientsCount: 15,
           successCount: 14,
           failedCount: 1,
@@ -2826,9 +3866,9 @@ export async function registerRoutes(
         {
           id: 2,
           automationId: 2,
-          automationName: 'Cashback Expirando',
+          automationName: "Cashback Expirando",
           executedAt: new Date(Date.now() - 3600000).toISOString(),
-          status: 'success',
+          status: "success",
           recipientsCount: 23,
           successCount: 23,
           failedCount: 0,
