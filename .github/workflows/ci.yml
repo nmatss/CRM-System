@@ -30,10 +30,21 @@ jobs:
           cache: npm
 
       - name: Verify pinned runtime
+        # `npm_config_user_agent` only exists inside an npm-run script, so the
+        # npm version is read from `npm --version` instead.
         run: |
           node --version
           npm --version
-          node -e "const pkg = require('./package.json'); if (!process.version.startsWith('v20.19.')) throw new Error('Unexpected Node.js version'); if (!process.env.npm_config_user_agent?.startsWith('npm/10.8.')) throw new Error('Unexpected npm version')"
+          NODE_VERSION="$(node --version)"
+          NPM_VERSION="$(npm --version)"
+          case "$NODE_VERSION" in
+            v20.19.*) ;;
+            *) echo "Unexpected Node.js version: $NODE_VERSION" >&2; exit 1 ;;
+          esac
+          case "$NPM_VERSION" in
+            10.8.*) ;;
+            *) echo "Unexpected npm version: $NPM_VERSION" >&2; exit 1 ;;
+          esac
 
       - name: Install dependencies
         run: npm ci
