@@ -4002,3 +4002,73 @@ paths:
                     example: "2026-08-29"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  /api/v1/search:
+    get:
+      summary: Tenant-scoped global search
+      description: |
+        Searches customers, products and orders of the active tenant. The term
+        must be at least 2 characters; LIKE wildcards in the term are escaped and
+        matched literally. The response caps how many rows of each type it
+        carries and reports whether more matched.
+      operationId: globalSearch
+      tags:
+        - Reports
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search term, 2 to 100 characters
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: limit
+          in: query
+          required: false
+          description: Maximum rows per type, capped at 20
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Matches grouped with per-type totals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: string
+                  hits:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum: [customer, product, order]
+                        id:
+                          type: integer
+                        title:
+                          type: string
+                        subtitle:
+                          type: string
+                          nullable: true
+                        href:
+                          type: string
+                  totals:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  truncated:
+                    type: boolean
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
