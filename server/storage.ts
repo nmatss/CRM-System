@@ -2212,13 +2212,42 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateNotificationStatus(id: number, status: string): Promise<Notification | undefined> {
-    const [updated] = await db
+  /**
+   * A notification belongs to one user inside one tenant. Scoping the update by
+   * both means an id guessed from another account changes nothing.
+   */
+  async markNotificationRead(
+    tenantId: number,
+    userId: string,
+    id: number,
+  ): Promise<Notification | undefined> {
+    const result = await db
       .update(notifications)
-      .set({ status })
-      .where(eq(notifications.id, id))
+      .set({ status: "read" })
+      .where(
+        and(
+          eq(notifications.id, id),
+          eq(notifications.tenantId, tenantId),
+          eq(notifications.userId, userId),
+        ),
+      )
       .returning();
-    return updated;
+    return result[0];
+  }
+
+  async markAllNotificationsRead(tenantId: number, userId: string): Promise<number> {
+    const result = await db
+      .update(notifications)
+      .set({ status: "read" })
+      .where(
+        and(
+          eq(notifications.tenantId, tenantId),
+          eq(notifications.userId, userId),
+          ne(notifications.status, "read"),
+        ),
+      )
+      .returning();
+    return result.length;
   }
 
   // ==================== DASHBOARD STATS ====================

@@ -4072,3 +4072,66 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  /api/v1/notifications/{id}/read:
+    patch:
+      summary: Mark one notification as read
+      description: Scoped to the active tenant and to the signed-in user, so an id from another account changes nothing.
+      operationId: markNotificationRead
+      tags:
+        - Notifications
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Notification identifier
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated notification
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/notifications/read-all:
+    post:
+      summary: Mark every notification of the signed-in user as read
+      description: Clears the badge in one action. Only the caller's own rows in the active tenant are affected.
+      operationId: markAllNotificationsRead
+      tags:
+        - Notifications
+      security:
+        - sessionAuth: []
+      responses:
+        "200":
+          description: Number of notifications updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"

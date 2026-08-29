@@ -28,7 +28,7 @@ import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/hooks/use-theme";
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import {
   countUnreadNotifications,
@@ -101,6 +101,33 @@ export function Header({ onMenuClick }: HeaderProps) {
     staleTime: 60_000,
   });
   const unreadNotifications = countUnreadNotifications(notifications);
+  const queryClient = useQueryClient();
+
+  const markReadMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("PATCH", `/notifications/${id}/read`, {});
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    onError: () =>
+      toast({
+        title: "Erro",
+        description: "Não foi possível marcar a notificação como lida.",
+        variant: "destructive",
+      }),
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/notifications/read-all", {});
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    onError: () =>
+      toast({
+        title: "Erro",
+        description: "Não foi possível marcar as notificações como lidas.",
+        variant: "destructive",
+      }),
+  });
 
   useEffect(() => {
     if (!showMobileSearch && shouldRestoreSearchFocusRef.current) {
@@ -347,8 +374,23 @@ export function Header({ onMenuClick }: HeaderProps) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72 sm:w-80">
             <DropdownMenuLabel className="font-normal">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold text-sm">Notificações</span>
+                {unreadNotifications > 0 && (
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                    disabled={markAllReadMutation.isPending}
+                    onClick={(event) => {
+                      // Keep the panel open so the user sees the list update.
+                      event.preventDefault();
+                      markAllReadMutation.mutate();
+                    }}
+                    data-testid="button-mark-all-read"
+                  >
+                    Marcar todas como lidas
+                  </button>
+                )}
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -412,6 +454,20 @@ export function Header({ onMenuClick }: HeaderProps) {
                           <p className="mt-1 text-[11px] text-muted-foreground">
                             {formatNotificationDate(notification.createdAt)}
                           </p>
+                          {isUnread && (
+                            <button
+                              type="button"
+                              className="mt-1 text-[11px] font-medium text-primary hover:underline disabled:opacity-50"
+                              disabled={markReadMutation.isPending}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                markReadMutation.mutate(notification.id);
+                              }}
+                              data-testid={`button-mark-read-${notification.id}`}
+                            >
+                              Marcar como lida
+                            </button>
+                          )}
                         </div>
                       </div>
                     </li>
