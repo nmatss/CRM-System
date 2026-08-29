@@ -46,11 +46,13 @@ export default defineConfig({
         "vitest.setup.ts",
         "server/index.ts",
       ],
+      // Progressive ratchet: kept just below the measured value so a real
+      // regression fails CI while normal work does not flake.
       thresholds: {
-        statements: 8,
-        branches: 5,
-        functions: 3,
-        lines: 8,
+        statements: 26,
+        branches: 21,
+        functions: 19,
+        lines: 26,
       },
     },
   },
