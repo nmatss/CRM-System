@@ -65,9 +65,9 @@ function verifyToken(secret: string, token: string): boolean {
     // Use timing-safe comparison to prevent timing attacks
     return crypto.timingSafeEqual(
       Buffer.from(providedSignature, "hex"),
-      Buffer.from(expectedSignature, "hex")
+      Buffer.from(expectedSignature, "hex"),
     );
-  } catch (error) {
+  } catch {
     return false;
   }
 }
@@ -76,12 +76,17 @@ function verifyToken(secret: string, token: string): boolean {
  * Middleware to add CSRF token generation endpoint
  */
 export function csrfTokenEndpoint(req: Request, res: Response) {
+  if (!req.session.user) {
+    return res.status(401).json({ error: "Autenticação necessária" });
+  }
+
   // Ensure we have a secret in the session
   if (!req.session.csrfSecret) {
     req.session.csrfSecret = crypto.randomBytes(32).toString("hex");
   }
 
   const token = generateToken(req.session.csrfSecret);
+  res.setHeader("Cache-Control", "no-store");
   res.json({ csrfToken: token });
 }
 
@@ -106,7 +111,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
   if (!token) {
     return res.status(403).json({
       error: "CSRF token missing",
-      message: "CSRF token é obrigatório para esta operação"
+      message: "CSRF token é obrigatório para esta operação",
     });
   }
 
@@ -115,14 +120,14 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
   if (!secret) {
     return res.status(403).json({
       error: "CSRF secret missing",
-      message: "Sessão inválida. Por favor, faça login novamente."
+      message: "Sessão inválida. Por favor, faça login novamente.",
     });
   }
 
   if (!verifyToken(secret, token)) {
     return res.status(403).json({
       error: "Invalid CSRF token",
-      message: "Token CSRF inválido. Por favor, recarregue a página."
+      message: "Token CSRF inválido. Por favor, recarregue a página.",
     });
   }
 
@@ -143,21 +148,21 @@ export function setupCsrf(app: Express) {
       return next();
     }
 
+    const normalizedPath = req.path.replace(/^\/v1(?=\/)/, "");
+
     // Skip public endpoints that don't require authentication
-    const publicEndpoints = [
+    const publicEndpoints = new Set([
       "/health",
       "/auth/login",
       "/auth/register",
-      "/tenants/by-slug",
       "/contact",
-      "/demo"
-    ];
+      "/demo",
+    ]);
 
-    const isPublicEndpoint = publicEndpoints.some(endpoint =>
-      req.path === endpoint || req.path.startsWith(endpoint)
-    );
+    const isPublicEndpoint =
+      publicEndpoints.has(normalizedPath) || normalizedPath.startsWith("/tenants/by-slug/");
 
-    if (isPublicEndpoint && !req.session.user) {
+    if (isPublicEndpoint) {
       return next();
     }
 
