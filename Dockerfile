@@ -31,7 +31,7 @@ RUN apk add --no-cache libc6-compat
 
 # Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 zippcrm
+    adduser --system --uid 1001 --ingroup nodejs zippcrm
 
 # Copy package files
 COPY package*.json ./

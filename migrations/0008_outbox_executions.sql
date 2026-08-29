@@ -14,6 +14,18 @@ PRAGMA foreign_keys = ON;
 
 BEGIN;
 
+-- ------------------------------------------------------- additive columns
+-- Consent is evaluated when recipients are materialized and again before
+-- delivery, so it must exist before any campaign execution is recorded.
+ALTER TABLE customers ADD COLUMN marketing_opt_out INTEGER NOT NULL DEFAULT 0 CHECK (marketing_opt_out IN (0, 1));
+ALTER TABLE customers ADD COLUMN marketing_consent_at TEXT;
+
+-- Versioned automation definition. Only allowlisted triggers/actions run.
+ALTER TABLE automations ADD COLUMN version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0);
+ALTER TABLE automations ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'customer.created';
+ALTER TABLE automations ADD COLUMN action_type TEXT NOT NULL DEFAULT 'notify_customer';
+ALTER TABLE automations ADD COLUMN action_channel TEXT NOT NULL DEFAULT 'email';
+
 -- ---------------------------------------------------------------- outbox jobs
 CREATE TABLE IF NOT EXISTS outbox_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,15 +154,7 @@ BEFORE INSERT ON automation_executions BEGIN
   ) THEN RAISE(ABORT, 'automation execution tenant mismatch') END;
 END;
 
-COMMIT;
+INSERT OR IGNORE INTO schema_migrations (version, description)
+VALUES ('0008', 'Durable outbox with campaign and automation executions');
 
--- Additive columns are applied outside the transaction because SQLite rejects
--- ALTER TABLE ADD COLUMN for a column that already exists; the application
--- bootstrap guards each one with a PRAGMA table_info check.
---
--- ALTER TABLE customers ADD COLUMN marketing_opt_out INTEGER NOT NULL DEFAULT 0 CHECK (marketing_opt_out IN (0, 1));
--- ALTER TABLE customers ADD COLUMN marketing_consent_at TEXT;
--- ALTER TABLE automations ADD COLUMN version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0);
--- ALTER TABLE automations ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'customer.created';
--- ALTER TABLE automations ADD COLUMN action_type TEXT NOT NULL DEFAULT 'notify_customer';
--- ALTER TABLE automations ADD COLUMN action_channel TEXT NOT NULL DEFAULT 'email';
+COMMIT;

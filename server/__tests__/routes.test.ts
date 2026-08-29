@@ -280,6 +280,14 @@ describe("API Routes Integration Tests", () => {
         database: "disconnected",
       });
     });
+
+    it("answers an unknown API path with JSON 404 instead of the SPA fallback", async () => {
+      const response = await request(app).get("/api/v1/rota-inexistente");
+
+      expect(response.status).toBe(404);
+      expect(response.body).toMatchObject({ code: "ROUTE_NOT_FOUND" });
+      expect(response.headers["content-type"]).toMatch(/application\/json/);
+    });
   });
 
   describe("2. Login Endpoint - Success Cases", () => {

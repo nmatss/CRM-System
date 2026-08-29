@@ -4008,5 +4008,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Mount v1 API routes
   app.use("/api/v1", v1Router);
 
+  // An unknown API path must answer with JSON. Without this the SPA fallback
+  // would return index.html with status 200 and clients would parse HTML as a
+  // successful API response.
+  app.use("/api", (req: Request, res: Response) => {
+    sendError(
+      res,
+      404,
+      `Rota não encontrada: ${req.method} ${req.baseUrl}${req.path}`,
+      "ROUTE_NOT_FOUND",
+    );
+  });
+
   return httpServer;
 }
