@@ -44,7 +44,27 @@ export default defineConfig({
     // trustworthy origin.
     extraHTTPHeaders: { "X-Forwarded-Proto": "https" },
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    // Cross-browser coverage of the public surface.
+    //
+    // Two deliberate limits:
+    //
+    // - the authenticated suite stays on Chromium, because the session cookie is
+    //   `Secure` and only Chromium reliably stores it over the plain-HTTP
+    //   loopback this harness uses;
+    // - WebKit is absent for the same class of reason: the production CSP emits
+    //   `upgrade-insecure-requests`, WebKit honours it even on loopback and so
+    //   requests every asset over https, which this harness does not serve.
+    //   That is WebKit behaving correctly against a real HTTPS deployment;
+    //   covering it here would need a TLS-terminating proxy in the harness, and
+    //   a red gate caused by the harness teaches nothing about the product.
+    {
+      name: "firefox-public",
+      testMatch: /public-.*\.spec\.ts/,
+      use: { ...devices["Desktop Firefox"] },
+    },
+  ],
   webServer: {
     command: "bash e2e/scripts/start-test-server.sh",
     url: `${BASE_URL}/api/ready`,
