@@ -6,7 +6,8 @@
  */
 
 export const E2E_PORT = Number(process.env.E2E_PORT ?? 5273);
-export const E2E_BASE_URL = `http://127.0.0.1:${E2E_PORT}`;
+/** The harness terminates TLS, exactly as production does. */
+export const E2E_BASE_URL = `https://127.0.0.1:${E2E_PORT}`;
 
 export const E2E_PASSWORD = "E2eSuiteAccess#2026";
 

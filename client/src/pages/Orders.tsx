@@ -386,7 +386,8 @@ export default function Orders() {
       status === "Pago"
         ? "bg-emerald-700 hover:bg-emerald-800"
         : status === "Processando"
-          ? "bg-amber-500 hover:bg-amber-600 border-transparent text-white"
+          ? // amber-500 with white text is 2.13:1; amber-700 clears AA.
+            "bg-amber-700 hover:bg-amber-800 border-transparent text-white"
           : "";
     return { variant, className };
   };

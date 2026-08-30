@@ -162,23 +162,22 @@ oficial e nenhum documento deve afirmar o contrario.
 
 ## Cobertura de navegador
 
-A suite end-to-end roda 63 testes: todo o fluxo autenticado no Chromium e a
-superficie publica tambem no Firefox.
+A suite end-to-end roda 177 testes: a suite completa em **Chromium, Firefox e
+WebKit**.
 
-Duas ausencias sao deliberadas e tem o mesmo motivo — o harness serve HTTP puro
-enquanto a aplicacao e configurada como em producao:
+Isso e possivel porque o harness sobe a aplicacao atras de um proxy com
+terminacao TLS (`e2e/scripts/start-test-server.mjs`), exatamente como em
+producao. Sem TLS real, dois controles de producao tornavam a suite
+monobrowser:
 
-- **suite autenticada fora do Firefox e do WebKit**: o cookie de sessao e
-  `Secure` e apenas o Chromium o armazena de forma confiavel sobre o loopback
-  em HTTP;
-- **WebKit ausente**: o CSP de producao emite `upgrade-insecure-requests`, o
-  WebKit obedece mesmo em loopback e pede todos os assets por https, que este
-  harness nao serve. Isso e o WebKit se comportando **corretamente** diante de
-  um deploy HTTPS real; um gate vermelho causado pelo harness nao ensina nada
-  sobre o produto.
+- o cookie de sessao e `Secure`, e apenas o Chromium o armazenava de forma
+  confiavel sobre loopback em HTTP;
+- o CSP emite `upgrade-insecure-requests`, que o WebKit obedece mesmo em
+  loopback, deixando a pagina em branco por pedir os assets em https.
 
-Cobrir os dois casos exige um proxy com terminacao TLS no harness. Fica
-registrado como melhoria, nao como defeito do produto.
+O certificado e autoassinado, gerado por execucao dentro do diretorio
+descartavel e aceito pelos navegadores via `ignoreHTTPSErrors`. Ele nunca sai
+dali e nao existe fora do teste.
 
 ## Limites conhecidos
 

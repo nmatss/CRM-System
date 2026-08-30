@@ -73,7 +73,7 @@ jobs:
   e2e:
     name: End-to-end, accessibility and responsive gates
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
@@ -89,7 +89,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium firefox
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Build application
         run: npm run build

@@ -45,7 +45,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ["*.{js,ts}", "script/**/*.{js,ts}", "scripts/**/*.{js,ts}"],
+    files: [
+      "*.{js,ts}",
+      "script/**/*.{js,ts}",
+      "scripts/**/*.{js,ts}",
+      // Harness scripts run in Node, not in the browser.
+      "e2e/scripts/**/*.{js,mjs,ts}",
+    ],
     languageOptions: {
       globals: globals.node,
     },
