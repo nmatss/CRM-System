@@ -2,11 +2,11 @@ import { expect, type Browser, type BrowserContext, type Page } from "@playwrigh
 import { E2E_BASE_URL, E2E_PASSWORD } from "./fixtures";
 
 /**
- * The session cookie is `Secure`, exactly as in production behind a
- * TLS-terminating proxy. Playwright's standalone `APIRequestContext` refuses to
- * send such a cookie over plain HTTP, so every API call in this suite goes
- * through the page's own `fetch`. That is also the most faithful path: it is
- * literally what the application's client does.
+ * Every API call goes through the page's own `fetch`.
+ *
+ * That is the most faithful path available: it is literally what the
+ * application's client does, so the session cookie, the CSRF header and the
+ * CSP all behave exactly as they do for a real user.
  */
 
 export interface ApiResponse<T = unknown> {
@@ -115,7 +115,8 @@ export async function apiLogin(page: Page, email: string) {
 export async function openApiSession(browser: Browser, email: string): Promise<ApiSession> {
   const context = await browser.newContext({
     baseURL: E2E_BASE_URL,
-    extraHTTPHeaders: { "X-Forwarded-Proto": "https" },
+    // The harness certificate is generated per run.
+    ignoreHTTPSErrors: true,
   });
   const page = await context.newPage();
   await apiLogin(page, email);

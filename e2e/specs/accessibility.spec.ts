@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { users } from "../fixtures";
-import { expectAuthenticatedShell, login } from "../helpers";
+import { expectAuthenticatedShell, login, openApiSession } from "../helpers";
 
 /**
  * Gate F7: axe must find no critical violation, and the main flow must be
@@ -62,6 +62,42 @@ test.describe("accessibility", () => {
       const violations = await criticalViolations(page);
       expect(describeViolations(violations), `violations on ${path}`).toBe("");
     }
+  });
+
+  test("order status badges stay readable in every status", async ({ page, browser }) => {
+    // Regression guard: the "Processando" badge was white on amber-500 (2.13:1)
+    // and the "Cancelado" one used a destructive token at 3.59:1. Neither is
+    // reachable from the seeded data alone, so the statuses are created here.
+    const manager = await openApiSession(browser, users.alphaManager.email);
+    const products = await manager.get<{ data: Array<{ id: number }> }>("/api/v1/products?limit=1");
+    const productId = products.body.data[0]?.id;
+    expect(productId, "the fixture product must exist").toBeTruthy();
+
+    for (const status of ["Processando", "Pago", "Entregue"]) {
+      await manager.send("POST", "/api/v1/orders", {
+        customer: `Contraste ${status}`,
+        method: "PIX",
+        status,
+        lineItems: [{ productId, quantity: 1 }],
+      });
+    }
+    const cancelled = await manager.send<{ id: number }>("POST", "/api/v1/orders", {
+      customer: "Contraste Cancelado",
+      method: "PIX",
+      status: "Pendente",
+      lineItems: [{ productId, quantity: 1 }],
+    });
+    await manager.send("DELETE", `/api/v1/orders/${cancelled.body.id}`);
+    await manager.close();
+
+    await login(page, users.alphaManager.email);
+    await expectAuthenticatedShell(page);
+    await page.goto("/orders");
+    await expectAuthenticatedShell(page);
+    await page.waitForTimeout(600);
+
+    const violations = await criticalViolations(page);
+    expect(describeViolations(violations)).toBe("");
   });
 
   test("the login form can be completed with the keyboard alone", async ({ page }) => {

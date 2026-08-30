@@ -37,37 +37,20 @@ export default defineConfig({
     video: "off",
     locale: "pt-BR",
     timezoneId: "UTC",
-    // Production terminates TLS in a proxy and the session cookie is `Secure`.
-    // Declaring the forwarded protocol reproduces that exact configuration, so
-    // the suite exercises the real production cookie path instead of a relaxed
-    // one. Chrome accepts `Secure` cookies from 127.0.0.1 because it is a
-    // trustworthy origin.
-    extraHTTPHeaders: { "X-Forwarded-Proto": "https" },
+    // The harness serves the app behind a TLS-terminating proxy, like
+    // production. The certificate is generated per run and thrown away, so the
+    // browsers are told to accept it.
+    ignoreHTTPSErrors: true,
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    // Cross-browser coverage of the public surface.
-    //
-    // Two deliberate limits:
-    //
-    // - the authenticated suite stays on Chromium, because the session cookie is
-    //   `Secure` and only Chromium reliably stores it over the plain-HTTP
-    //   loopback this harness uses;
-    // - WebKit is absent for the same class of reason: the production CSP emits
-    //   `upgrade-insecure-requests`, WebKit honours it even on loopback and so
-    //   requests every asset over https, which this harness does not serve.
-    //   That is WebKit behaving correctly against a real HTTPS deployment;
-    //   covering it here would need a TLS-terminating proxy in the harness, and
-    //   a red gate caused by the harness teaches nothing about the product.
-    {
-      name: "firefox-public",
-      testMatch: /public-.*\.spec\.ts/,
-      use: { ...devices["Desktop Firefox"] },
-    },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
+    { name: "webkit", use: { ...devices["Desktop Safari"] } },
   ],
   webServer: {
-    command: "bash e2e/scripts/start-test-server.sh",
+    command: "node e2e/scripts/start-test-server.mjs",
     url: `${BASE_URL}/api/ready`,
+    ignoreHTTPSErrors: true,
     reuseExistingServer: false,
     timeout: 120_000,
     stdout: "pipe",
@@ -79,6 +62,7 @@ export default defineConfig({
       DATABASE_PATH: join(DATA_DIR, "e2e.db"),
       SESSION_DATABASE_PATH: join(DATA_DIR, "e2e-sessions.db"),
       SESSION_SECRET: "e2e-only-session-key-Qz7Kx2Lm9Rv4Tn8Bw1Yd6Hc3Jf5Gp0",
+      // The proxy in front is the only hop, and it sets the forwarded headers.
       TRUST_PROXY: "1",
       // The production bootstrap requires these; the suite signs in with its
       // own seeded identities instead of this account.
