@@ -160,6 +160,26 @@ regras acima. Adotar Sentry ou equivalente e uma decisao em aberto; enquanto
 nao existir, o par log estruturado + alerta de taxa de erro e o mecanismo
 oficial e nenhum documento deve afirmar o contrario.
 
+## Cobertura de navegador
+
+A suite end-to-end roda 63 testes: todo o fluxo autenticado no Chromium e a
+superficie publica tambem no Firefox.
+
+Duas ausencias sao deliberadas e tem o mesmo motivo — o harness serve HTTP puro
+enquanto a aplicacao e configurada como em producao:
+
+- **suite autenticada fora do Firefox e do WebKit**: o cookie de sessao e
+  `Secure` e apenas o Chromium o armazena de forma confiavel sobre o loopback
+  em HTTP;
+- **WebKit ausente**: o CSP de producao emite `upgrade-insecure-requests`, o
+  WebKit obedece mesmo em loopback e pede todos os assets por https, que este
+  harness nao serve. Isso e o WebKit se comportando **corretamente** diante de
+  um deploy HTTPS real; um gate vermelho causado pelo harness nao ensina nada
+  sobre o produto.
+
+Cobrir os dois casos exige um proxy com terminacao TLS no harness. Fica
+registrado como melhoria, nao como defeito do produto.
+
 ## Limites conhecidos
 
 - As metricas sao por processo e zeram no reinicio, o que e o esperado para
